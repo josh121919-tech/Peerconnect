@@ -1,0 +1,84 @@
+Options -Indexes
+Options -MultiViews
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Refuse any path with a dot-segment. git init put .git/ in this web root,
+    # and the pass-through rule further down serves any file that exists — so
+    # .git/config, and with it the whole repository history, was downloadable.
+    # This also covers .env, .gitignore and any future dotfile. .well-known/
+    # stays open for certificate validation.
+    RewriteRule (^|/)\.(?!well-known(/|$)) - [F,L]
+
+    RewriteRule ^(?:App|Framework|vendor)/ - [F,L,NC]
+
+    # Legacy upload URLs now point to the new public storage folders.
+    RewriteRule ^menteepage/view/uploads/reports/(.*)$ public/uploads/reports/$1 [L,NC]
+    RewriteRule ^(?:menteepage|mentorpage)/uploads/profiles/(.*)$ public/uploads/profiles/$1 [L,NC]
+    RewriteRule ^uploads/profiles/(.*)$ public/uploads/profiles/$1 [L,NC]
+    RewriteRule ^(?:menteepage|mentorpage)/uploads/(.*)$ public/uploads/verification/$1 [L,NC]
+    RewriteRule ^uploads/(.*)$ public/uploads/verification/$1 [L,NC]
+
+    # Legacy routed page filenames used inside older templates.
+    RewriteRule ^find_mentor\.php$ public/index.php?legacy=mentee-find [L,QSA]
+    RewriteRule ^sessions\.php$ public/index.php?legacy=mentee-sessions [L,QSA]
+    RewriteRule ^feedback\.php$ public/index.php?legacy=mentee-feedback [L,QSA]
+    RewriteRule ^request\.php$ public/index.php?legacy=mentee-request [L,QSA]
+    RewriteRule ^google-login\.php$ public/index.php?legacy=google-login [L,QSA]
+    # Google Calendar OAuth callback. A stable path on purpose: it has to be
+    # registered in the Google Cloud Console, so it must not move if the
+    # route-hashing secret is ever rotated.
+    RewriteRule ^gcal-callback\.php$ public/index.php?legacy=gcal-callback [L,QSA]
+    RewriteRule ^message\.php$ public/index.php?legacy=messages [L,QSA]
+    RewriteRule ^send_message\.php$ public/index.php?legacy=messages-send [L,QSA]
+    RewriteRule ^get_messages\.php$ public/index.php?legacy=messages-get [L,QSA]
+    RewriteRule ^view/view_mentor\.php$ public/index.php?legacy=mentee-view-mentor [L,QSA]
+    RewriteRule ^action_verify\.php$ public/index.php?legacy=admin-action-verify [L,QSA]
+    RewriteRule ^action_block\.php$ public/index.php?legacy=admin-action-block [L,QSA]
+    RewriteRule ^action_unblock\.php$ public/index.php?legacy=admin-action-unblock [L,QSA]
+    RewriteRule ^action_restrict\.php$ public/index.php?legacy=admin-action-restrict [L,QSA]
+    RewriteRule ^action_resolve\.php$ public/index.php?legacy=admin-action-resolve [L,QSA]
+
+    RewriteRule ^$ public/index.php [L,QSA]
+    RewriteRule ^index/?$ public/index.php [L,QSA]
+    RewriteRule ^([a-f0-9]{32})/?$ public/index.php [L,QSA]
+
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    RewriteCond %{REQUEST_URI} \.php$ [NC]
+    RewriteCond %{REQUEST_URI} !public/index\.php$ [NC]
+    RewriteRule ^ - [F,L]
+
+    RewriteRule ^(.*)$ public/index.php [L,QSA]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+<FilesMatch "\.(env|log|sql|bak|htpasswd)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+<FilesMatch "^(composer\.(json|lock)|package\.json)$">
+    Order Allow,Deny
+    Deny from all
+</FilesMatch>
+
+# The two extracted stylesheets are always requested with ?v=<file mtime>, so
+# editing either one changes its URL. That makes them safe to cache hard.
+# Without this the browser still makes a conditional request for each of them
+# on every single page load — a round trip to be told nothing changed.
+# Scoped by name on purpose: assets that are NOT versioned must not get this.
+<FilesMatch "^pc-(app|admin)\.css$">
+    <IfModule mod_headers.c>
+        Header set Cache-Control "public, max-age=31536000, immutable"
+    </IfModule>
+</FilesMatch>

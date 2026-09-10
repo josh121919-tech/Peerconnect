@@ -1,0 +1,47 @@
+# ─── Secrets ─────────────────────────────────────────────────────────────
+# Database, SMTP, reCAPTCHA, Google OAuth, the admin invite key and the
+# route-token salt. Copy .env.example to .env and fill it in.
+.env
+.env.*
+!.env.example
+
+# Private keys. App/config/jaas_private_key.pem signs video-call tokens.
+*.pem
+*.key
+
+# ─── User content ────────────────────────────────────────────────────────
+# Profile photos, shared resources, report attachments, uploaded logos and
+# students' verification documents. This is data, not code: it belongs in
+# backups next to the database, never in history. Every upload handler
+# creates its folder on demand, so a fresh clone works without any of it.
+public/uploads/*
+# ...except the .htaccess in there, which is application config.
+!public/uploads/.htaccess
+
+# ─── Database dumps ──────────────────────────────────────────────────────
+# A mysqldump of `cs` holds every member's email and password hash, so all
+# .sql is ignored by default and the schema files below are the exceptions.
+# To track a new migration:   git add -f path/to/migration.sql
+*.sql
+!database_migrations.sql
+!phase4_drop.sql
+!App/views/Messages/schema.sql
+
+# ─── Dependencies ────────────────────────────────────────────────────────
+# Restore with:   composer install
+vendor/
+
+# ─── Logs, backups, scratch ──────────────────────────────────────────────
+*.log
+*.bak
+*.orig
+*.tmp
+*.swp
+
+# ─── Editors and operating systems ───────────────────────────────────────
+.vscode/
+.idea/
+.claude/settings.local.json
+Thumbs.db
+desktop.ini
+.DS_Store

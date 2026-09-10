@@ -1,0 +1,15 @@
+# Uploaded files must never be executable. This directory holds user-submitted
+# profile photos, verification documents, and report proof images only.
+
+<FilesMatch "\.ph(p[0-9]?|tml|ar)$">
+    Require all denied
+</FilesMatch>
+
+<IfModule !mod_authz_core.c>
+    <FilesMatch "\.ph(p[0-9]?|tml|ar)$">
+        Order allow,deny
+        Deny from all
+    </FilesMatch>
+</IfModule>
+
+php_flag engine off

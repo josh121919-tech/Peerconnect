@@ -1,0 +1,31 @@
+<?php
+/**
+ * action_resolve.php
+ * SECURITY: Admin-only, POST-only, prepared statement.
+ */
+session_start();
+include __DIR__ . '/../db.php';
+require_once __DIR__ . '/../includes/security.php';
+
+require_admin();
+require_post();
+
+if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    http_response_code(403);
+    exit('CSRF token mismatch.');
+}
+
+$report_id = (int)($_POST['report_id'] ?? 0);
+if (!$report_id) {
+    header('Location: ' . url('admin-users') . '?tab=resolved');
+    exit;
+}
+
+$stmt = $con->prepare("UPDATE reports SET status='resolved', updated_at=NOW() WHERE report_id=?");
+$stmt->bind_param("i", $report_id);
+$stmt->execute();
+$stmt->close();
+
+pc_flash('success', 'Report dismissed.', 'Resolved');
+header('Location: ' . url('admin-users') . '?tab=resolved');
+exit;

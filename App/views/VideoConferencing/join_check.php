@@ -1,0 +1,321 @@
+<?php
+
+/**
+ * join_check.php
+ * A lobby/waiting room shown before entering the video call.
+ * Placed at: /case/case/6b4396b7d830104eb41d706cefe6a991
+ *
+ * Usage:
+ *   1v1:   join_check.php?session_id=123
+ *   Group: join_check.php?session_id=123&type=group
+ */
+date_default_timezone_set('Asia/Manila');
+session_start();
+include __DIR__ . "/../db.php";
+
+if (!isset($_SESSION['user_id'])) {
+    header("Location: " . url('welcomepage'));
+    exit;
+}
+
+$session_id  = (int)($_GET['session_id'] ?? 0);
+$is_group    = isset($_GET['type']) && $_GET['type'] === 'group';
+$user_id     = (int)$_SESSION['user_id'];
+$role        = $_SESSION['role'] ?? 'mentee';
+$sessions_url = $role === 'mentor' ? url('mentor-requests') : url('mentee-sessions');
+
+if (!$session_id) {
+    header("Location: " . $sessions_url);
+    exit;
+}
+
+// Fetch the anchor session row (works for both 1v1 and group)
+$stmt = $con->prepare("
+    SELECT sr.*,
+           mentor.firstname AS mentor_fname, mentor.lastname AS mentor_lname,
+           mentee.firstname AS mentee_fname, mentee.lastname AS mentee_lname
+    FROM session_requests sr
+    JOIN users mentor ON sr.mentor_id  = mentor.user_id
+    JOIN users mentee ON sr.mentee_id  = mentee.user_id
+    WHERE sr.request_id = ?
+      AND (sr.mentor_id = ? OR sr.mentee_id = ?)
+");
+$stmt->bind_param("iii", $session_id, $user_id, $user_id);
+$stmt->execute();
+$session = $stmt->get_result()->fetch_assoc();
+
+if (!$session) {
+    header("Location: " . $sessions_url);
+    exit;
+}
+
+$status  = $session['status'];
+$appTz   = new DateTimeZone('Asia/Manila');
+
+$sessionDt    = new DateTime($session['session_date'], $appTz);
+$session_date = $sessionDt->getTimestamp();
+$nowDt        = new DateTime('now', $appTz);
+$now          = $nowDt->getTimestamp();
+$minutes_until = ($session_date - $now) / 60;
+
+$can_join = ($status === 'approved') && ($minutes_until <= 15);
+$back_url = $role === 'mentor'
+    ? url('mentor-requests')
+    : url('mentee-sessions');
+
+// ── For group sessions: fetch all students in this slot ──────────────────────
+$group_students = [];
+if ($is_group) {
+    $gs = $con->prepare("
+        SELECT u.firstname, u.lastname, sr.status, sr.request_id
+        FROM session_requests sr
+        JOIN users u ON sr.mentee_id = u.user_id
+        WHERE sr.mentor_id = ?
+          AND sr.subject   = ?
+          AND DATE(sr.session_date) = DATE(?)
+          AND TIME(sr.session_date) = TIME(?)
+          AND sr.status IN ('pending', 'approved')
+        ORDER BY u.firstname ASC
+    ");
+    $gs->bind_param(
+        "isss",
+        $session['mentor_id'],
+        $session['subject'],
+        $session['session_date'],
+        $session['session_date']
+    );
+    $gs->execute();
+    $gsResult = $gs->get_result();
+    while ($row = $gsResult->fetch_assoc()) {
+        $group_students[] = $row;
+    }
+}
+
+// For 1v1: show the other person's name as before
+$other_person = $role === 'mentor'
+    ? ($session['mentee_fname'] . ' ' . $session['mentee_lname'])
+    : ($session['mentor_fname'] . ' ' . $session['mentor_lname']);
+?>
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Join Session – NEUST</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Serif+Display&display=swap" rel="stylesheet">
+    <style>
+        * {
+            font-family: 'DM Sans', sans-serif;
+        }
+
+        h1,
+        h2,
+        h3 {
+            font-family: 'DM Serif Display', serif;
+        }
+
+        body {
+            background: #f5f5f3;
+        }
+    </style>
+</head>
+
+<body class="min-h-screen flex items-center justify-center p-6">
+
+    <div class="w-full max-w-md">
+
+        <!-- Card -->
+        <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+
+            <!-- Header strip -->
+            <div class="<?= $is_group ? 'bg-purple-500' : 'bg-blue-500' ?> px-6 py-5">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
+                        <?php if ($is_group): ?>
+                            <!-- Group icon -->
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6 5.87v-2a4 4 0 00-2-3.46M15 11a4 4 0 10-8 0 4 4 0 008 0zm6 0a3 3 0 10-6 0 3 3 0 006 0zM3 11a3 3 0 106 0 3 3 0 00-6 0z" />
+                            </svg>
+                        <?php else: ?>
+                            <!-- Video icon -->
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                            </svg>
+                        <?php endif; ?>
+                    </div>
+                    <div>
+                        <p class="text-white/70 text-xs">
+                            <?= $is_group ? 'Group Session' : 'Video Session' ?>
+                        </p>
+                        <h2 class="text-white text-lg leading-tight">
+                            <?= htmlspecialchars($session['subject'] ?? 'Mentoring Session') ?>
+                        </h2>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Body -->
+            <div class="p-6">
+
+                <!-- Session details -->
+                <div class="space-y-3 mb-6">
+
+                    <!-- Participant(s) row -->
+                    <div class="flex items-start gap-3 text-sm">
+                        <div class="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                        </div>
+                        <div class="flex-1">
+                            <?php if ($is_group && $role === 'mentor'): ?>
+                                <!-- Mentor sees student list -->
+                                <p class="text-xs text-gray-400 mb-1">
+                                    Students (<?= count($group_students) ?>)
+                                </p>
+                                <?php if (!empty($group_students)): ?>
+                                    <div class="flex flex-wrap gap-1.5">
+                                        <?php foreach ($group_students as $st): ?>
+                                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-medium
+                                                <?= $st['status'] === 'approved' ? 'bg-green-50 text-green-700' : 'bg-yellow-50 text-yellow-700' ?>">
+                                                <?= htmlspecialchars($st['firstname'] . ' ' . $st['lastname']) ?>
+                                                <span class="opacity-60">(<?= ucfirst($st['status']) ?>)</span>
+                                            </span>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php else: ?>
+                                    <p class="text-sm text-gray-400">No students reserved yet.</p>
+                                <?php endif; ?>
+                            <?php elseif ($is_group && $role === 'mentee'): ?>
+                                <!-- Mentee sees the mentor name -->
+                                <p class="text-xs text-gray-400">Mentor</p>
+                                <p class="font-medium text-gray-800"><?= htmlspecialchars($other_person) ?></p>
+                                <p class="text-xs text-gray-400 mt-1">This is a group session — other students will also be present.</p>
+                            <?php else: ?>
+                                <!-- 1v1 -->
+                                <p class="text-xs text-gray-400"><?= $role === 'mentor' ? 'Mentee' : 'Mentor' ?></p>
+                                <p class="font-medium text-gray-800"><?= htmlspecialchars($other_person) ?></p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <!-- Date & Time -->
+                    <div class="flex items-center gap-3 text-sm">
+                        <div class="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-400">Date & Time</p>
+                            <p class="font-medium text-gray-800">
+                                <?= date("F d, Y", $session_date) ?> at <?= date("h:i A", $session_date) ?>
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Status -->
+                    <div class="flex items-center gap-3 text-sm">
+                        <div class="w-8 h-8 rounded-xl bg-gray-50 flex items-center justify-center flex-shrink-0">
+                            <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-400">Status</p>
+                            <p class="font-medium <?= $status === 'approved' ? 'text-green-600' : 'text-yellow-600' ?> capitalize">
+                                <?= htmlspecialchars($status) ?>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Status / action banner -->
+                <?php if ($status !== 'approved'): ?>
+                    <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4 mb-4 text-sm text-yellow-700">
+                        This session is not yet approved. You can only join once the mentor approves the request.
+                    </div>
+                <?php elseif ($minutes_until > 15): ?>
+                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
+                        <p class="text-sm text-blue-700 font-medium mb-1">Session starts in</p>
+                        <p class="text-2xl font-bold text-blue-600" id="countdown">–</p>
+                        <p class="text-xs text-blue-400 mt-1">You can join 15 minutes before the session starts.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="bg-green-50 border border-green-100 rounded-xl p-4 mb-4 flex items-center gap-3">
+                        <span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse flex-shrink-0"></span>
+                        <p class="text-sm text-green-700 font-medium">
+                            <?= $is_group ? 'Group room is ready — you can start now!' : 'Room is ready — you can join now!' ?>
+                        </p>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Buttons -->
+                <div class="flex flex-col gap-2">
+                    <?php
+                    // Build the room URL — pass type=group through so room.php also knows
+                    $room_url = url('video-room') . '?session_id=' . $session_id
+                        . ($is_group ? '&type=group' : '');
+                    ?>
+                    <?php if ($can_join): ?>
+                        <a href="<?= $room_url ?>"
+                            class="flex items-center justify-center gap-2 w-full py-3 rounded-xl <?= $is_group ? 'bg-purple-500 hover:bg-purple-600' : 'bg-blue-500 hover:bg-blue-600' ?> text-white text-sm font-medium transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                            </svg>
+                            <?= $is_group ? 'Start Group Session' : 'Join Video Session' ?>
+                        </a>
+                    <?php else: ?>
+                        <button disabled
+                            class="flex items-center justify-center gap-2 w-full py-3 rounded-xl bg-gray-100 text-gray-400 text-sm font-medium cursor-not-allowed">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
+                            </svg>
+                            Not Available Yet
+                        </button>
+                    <?php endif; ?>
+
+                    <a href="<?= $back_url ?>"
+                        class="flex items-center justify-center gap-2 w-full py-2.5 rounded-xl bg-gray-50 border border-gray-100 text-gray-500 text-sm hover:bg-gray-100 transition">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                        </svg>
+                        Back to Sessions
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Branding -->
+        <p class="text-center text-xs text-gray-400 mt-4">
+            NEUST Mentoring Platform &bull; Powered by Jitsi Meet
+        </p>
+    </div>
+
+    <?php if ($status === 'approved' && $minutes_until > 0): ?>
+        <script>
+            const sessionDate = <?= $session_date * 1000 ?>;
+
+            function updateCountdown() {
+                const diff = sessionDate - Date.now();
+                if (diff <= 0) {
+                    location.reload();
+                    return;
+                }
+                const h = Math.floor(diff / 3600000);
+                const m = Math.floor((diff % 3600000) / 60000);
+                const s = Math.floor((diff % 60000) / 1000);
+                const el = document.getElementById('countdown');
+                if (el) el.textContent =
+                    (h > 0 ? h + 'h ' : '') + m + 'm ' + s + 's';
+            }
+            updateCountdown();
+            setInterval(updateCountdown, 1000);
+        </script>
+    <?php endif; ?>
+
+</body>
+
+</html>

@@ -1,0 +1,812 @@
+/* PeerConnect admin panel.
+   Extracted from App/views/admin/layout.php so the browser can cache it.
+   It was inlined into every admin page. The theme colour an admin picks
+   is still emitted inline further down layout.php, after this file, so it
+   keeps overriding these tokens.
+   Edit this file, not a <style> block. */
+
+        /* Design tokens — copied from includes/design_system.php's :root block
+           rather than including that file, since it also defines #sidebar/.app
+           rules that conflict with this page's own sidebar (see the responsive
+           block below). This keeps the admin shell self-contained: the color/
+           spacing/shadow tokens its own component styles (act-btn, badge-*,
+           tbl-*, etc.) rely on, without the conflicting layout rules. */
+        :root {
+            --forest: #020547;
+            --forest-2: #0077B6;
+            --mint: #0087CF;
+            --mint-soft: #BFE3F4;
+            --mint-faint: #EAF6FB;
+            --gold: #F2B705;
+            --gold-light: #FEF6DC;
+            --ink: #181D27;
+            --gray-900: #181D27;
+            --gray-800: #262B36;
+            --gray-700: #3D424D;
+            --gray-600: #565B66;
+            --gray-500: #717680;
+            --gray-400: #9A9EA6;
+            --gray-300: #C2C5CA;
+            --gray-200: #DADCDF;
+            --gray-100: #EDEDED;
+            --gray-50: #F5F5F5;
+            --surface: #ffffff;
+            --bg: #EDEDED;
+            --border: #C2C5CA;
+            --navy: #023047;
+            --navy-2: #0077B6;
+            --accent: #0087CF;
+            --accent-2: #0087CF;
+            --accent-soft: #BFE3F4;
+            --accent-faint: #EAF6FB;
+            --danger: #C0392B;
+            --danger-bg: #FDECEA;
+            --success: #1F7A5C;
+            --success-bg: #E6F4EE;
+            --warning: #B87A10;
+            --warning-bg: #FEF3E2;
+            --info: #1A5C9A;
+            --info-bg: #EAF1FB;
+            --purple: #5B4FCF;
+            --purple-bg: #EFEDFC;
+            --shadow-xs: 0 1px 3px rgba(24, 29, 39, .06);
+            --shadow-sm: 0 4px 16px rgba(24, 29, 39, .08);
+            --shadow-md: 0 12px 32px rgba(24, 29, 39, .10);
+            --shadow-lg: 0 24px 56px rgba(24, 29, 39, .14);
+            --radius-sm: 6px;
+            --radius: 10px;
+            --radius-lg: 14px;
+            --radius-xl: 20px;
+        }
+
+        * {
+            font-family: 'DM Sans', sans-serif;
+        }
+
+        body {
+            background: #f5f5f3;
+        }
+
+        h1,
+        h2,
+        h3 {
+            font-family: "DM Sans", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        }
+
+        #sidebar {
+            width: 226px;
+            min-width: 0;
+            transition: width .3s;
+            flex-shrink: 0;
+            /* Dark navy, matching the reference and the mentor/mentee shell.
+               The admin panel used to be the only part of the app with a white
+               rail, which made it look like a different product. */
+            background: linear-gradient(178deg, #020547 0%, #0B1440 62%, #14225A 100%) !important;
+            border-right: none !important;
+            color: #fff;
+        }
+
+        /* The rail's own scrollbar, hidden.
+           Windows draws it 15px wide with arrow buttons, in system grey — a
+           heavy strip of chrome down the navy, and usually for only a few dozen
+           pixels of overflow. The nav still scrolls by wheel, trackpad, arrow
+           keys and focus, so nothing below the fold becomes unreachable; only
+           the bar itself is gone. This is the rail alone — the page's own
+           scrollbar on <main> is untouched. */
+        #sidebar nav {
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+
+        #sidebar nav::-webkit-scrollbar {
+            width: 0;
+            height: 0;
+        }
+
+        #sidebar.collapsed {
+            width: 72px;
+            /* min-width, not just width: the rail is a flex item, and a flex
+               item's automatic minimum size is its min-content width. The
+               brand block and the nested Users links pushed that past 72px,
+               so the collapsed width was silently ignored. */
+            min-width: 72px;
+        }
+
+        #sidebar.collapsed .menu-label {
+            display: none;
+        }
+
+        #sidebar.collapsed .sidebar-link {
+            justify-content: center;
+            padding: 10px 0;
+            gap: 0;
+        }
+
+        #sidebar.collapsed #logo-text {
+            display: none;
+        }
+
+        #sidebar.collapsed #sidebar-header {
+            justify-content: center;
+        }
+
+        .sidebar-link {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+            padding: 9px 13px;
+            border-radius: 10px;
+            font-size: 13.5px;
+            font-weight: 500;
+            color: rgba(255, 255, 255, .72);
+            text-decoration: none;
+            transition: background .14s, color .14s;
+            font-family: inherit;
+        }
+
+        .sidebar-link:hover {
+            background: rgba(255, 255, 255, .08);
+            color: #fff;
+        }
+
+        .sidebar-link.active {
+            background: #1B6FD1;
+            color: #fff;
+            font-weight: 600;
+            box-shadow: 0 4px 12px -4px rgba(27, 111, 209, .7);
+        }
+
+        /* The heading of the section you are inside. Legible and clearly
+           current, but not the filled blue the selected child uses — two
+           filled rows stacked on top of each other read as two selections. */
+        .sidebar-link.in-section {
+            color: #fff;
+            font-weight: 600;
+            background: rgba(255, 255, 255, .07);
+        }
+
+        .sidebar-link.in-section:hover {
+            background: rgba(255, 255, 255, .12);
+        }
+
+        /* Collapsed, the children are hidden, so the section heading is the
+           only thing left to show where you are — it takes the highlight. */
+        #sidebar.collapsed .sidebar-link.in-section {
+            background: #1B6FD1;
+            box-shadow: 0 4px 12px -4px rgba(27, 111, 209, .7);
+        }
+
+        /* Second level, under an expanded group. */
+        .sidebar-sub {
+            padding-left: 40px;
+            font-size: 12.5px;
+            gap: 9px;
+        }
+
+        .sidebar-sub i {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, .34);
+            flex-shrink: 0;
+        }
+
+        .sidebar-sub.active i {
+            background: #fff;
+        }
+
+        /* The group toggle carries a chevron that turns when it is open. */
+        .sidebar-caret {
+            margin-left: auto;
+            transition: transform .18s;
+            width: 14px !important;
+            height: 14px !important;
+            opacity: .6;
+        }
+
+        details[open]>summary .sidebar-caret {
+            transform: rotate(90deg);
+        }
+
+        summary.sidebar-link {
+            cursor: pointer;
+            list-style: none;
+        }
+
+        summary.sidebar-link::-webkit-details-marker {
+            display: none;
+        }
+
+        .sidebar-link svg {
+            width: 18px;
+            height: 18px;
+            flex-shrink: 0;
+        }
+
+        #profileMenu {
+            display: none;
+            position: absolute;
+            bottom: 64px;
+            left: 8px;
+            width: 210px;
+            background: white;
+            border-radius: 14px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+            padding: 14px;
+            z-index: 50;
+        }
+
+        #profileMenu.open {
+            display: block;
+        }
+
+        /* tab-btn — design system */
+        .tab-btn {
+            padding: 6px 16px;
+            border-radius: var(--radius-sm);
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--gray-600);
+            transition: background .14s, color .14s, border-color .14s;
+            font-family: inherit;
+        }
+
+        .tab-btn:hover {
+            background: var(--mint-faint);
+            border-color: var(--mint-soft);
+            color: var(--forest);
+        }
+
+        .tab-btn.active {
+            background: var(--forest);
+            color: #fff;
+            border-color: var(--forest);
+        }
+
+        /* table */
+        .tbl-header {
+            background: var(--gray-50);
+        }
+
+        .tbl-header th {
+            color: var(--gray-500);
+            padding: 11px 14px;
+            font-size: 11px;
+            font-weight: 600;
+            text-align: left;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .tbl-row td {
+            padding: 12px 14px;
+            font-size: 13.5px;
+            border-bottom: 1px solid var(--border);
+            color: var(--gray-700);
+        }
+
+        .tbl-row:last-child td {
+            border-bottom: none;
+        }
+
+        .tbl-row:hover {
+            background: var(--mint-faint);
+        }
+
+        /* modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(31, 78, 69, .45);
+            backdrop-filter: blur(4px);
+            z-index: 300;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        /* badges — design system tokens */
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 3px 9px;
+            border-radius: var(--radius-sm);
+            font-size: 11.5px;
+            font-weight: 600;
+            line-height: 1;
+        }
+
+        .badge-green {
+            background: var(--mint-faint);
+            color: var(--forest);
+        }
+
+        .badge-red {
+            background: var(--danger-bg);
+            color: var(--danger);
+        }
+
+        .badge-orange {
+            background: var(--gold-light);
+            color: var(--warning);
+        }
+
+        .badge-blue {
+            background: var(--info-bg);
+            color: var(--info);
+        }
+
+        .badge-gray {
+            background: var(--gray-100);
+            color: var(--gray-600);
+        }
+
+        /* bars */
+        .bar-track {
+            background: var(--gray-200);
+            border-radius: 999px;
+            height: 6px;
+            overflow: hidden;
+            flex: 1;
+        }
+
+        .bar-fill {
+            height: 100%;
+            border-radius: 999px;
+            background: var(--forest);
+        }
+
+        .chart-bar {
+            border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+            flex: 1;
+            min-width: 0;
+        }
+
+        /* Responsive: the admin shell previously had no mobile/tablet handling
+           at all. Below 768px the sidebar collapses to the same icon-only
+           rail the desktop "collapsed" state already uses (no new JS/state,
+           just applying that existing treatment by default at narrow widths),
+           and the search bar shrinks instead of forcing horizontal scroll. */
+        @media (max-width: 768px) {
+            #sidebar {
+                width: 64px;
+                min-width: 64px;
+            }
+
+            #sidebar .menu-label,
+            #sidebar #logo-text {
+                display: none;
+            }
+
+            #sidebar .sidebar-link {
+                justify-content: center;
+                padding: 10px 0;
+                gap: 0;
+            }
+
+            #sidebar #sidebar-header {
+                justify-content: center;
+            }
+
+            header .w-64 {
+                width: 100%;
+                max-width: 220px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            header .w-64 {
+                max-width: 140px;
+            }
+
+            main.flex-1 {
+                padding: 16px;
+            }
+        }
+
+        .sidebar-group {
+            padding: 14px 12px 4px;
+            font-size: 10px;
+            font-weight: 700;
+            letter-spacing: .09em;
+            text-transform: uppercase;
+            color: var(--gray-400);
+            margin: 0;
+        }
+
+        .adm-promo {
+            margin-top: auto;
+            padding: 14px 14px 16px;
+            border-radius: 14px;
+            background: linear-gradient(158deg, #071033, #16265C);
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .adm-promo b {
+            font-size: 13px;
+            font-weight: 600;
+            line-height: 1.35;
+        }
+
+        .adm-promo>span:last-child {
+            font-size: 11.5px;
+            color: rgba(255, 255, 255, .62);
+        }
+
+        .adm-promo-ico {
+            width: 30px;
+            height: 30px;
+            margin-bottom: 7px;
+            border-radius: 9px;
+            display: grid;
+            place-items: center;
+            background: rgba(255, 255, 255, .12);
+            color: #8FC4F5;
+        }
+
+        .adm-promo-ico svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        /* Collapsed rail: the label-only rows and the promo have nothing to
+           show, so they go with the labels. */
+        #sidebar.collapsed .sidebar-group,
+        #sidebar.collapsed .adm-promo {
+            display: none;
+        }
+
+        #sidebar-header {
+            padding: 2px 14px 6px;
+        }
+
+        .adm-brand {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            text-decoration: none;
+        }
+
+        .adm-brand svg {
+            width: 32px;
+            height: 32px;
+            flex: 0 0 32px;
+        }
+
+        /* An uploaded logo keeps the mark's height but sets its own width,
+           so a wide wordmark is not squashed into the 32px square. */
+        .adm-brand-logo {
+            width: auto;
+            max-width: 140px;
+            height: 32px;
+            object-fit: contain;
+            flex: 0 0 auto;
+        }
+
+        .adm-brand-name {
+            font-size: 15px;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1.1;
+            letter-spacing: .01em;
+        }
+
+        .adm-brand-name em {
+            font-style: normal;
+            color: #4E9BEA;
+        }
+
+        .adm-brand-tag {
+            font-size: 9.5px;
+            color: rgba(255, 255, 255, .5);
+        }
+
+        #sidebar .sidebar-group {
+            color: rgba(255, 255, 255, .38);
+        }
+
+        #sidebar .adm-promo {
+            margin: auto 8px 4px;
+            background: rgba(255, 255, 255, .07);
+            border: 1px solid rgba(255, 255, 255, .1);
+        }
+
+        #sidebar .adm-promo b {
+            color: #fff;
+        }
+
+        #sidebar .adm-promo>span:last-child {
+            color: rgba(255, 255, 255, .58);
+        }
+
+        #sidebar .sidebar-foot {
+            border-top: 1px solid rgba(255, 255, 255, .1);
+        }
+
+        #sidebar-toggle {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            display: grid;
+            place-items: center;
+            color: rgba(255, 255, 255, .6);
+            flex-shrink: 0;
+        }
+
+        #sidebar-toggle:hover {
+            background: rgba(255, 255, 255, .1);
+            color: #fff;
+        }
+
+        #sidebar.collapsed .adm-brand-name,
+        #sidebar.collapsed .adm-brand-tag,
+        #sidebar.collapsed .sidebar-caret {
+            display: none;
+        }
+
+        #sidebar.collapsed .adm-brand {
+            justify-content: center;
+        }
+
+        /* The rail is far narrower than a wordmark, so a custom logo shrinks
+           to the icon slot rather than overflowing it. */
+        #sidebar.collapsed .adm-brand-logo {
+            max-width: 34px;
+        }
+
+        #sidebar.collapsed #sidebar-header {
+            flex-direction: column;
+            gap: 8px;
+            padding: 2px 0 8px;
+        }
+
+        #sidebar.collapsed .sidebar-foot {
+            padding-left: 6px;
+            padding-right: 6px;
+        }
+
+        #sidebar.collapsed .sidebar-link {
+            justify-content: center;
+            padding: 10px 0;
+            gap: 0;
+        }
+
+        #sidebar.collapsed .sidebar-sub {
+            display: none;
+        }
+
+        /* Profile menu sits on the dark rail, so it needs its own surface. */
+        #profileMenu {
+            background: #fff;
+        }
+
+        /* ── Topbar ── */
+        .adm-top-search {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            width: min(420px, 42vw);
+            padding: 9px 16px;
+            border-radius: 999px;
+            background: var(--gray-50);
+            border: 1px solid transparent;
+        }
+
+        .adm-top-search:focus-within {
+            background: #fff;
+            border-color: var(--mint-soft);
+        }
+
+        /* ── Notification bell ── */
+        .adm-bell-wrap {
+            position: relative;
+        }
+
+        .adm-bell-panel[hidden] {
+            display: none;
+        }
+
+        .adm-bell-panel {
+            position: absolute;
+            right: 0;
+            top: 44px;
+            z-index: 80;
+            width: 360px;
+            max-width: 92vw;
+            background: #fff;
+            border: 1px solid var(--gray-200);
+            border-radius: 14px;
+            box-shadow: 0 18px 44px -14px rgba(16, 24, 40, .34);
+            overflow: hidden;
+        }
+
+        .adm-bell-hd {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            padding: 13px 16px;
+            border-bottom: 1px solid var(--gray-100);
+        }
+
+        .adm-bell-hd b {
+            font-size: 14.5px;
+            font-weight: 700;
+            color: var(--forest);
+        }
+
+        .adm-bell-hd form {
+            margin: 0;
+        }
+
+        .adm-bell-hd button {
+            font-size: 12.5px;
+            font-weight: 600;
+            color: #1B6FD1;
+            background: none;
+            border: 0;
+            cursor: pointer;
+        }
+
+        .adm-bell-hd button:hover {
+            text-decoration: underline;
+        }
+
+        .adm-bell-body {
+            max-height: 68vh;
+            overflow-y: auto;
+        }
+
+        .adm-bell-sec {
+            margin: 0;
+            padding: 10px 16px 5px;
+            font-size: 10.5px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .07em;
+            color: var(--gray-400);
+        }
+
+        .adm-bell-item {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 16px;
+            font-size: 13px;
+            color: var(--gray-600);
+            line-height: 1.5;
+            text-decoration: none;
+        }
+
+        .adm-bell-item:hover {
+            background: var(--gray-50);
+        }
+
+        .adm-bell-item.unread {
+            background: #F2F8FE;
+        }
+
+        .adm-bell-item b {
+            color: var(--gray-800);
+            font-weight: 600;
+        }
+
+        .adm-bell-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            margin-top: 7px;
+            flex: none;
+        }
+
+        .bell-blue {
+            background: #1B6FD1;
+        }
+
+        .bell-red {
+            background: #D64B34;
+        }
+
+        .bell-grey {
+            background: var(--gray-200);
+        }
+
+        .adm-bell-txt {
+            min-width: 0;
+        }
+
+        .adm-bell-when {
+            display: block;
+            margin-top: 2px;
+            font-size: 11.5px;
+            color: var(--gray-400);
+        }
+
+        .adm-bell-more {
+            display: block;
+            padding: 7px 16px 11px;
+            font-size: 12.5px;
+            font-weight: 600;
+            color: #1B6FD1;
+            text-decoration: none;
+        }
+
+        .adm-bell-more:hover {
+            text-decoration: underline;
+        }
+
+        .adm-bell-empty {
+            margin: 0;
+            padding: 24px 16px;
+            text-align: center;
+            font-size: 13px;
+            color: var(--gray-400);
+        }
+
+        .adm-who {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 4px 10px 4px 4px;
+            border-radius: 999px;
+        }
+
+        .adm-who:hover {
+            background: var(--gray-50);
+        }
+
+        .adm-who-av {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: #1B6FD1;
+            color: #fff;
+            display: grid;
+            place-items: center;
+            font-size: 13px;
+            font-weight: 700;
+            flex-shrink: 0;
+            overflow: hidden;
+        }
+
+        .adm-who-av img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .adm-who-n {
+            font-size: 13.5px;
+            font-weight: 600;
+            color: var(--gray-800);
+            line-height: 1.2;
+        }
+
+        .adm-who-r {
+            font-size: 11.5px;
+            color: var(--gray-400);
+        }
+
+        @media (max-width: 900px) {
+            .adm-who-txt {
+                display: none;
+            }
+
+            .adm-top-search {
+                width: 190px;
+            }
+        }

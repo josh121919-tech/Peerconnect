@@ -1,0 +1,408 @@
+/* Design System - Typography & Color Palette */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* Typography */
+:root {
+  --font-primary: 'Inter', sans-serif;
+  --font-secondary: 'Inter', sans-serif; /* Unified sans-serif system, weight does the work headings used to do */
+  
+  /* Font weights */
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  
+  /* Font sizes */
+  --font-size-xs: 0.75rem; /* 12px */
+  --font-size-sm: 0.875rem; /* 14px */
+  --font-size-base: 1rem; /* 16px */
+  --font-size-lg: 1.125rem; /* 18px */
+  --font-size-xl: 1.25rem; /* 20px */
+  --font-size-2xl: 1.5rem; /* 24px */
+  --font-size-3xl: 1.875rem; /* 30px */
+  --font-size-4xl: 2.25rem; /* 36px */
+}
+
+/* Color Palette */
+:root {
+  /* Brand Colors */
+  --color-primary: #0A1A7B; /* Deep navy/indigo */
+  --color-primary-dark: #05051B;
+  --color-primary-light: #142B9E;
+
+  /* Accent Colors */
+  --color-accent: #FF5A5F; /* Coral - primary CTA color */
+  --color-accent-dark: #DA3D2A;
+  --color-accent-light: #FF7A7E;
+  
+  /* Secondary */
+  --color-secondary: #F88634; /* Warm orange */
+  --color-secondary-dark: #D97706;
+  --color-secondary-light: #FBBF24;
+
+  /* Status colors */
+  --color-success: #30D158;
+  --color-success-light: #EAFBF0;
+  --color-info: #17A2B8;
+  --color-info-light: #E6F4F9;
+  --color-danger: #DA3D2A;
+  --color-danger-light: #FFEBEA;
+  
+  /* Neutral Colors */
+  --color-neutral-50: #F9FAFB;
+  --color-neutral-100: #F3F4F6;
+  --color-neutral-200: #E5E7EB;
+  --color-neutral-300: #D1D5DB;
+  --color-neutral-400: #9CA3AF;
+  --color-neutral-500: #6B7280;
+  --color-neutral-600: #4B5563;
+  --color-neutral-700: #374151;
+  --color-neutral-800: #2F2F2F;
+  --color-neutral-900: #111827;
+  
+  /* Backgrounds */
+  --color-bg-primary: #FFFFFF;
+  --color-bg-secondary: #F9FAFB;
+  --color-bg-tertiary: #F3F4F6;
+  
+  /* Shadows */
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  
+  /* Border radius */
+  --radius-sm: 0.25rem; /* 4px */
+  --radius-md: 0.5rem; /* 8px */
+  --radius-lg: 0.75rem; /* 12px */
+  --radius-xl: 1rem; /* 16px */
+  --radius-full: 9999px;
+  
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-medium: 200ms ease;
+  --transition-slow: 300ms ease;
+}
+
+/* Base styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 16px;
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-primary);
+  font-weight: var(--font-weight-regular);
+  background-color: var(--color-bg-secondary);
+  color: var(--color-neutral-800);
+  line-height: 1.6;
+}
+
+/* Typography utilities */
+.text-xs { font-size: var(--font-size-xs); }
+.text-sm { font-size: var(--font-size-sm); }
+.text-base { font-size: var(--font-size-base); }
+.text-lg { font-size: var(--font-size-lg); }
+.text-xl { font-size: var(--font-size-xl); }
+.text-2xl { font-size: var(--font-size-2xl); }
+.text-3xl { font-size: var(--font-size-3xl); }
+.text-4xl { font-size: var(--font-size-4xl); }
+
+.font-light { font-weight: var(--font-weight-regular); }
+.font-medium { font-weight: var(--font-weight-medium); }
+.font-semibold { font-weight: var(--font-weight-semibold); }
+.font-bold { font-weight: var(--font-weight-bold); }
+
+/* Color utilities */
+.text-primary { color: var(--color-primary); }
+.text-secondary { color: var(--color-secondary); }
+.text-accent { color: var(--color-accent); }
+.text-neutral-50 { color: var(--color-neutral-50); }
+.text-neutral-100 { color: var(--color-neutral-100); }
+.text-neutral-200 { color: var(--color-neutral-200); }
+.text-neutral-300 { color: var(--color-neutral-300); }
+.text-neutral-400 { color: var(--color-neutral-400); }
+.text-neutral-500 { color: var(--color-neutral-500); }
+.text-neutral-600 { color: var(--color-neutral-600); }
+.text-neutral-700 { color: var(--color-neutral-700); }
+.text-neutral-800 { color: var(--color-neutral-800); }
+.text-neutral-900 { color: var(--color-neutral-900); }
+
+.bg-primary { background-color: var(--color-primary); }
+.bg-secondary { background-color: var(--color-secondary); }
+.bg-accent { background-color: var(--color-accent); }
+.bg-neutral-50 { background-color: var(--color-neutral-50); }
+.bg-neutral-100 { background-color: var(--color-neutral-100); }
+.bg-neutral-200 { background-color: var(--color-neutral-200); }
+.bg-neutral-300 { background-color: var(--color-neutral-300); }
+.bg-neutral-400 { background-color: var(--color-neutral-400); }
+.bg-neutral-500 { background-color: var(--color-neutral-500); }
+.bg-neutral-600 { background-color: var(--color-neutral-600); }
+.bg-neutral-700 { background-color: var(--color-neutral-700); }
+.bg-neutral-800 { background-color: var(--color-neutral-800); }
+.bg-neutral-900 { background-color: var(--color-neutral-900); }
+
+.border-primary { border-color: var(--color-primary); }
+.border-secondary { border-color: var(--color-secondary); }
+.border-accent { border-color: var(--color-accent); }
+.border-neutral-200 { border-color: var(--color-neutral-200); }
+.border-neutral-300 { border-color: var(--color-neutral-300); }
+
+/* Button styles */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-weight-semibold);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--transition-medium);
+  border: none;
+  white-space: nowrap;
+}
+
+.btn-primary {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-primary-dark);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-secondary {
+  background-color: var(--color-secondary);
+  color: white;
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-secondary-dark);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-accent {
+  background-color: var(--color-accent);
+  color: white;
+}
+
+.btn-accent:hover {
+  background-color: var(--color-accent-dark);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn-outline {
+  border: 2px solid;
+  background: transparent;
+}
+
+.btn-outline-primary {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.btn-outline-primary:hover {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.btn-outline-secondary {
+  border-color: var(--color-secondary);
+  color: var(--color-secondary);
+}
+
+.btn-outline-secondary:hover {
+  background-color: var(--color-secondary);
+  color: white;
+}
+
+.btn-sm { padding: 0.5rem 1rem; font-size: var(--font-size-sm); }
+.btn-md { padding: 0.75rem 1.5rem; font-size: var(--font-size-base); }
+.btn-lg { padding: 1rem 2rem; font-size: var(--font-size-lg); }
+
+/* Card styles */
+.card {
+  background-color: var(--color-bg-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: all var(--transition-medium);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.card-header {
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--color-neutral-200);
+}
+
+.card-body {
+  padding: 1.5rem;
+}
+
+.card-footer {
+  padding: 1.5rem;
+  border-top: 1px solid var(--color-neutral-200);
+}
+
+/* Input styles */
+.input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--color-neutral-200);
+  border-radius: var(--radius-md);
+  font-size: var(--font-size-base);
+  font-family: var(--font-primary);
+  transition: all var(--transition-medium);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+}
+
+.input-error {
+  border-color: var(--color-accent);
+}
+
+.input-error:focus {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.2);
+}
+
+/* Label styles */
+.label {
+  display: block;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  margin-bottom: 0.5rem;
+  color: var(--color-neutral-700);
+}
+
+/* Link styles */
+.link {
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: var(--font-weight-medium);
+  transition: color var(--transition-fast);
+}
+
+.link:hover {
+  color: var(--color-primary-dark);
+  text-decoration: underline;
+}
+
+/* Badge styles */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: 0.25rem 0.75rem;
+  border-radius: var(--radius-full);
+}
+
+.badge-primary {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+.badge-secondary {
+  background-color: var(--color-secondary);
+  color: white;
+}
+
+.badge-accent {
+  background-color: var(--color-accent);
+  color: white;
+}
+
+.badge-neutral {
+  background-color: var(--color-neutral-200);
+  color: var(--color-neutral-800);
+}
+
+/* Avatar styles */
+.avatar {
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--radius-full);
+  background-color: var(--color-neutral-200);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-neutral-800);
+  overflow: hidden;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Gradient backgrounds */
+.bg-gradient-primary {
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-dark));
+}
+
+.bg-gradient-secondary {
+  background: linear-gradient(135deg, var(--color-secondary), var(--color-secondary-dark));
+}
+
+/* Fade effects for visual emphasis */
+.fade-background {
+  position: relative;
+  overflow: hidden;
+}
+
+.fade-background::before {
+  content: "Aa";
+  position: absolute;
+  font-size: 12rem;
+  font-weight: var(--font-weight-bold);
+  color: var(--color-neutral-100);
+  opacity: 0.05;
+  pointer-events: none;
+  user-select: none;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-15deg);
+  font-family: var(--font-primary);
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  html {
+    font-size: 14px;
+  }
+  
+  .card {
+    margin: 1rem;
+  }
+  
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  html {
+    font-size: 12px;
+  }
+}

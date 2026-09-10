@@ -1,0 +1,6 @@
+# Store every file exactly as it is on disk: no line-ending conversion, on
+# any machine, whatever that machine's core.autocrlf says. This codebase
+# mixes CRLF and LF files, and letting git normalise them would show every
+# CRLF file as modified for anyone whose settings differ from the committer's.
+# Diffs still work — this only switches off end-of-line rewriting.
+* -text
