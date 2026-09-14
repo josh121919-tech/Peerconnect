@@ -14,7 +14,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'mentee') {
     exit;
 }
 
-$mentee_id = $_SESSION['user_id'];
+$mentee_id = (int)$_SESSION['user_id'];
 $appTz     = new DateTimeZone('Asia/Manila');
 $menteeAlerts = [];
 
@@ -35,17 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cance
 
     // Read the row before the update — afterwards there is no way to tell an
     // approved session (the mentor was expecting it) from one still pending.
-    $before = $con->prepare("
-        SELECT sr.mentor_id, sr.subject, sr.session_date, sr.status,
-               CONCAT(u.firstname,' ',u.lastname) AS mentee_name
-        FROM session_requests sr
-        JOIN users u ON u.user_id = sr.mentee_id
-        WHERE sr.request_id = ? AND sr.mentee_id = ?
-    ");
-    $before->bind_param("ii", $id, $mentee_id);
-    $before->execute();
-    $cancelled = $before->get_result()->fetch_assoc();
-    $before->close();
+    $cancelled = SessionRepository::findForMentee($con, $id, $mentee_id);
 
     // Only a session that has not closed yet can be cancelled. Without the
     // state guard a completed session — one with feedback attached and counted
@@ -54,10 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cance
     // mentor about a session that already happened. The Cancel button is only
     // rendered while the status is 'pending', so this refuses nothing the
     // interface offers; it closes the same request arriving any other way.
-    $stmt = $con->prepare("UPDATE session_requests SET status='cancelled' WHERE request_id=? AND mentee_id=? AND status IN ('pending','approved')");
-    $stmt->bind_param("ii", $id, $mentee_id);
-    $stmt->execute();
-    if ($stmt->affected_rows > 0) {
+    $wasCancelled = SessionRepository::cancelByMentee($con, $id, $mentee_id) > 0;
+    if ($wasCancelled) {
         // Take it back out of any connected Google Calendar. Never fatal.
         GoogleCalendarService::pushSession($con, $id);
 
@@ -75,7 +63,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cance
             );
         }
     }
-    $wasCancelled = $stmt->affected_rows > 0;
     if ($ajax) {
         header('Content-Type: application/json');
         echo json_encode([
@@ -99,10 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remov
         exit('CSRF token mismatch.');
     }
     $id = (int)$_POST['id'];
-    $stmt = $con->prepare("DELETE FROM session_requests WHERE request_id=? AND mentee_id=?");
-    $stmt->bind_param("ii", $id, $mentee_id);
-    $stmt->execute();
-    if ($stmt->affected_rows > 0) {
+    if (SessionRepository::deleteForMentee($con, $id, $mentee_id) > 0) {
         pc_flash('success', 'That request was removed from your list.', 'Request removed');
     }
     header("Location: " . url('mentee-request'));
@@ -111,31 +95,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remov
 
 $status_filter = $_GET['status'] ?? '';
 $search        = $_GET['search'] ?? '';
-$where = "WHERE sr.mentee_id = $mentee_id AND sr.status != 'cancelled'";
-if ($status_filter && $status_filter !== 'all') {
-    $sf = $con->real_escape_string($status_filter);
-    $where .= " AND sr.status = '$sf'";
-}
-if ($search) {
-    $s = $con->real_escape_string($search);
-    $where .= " AND (u.firstname LIKE '%$s%' OR u.lastname LIKE '%$s%')";
-}
+if (!is_string($status_filter)) $status_filter = '';   // ?status[]=… used to end in a fatal error
+if (!is_string($search))        $search = '';
 
-$requests = $con->query("
-    SELECT sr.*, u.firstname, u.lastname, a.session_type, a.duration, CONCAT(u.firstname,' ',u.lastname) AS mentor_name
-    FROM session_requests sr
-    JOIN users u ON sr.mentor_id = u.user_id
-    LEFT JOIN availability a ON a.mentor_id = sr.mentor_id AND a.subject = sr.subject AND DATE(a.date) = DATE(sr.session_date) AND TIME(a.start_time) = TIME(sr.session_date)
-    $where ORDER BY sr.session_date DESC
-");
-
-$archived = $con->query("
-    SELECT sr.*, u.firstname, u.lastname, sr.mentor_id, CONCAT(u.firstname,' ',u.lastname) AS mentor_name
-    FROM session_requests sr
-    JOIN users u ON sr.mentor_id = u.user_id
-    WHERE sr.mentee_id = $mentee_id AND sr.status = 'cancelled'
-    ORDER BY sr.session_date DESC
-");
+// An empty or "0" filter or search means none, as it always has.
+$requests = SessionRepository::requestsForMentee(
+    $con,
+    $mentee_id,
+    ($status_filter && $status_filter !== 'all') ? $status_filter : null,
+    $search ? $search : null
+);
+$archived = SessionRepository::cancelledForMentee($con, $mentee_id);
 
 $request_url = url('mentee-request');
 $find_mentor_url = url('mentee-find');
@@ -254,8 +224,8 @@ $active_page = 'request';
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($requests && $requests->num_rows > 0): ?>
-                            <?php while ($r = $requests->fetch_assoc()):
+                        <?php if ($requests): ?>
+                            <?php foreach ($requests as $r):
                                 $status        = $r['status'];
                                 $session_start = strtotime($r['session_date']);
                                 $durationMins  = isset($r['duration']) ? (int)$r['duration'] : 30;
@@ -295,7 +265,7 @@ $active_page = 'request';
                                         <?php endif; ?>
                                     </td>
                                 </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
                                 <td colspan="5">
@@ -381,8 +351,8 @@ $active_page = 'request';
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($archived && $archived->num_rows > 0): ?>
-                            <?php while ($a = $archived->fetch_assoc()): ?>
+                        <?php if ($archived): ?>
+                            <?php foreach ($archived as $a): ?>
                                 <tr>
                                     <td>
                                         <div style="font-weight:600;color:var(--gray-800);"><?= htmlspecialchars($a['mentor_name']) ?></div>
@@ -399,7 +369,7 @@ $active_page = 'request';
                                         </a>
                                     </td>
                                 </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
                                 <td colspan="4" style="text-align:center;padding:30px;color:var(--gray-400);font-size:13px;">No archived requests</td>

@@ -78,6 +78,254 @@ class SessionRepository extends Repository
         return $counts;
     }
 
+    /**
+     * The availability slot a session was booked into: same mentor, subject,
+     * date and start time. A LEFT JOIN, so a session whose slot was since
+     * edited or deleted still appears, with every $a column NULL.
+     */
+    public static function slotJoin(string $sr = 'sr', string $a = 'a'): string
+    {
+        return "LEFT JOIN availability $a
+                   ON $a.mentor_id        = $sr.mentor_id
+                  AND $a.subject          = $sr.subject
+                  AND DATE($a.date)       = DATE($sr.session_date)
+                  AND TIME($a.start_time) = TIME($sr.session_date)";
+    }
+
+    // ── A mentee's sessions ─────────────────────────────────────────────────
+
+    /**
+     * Every session of the mentee with the mentor's first and last name. With
+     * $status, only sessions in exactly that status (an unknown status simply
+     * matches nothing). $newestFirst orders by session date; without it the
+     * rows come in the database's own order.
+     */
+    public static function withMentorForMentee(mysqli $con, int $menteeId, ?string $status = null, bool $newestFirst = true): array
+    {
+        $sql   = "SELECT sr.*, u.firstname, u.lastname FROM session_requests sr
+                  JOIN users u ON sr.mentor_id = u.user_id
+                  WHERE sr.mentee_id = ?";
+        $types = 'i';
+        $args  = [$menteeId];
+        if ($status !== null) {
+            $sql .= " AND sr.status = ?";
+            $types .= 's';
+            $args[] = $status;
+        }
+        if ($newestFirst) {
+            $sql .= " ORDER BY sr.session_date DESC";
+        }
+        return self::rows($con, $sql, $types, $args);
+    }
+
+    /** How many sessions the mentee has in total. */
+    public static function countForMentee(mysqli $con, int $menteeId): int
+    {
+        return (int)self::value($con, "SELECT COUNT(*) FROM session_requests WHERE mentee_id = ?", 'i', [$menteeId]);
+    }
+
+    /** How many of the mentee's sessions are in any of $statuses. */
+    public static function countForMenteeInStatuses(mysqli $con, int $menteeId, array $statuses): int
+    {
+        if (!$statuses) {
+            return 0;
+        }
+        $marks = implode(',', array_fill(0, count($statuses), '?'));
+        return (int)self::value($con, "
+            SELECT COUNT(*) FROM session_requests WHERE mentee_id = ? AND status IN ($marks)
+        ", 'i' . str_repeat('s', count($statuses)), array_merge([$menteeId], array_values($statuses)));
+    }
+
+    /** How many of the mentee's sessions are dated from $from up to, but not including, $to ('Y-m-d H:i:s'). */
+    public static function countForMenteeBetween(mysqli $con, int $menteeId, string $from, string $to): int
+    {
+        return (int)self::value($con, "
+            SELECT COUNT(*) FROM session_requests
+            WHERE mentee_id = ? AND session_date >= ? AND session_date < ?
+        ", 'iss', [$menteeId, $from, $to]);
+    }
+
+    /** How many of the mentee's sessions fall on the day $day ('Y-m-d'). */
+    public static function countForMenteeOnDay(mysqli $con, int $menteeId, string $day): int
+    {
+        return (int)self::value($con, "
+            SELECT COUNT(*) FROM session_requests WHERE mentee_id = ? AND DATE(session_date) = ?
+        ", 'is', [$menteeId, $day]);
+    }
+
+    /** Sessions per day between $from and $to (exclusive), as ['2026-09-15' => 2, ...]. */
+    public static function countsPerDayForMentee(mysqli $con, int $menteeId, string $from, string $to): array
+    {
+        $out = [];
+        foreach (self::rows($con, "
+            SELECT DATE(session_date) AS d, COUNT(*) AS c FROM session_requests
+            WHERE mentee_id = ? AND session_date >= ? AND session_date < ?
+            GROUP BY DATE(session_date)
+        ", 'iss', [$menteeId, $from, $to]) as $row) {
+            $out[$row['d']] = (int)$row['c'];
+        }
+        return $out;
+    }
+
+    /** The mentee's upcoming sessions with the mentor's name and photo and the slot's type, length and topics. */
+    public static function upcomingWithSlotForMentee(mysqli $con, int $menteeId, int $limit): array
+    {
+        return self::rows($con, "
+            SELECT sr.request_id, sr.subject, sr.session_date, u.firstname, u.lastname,
+                   pr.profile_image, a.session_type, a.duration, a.topics
+            FROM session_requests sr
+            JOIN users u ON sr.mentor_id = u.user_id
+            LEFT JOIN profile pr ON pr.user_id = u.user_id
+            " . self::slotJoin('sr', 'a') . "
+            WHERE sr.mentee_id = ? AND " . self::upcomingCondition('sr') . "
+            ORDER BY sr.session_date ASC
+            LIMIT ?
+        ", 'ii', [$menteeId, $limit]);
+    }
+
+    /**
+     * The mentee's closed sessions, newest first: completed, rejected, cancelled
+     * and missed, with the mentor's name and photo and the mentee's rating.
+     */
+    public static function pastForMentee(mysqli $con, int $menteeId, int $limit): array
+    {
+        return self::rows($con, "
+            SELECT sr.request_id, sr.subject, sr.session_date, sr.status, u.firstname, u.lastname,
+                   pr.profile_image, f.rating
+            FROM session_requests sr
+            JOIN users u ON sr.mentor_id = u.user_id
+            LEFT JOIN profile pr ON pr.user_id = u.user_id
+            LEFT JOIN feedback f ON f.session_id = sr.request_id AND f.mentee_id = sr.mentee_id
+            WHERE sr.mentee_id = ? AND sr.status IN ('completed','rejected','cancelled','missed')
+            ORDER BY sr.session_date DESC
+            LIMIT ?
+        ", 'ii', [$menteeId, $limit]);
+    }
+
+    /**
+     * The mentee's requests page list: everything except cancelled, newest
+     * first, with the slot's type and length and the mentor's name. $status
+     * narrows to one status; $search matches the mentor's first or last name
+     * anywhere (% and _ keep their LIKE meaning, as they always have here).
+     */
+    public static function requestsForMentee(mysqli $con, int $menteeId, ?string $status = null, ?string $search = null): array
+    {
+        $sql = "
+            SELECT sr.*, u.firstname, u.lastname, a.session_type, a.duration, CONCAT(u.firstname,' ',u.lastname) AS mentor_name
+            FROM session_requests sr
+            JOIN users u ON sr.mentor_id = u.user_id
+            " . self::slotJoin('sr', 'a') . "
+            WHERE sr.mentee_id = ? AND sr.status != 'cancelled'";
+        $types = 'i';
+        $args  = [$menteeId];
+        if ($status !== null) {
+            $sql .= " AND sr.status = ?";
+            $types .= 's';
+            $args[] = $status;
+        }
+        if ($search !== null) {
+            $sql .= " AND (u.firstname LIKE ? OR u.lastname LIKE ?)";
+            $types .= 'ss';
+            $args[] = '%' . $search . '%';
+            $args[] = '%' . $search . '%';
+        }
+        return self::rows($con, $sql . " ORDER BY sr.session_date DESC", $types, $args);
+    }
+
+    /** The mentee's cancelled requests, newest first, with the mentor's name. */
+    public static function cancelledForMentee(mysqli $con, int $menteeId): array
+    {
+        return self::rows($con, "
+            SELECT sr.*, u.firstname, u.lastname, sr.mentor_id, CONCAT(u.firstname,' ',u.lastname) AS mentor_name
+            FROM session_requests sr
+            JOIN users u ON sr.mentor_id = u.user_id
+            WHERE sr.mentee_id = ? AND sr.status = 'cancelled'
+            ORDER BY sr.session_date DESC
+        ", 'i', [$menteeId]);
+    }
+
+    /**
+     * One of the mentee's sessions with the mentee's own full name, or null
+     * when it does not exist or belongs to someone else.
+     */
+    public static function findForMentee(mysqli $con, int $sessionId, int $menteeId): ?array
+    {
+        return self::row($con, "
+            SELECT sr.mentor_id, sr.subject, sr.session_date, sr.status,
+                   CONCAT(u.firstname,' ',u.lastname) AS mentee_name
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentee_id
+            WHERE sr.request_id = ? AND sr.mentee_id = ?
+        ", 'ii', [$sessionId, $menteeId]);
+    }
+
+    /**
+     * The mentee cancels one of their own sessions. Only a pending or approved
+     * session can be cancelled; a closed one (completed, missed, rejected,
+     * already cancelled) is left alone. Returns 1 when it was cancelled, else 0.
+     */
+    public static function cancelByMentee(mysqli $con, int $sessionId, int $menteeId): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status='cancelled'
+            WHERE request_id=? AND mentee_id=? AND status IN ('pending','approved')
+        ", 'ii', [$sessionId, $menteeId]);
+    }
+
+    /** The mentee deletes one of their own requests from their list. Returns 1 when a row was deleted, else 0. */
+    public static function deleteForMentee(mysqli $con, int $sessionId, int $menteeId): int
+    {
+        return self::execute($con, "DELETE FROM session_requests WHERE request_id=? AND mentee_id=?", 'ii', [$sessionId, $menteeId]);
+    }
+
+    // ── The mentee calendar (native types: the page passes rows to JavaScript) ──
+
+    /**
+     * The mentee's pending, approved and completed sessions dated from $startDay
+     * to $endDay inclusive ('Y-m-d'), with the mentor's name, photo and club and
+     * the slot's length (60 when there is no slot) and type ('1v1' when none).
+     */
+    public static function calendarForMentee(mysqli $con, int $menteeId, string $startDay, string $endDay): array
+    {
+        return self::typedRows($con, "
+            SELECT sr.request_id, sr.subject, sr.session_date, sr.status, sr.mentor_id,
+                   CONCAT(u.firstname, ' ', u.lastname) AS mentor_name,
+                   p.profile_image, p.club,
+                   COALESCE(a.duration, 60)        AS duration,
+                   COALESCE(a.session_type, '1v1') AS session_type
+            FROM session_requests sr
+            JOIN users u        ON u.user_id = sr.mentor_id
+            LEFT JOIN profile p ON p.user_id = sr.mentor_id
+            " . self::slotJoin('sr', 'a') . "
+            WHERE sr.mentee_id = ?
+              AND sr.status IN ('pending', 'approved', 'completed')
+              AND DATE(sr.session_date) BETWEEN ? AND ?
+            ORDER BY sr.session_date ASC
+        ", 'iss', [$menteeId, $startDay, $endDay]);
+    }
+
+    /**
+     * The calendar's side rail: pending and approved sessions from now on,
+     * soonest first, with the slot's length (60 when there is no slot). Unlike
+     * upcomingCondition(), pending requests are included here.
+     */
+    public static function openFromNowForMentee(mysqli $con, int $menteeId, int $limit): array
+    {
+        return self::typedRows($con, "
+            SELECT sr.request_id, sr.subject, sr.session_date, sr.status, sr.mentor_id,
+                   CONCAT(u.firstname, ' ', u.lastname) AS mentor_name,
+                   COALESCE(a.duration, 60) AS duration
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentor_id
+            " . self::slotJoin('sr', 'a') . "
+            WHERE sr.mentee_id = ?
+              AND sr.status IN ('pending', 'approved')
+              AND sr.session_date >= NOW()
+            ORDER BY sr.session_date ASC
+            LIMIT ?
+        ", 'ii', [$menteeId, $limit]);
+    }
+
     /** Every mentor the mentee has ever sent a request to, whatever became of it. */
     public static function mentorIdsForMentee(mysqli $con, int $menteeId): array
     {

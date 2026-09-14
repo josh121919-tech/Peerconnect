@@ -74,29 +74,7 @@ $startKey = $rangeStart->format('Y-m-d');
 $endKey   = $rangeEnd->format('Y-m-d');
 
 // ── Sessions in range ────────────────────────────────────────────────────
-$stmt = $con->prepare("
-    SELECT sr.request_id, sr.subject, sr.session_date, sr.status, sr.mentor_id,
-           CONCAT(u.firstname, ' ', u.lastname) AS mentor_name,
-           p.profile_image, p.club,
-           COALESCE(a.duration, 60)        AS duration,
-           COALESCE(a.session_type, '1v1') AS session_type
-    FROM session_requests sr
-    JOIN users u        ON u.user_id = sr.mentor_id
-    LEFT JOIN profile p ON p.user_id = sr.mentor_id
-    LEFT JOIN availability a
-           ON a.mentor_id        = sr.mentor_id
-          AND a.subject          = sr.subject
-          AND DATE(a.date)       = DATE(sr.session_date)
-          AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE sr.mentee_id = ?
-      AND sr.status IN ('pending', 'approved', 'completed')
-      AND DATE(sr.session_date) BETWEEN ? AND ?
-    ORDER BY sr.session_date ASC
-");
-$stmt->bind_param("iss", $mentee_id, $startKey, $endKey);
-$stmt->execute();
-$rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+$rows = SessionRepository::calendarForMentee($con, $mentee_id, $startKey, $endKey);
 
 // Keyed by day so the grid can look each date up directly.
 $byDay = [];
@@ -105,32 +83,9 @@ foreach ($rows as $r) {
 }
 
 // ── Upcoming, for the side rail (not limited to the visible range) ───────
-$up = $con->prepare("
-    SELECT sr.request_id, sr.subject, sr.session_date, sr.status, sr.mentor_id,
-           CONCAT(u.firstname, ' ', u.lastname) AS mentor_name,
-           COALESCE(a.duration, 60) AS duration
-    FROM session_requests sr
-    JOIN users u ON u.user_id = sr.mentor_id
-    LEFT JOIN availability a
-           ON a.mentor_id        = sr.mentor_id
-          AND a.subject          = sr.subject
-          AND DATE(a.date)       = DATE(sr.session_date)
-          AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE sr.mentee_id = ?
-      AND sr.status IN ('pending', 'approved')
-      AND sr.session_date >= NOW()
-    ORDER BY sr.session_date ASC
-    LIMIT 5
-");
-$up->bind_param("i", $mentee_id);
-$up->execute();
-$upcoming = $up->get_result()->fetch_all(MYSQLI_ASSOC);
-$up->close();
+$upcoming = SessionRepository::openFromNowForMentee($con, $mentee_id, 5);
 
-$approved_total = (int)($con->query("
-    SELECT COUNT(*) c FROM session_requests
-    WHERE mentee_id = $mentee_id AND status = 'approved'
-")->fetch_assoc()['c'] ?? 0);
+$approved_total = SessionRepository::countForMenteeInStatuses($con, $mentee_id, ['approved']);
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 $statusMeta = [

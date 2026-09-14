@@ -11,23 +11,21 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'mentee') {
     exit;
 }
 date_default_timezone_set('Asia/Manila');
-$mentee_id = $_SESSION['user_id'];
+$mentee_id = (int)$_SESSION['user_id'];
 $appTz = new DateTimeZone('Asia/Manila');
 $menteeSessionAlerts = [];
 $now = new DateTime('now', $appTz);
 
+// Every list and count on this page comes from SessionRepository.
 $filter = $_GET['status'] ?? 'all';
-$where = "WHERE sr.mentee_id = $mentee_id";
-if ($filter !== 'all') {
-    $safe = $con->real_escape_string($filter);
-    $where .= " AND sr.status = '$safe'";
+if (!is_string($filter)) {
+    $filter = 'all';   // ?status[]=… used to end in a fatal error
 }
 
-$sessions = $con->query("SELECT sr.*, u.firstname, u.lastname FROM session_requests sr JOIN users u ON sr.mentor_id = u.user_id $where ORDER BY sr.session_date DESC");
+$sessions = SessionRepository::withMentorForMentee($con, $mentee_id, $filter !== 'all' ? $filter : null);
 
-$allSessions = $con->query("SELECT sr.*, u.firstname, u.lastname FROM session_requests sr JOIN users u ON sr.mentor_id = u.user_id WHERE sr.mentee_id = $mentee_id");
 $jsData = [];
-while ($r = $allSessions->fetch_assoc()) {
+foreach (SessionRepository::withMentorForMentee($con, $mentee_id, null, false) as $r) {
     $rid = (int)$r['request_id'];
     $timeStr = date('g:i A', strtotime($r['session_date']));
     if (!empty($r['session_end'])) $timeStr .= ' - ' . date('g:i A', strtotime($r['session_end']));
@@ -41,66 +39,20 @@ $curMonthEnd    = date('Y-m-01 00:00:00', strtotime('+1 month'));
 
 // Joined to users to match the Upcoming list, which cannot render a session
 // whose mentor account no longer exists.
-$upcoming_count = (int)($con->query("
-    SELECT COUNT(*) c FROM session_requests sr
-    JOIN users u ON u.user_id = sr.mentor_id
-    WHERE sr.mentee_id = $mentee_id AND sr.status = 'approved' AND sr.session_date >= NOW()
-")->fetch_assoc()['c'] ?? 0);
-
-$this_month_count = (int)($con->query("
-    SELECT COUNT(*) c FROM session_requests
-    WHERE mentee_id = $mentee_id AND session_date >= '$curMonthStart' AND session_date < '$curMonthEnd'
-")->fetch_assoc()['c'] ?? 0);
-
-$completed_count = (int)($con->query("
-    SELECT COUNT(*) c FROM session_requests WHERE mentee_id = $mentee_id AND status = 'completed'
-")->fetch_assoc()['c'] ?? 0);
-
-$cancelled_count = (int)($con->query("
-    SELECT COUNT(*) c FROM session_requests WHERE mentee_id = $mentee_id AND status IN ('rejected','cancelled')
-")->fetch_assoc()['c'] ?? 0);
-
-$total_count = (int)($con->query("
-    SELECT COUNT(*) c FROM session_requests WHERE mentee_id = $mentee_id
-")->fetch_assoc()['c'] ?? 0);
+$upcoming_count   = SessionRepository::countUpcomingForMentee($con, $mentee_id);
+$this_month_count = SessionRepository::countForMenteeBetween($con, $mentee_id, $curMonthStart, $curMonthEnd);
+$completed_count  = SessionRepository::countForMenteeInStatuses($con, $mentee_id, ['completed']);
+$cancelled_count  = SessionRepository::countForMenteeInStatuses($con, $mentee_id, ['rejected', 'cancelled']);
+$total_count      = SessionRepository::countForMentee($con, $mentee_id);
 
 // ── Upcoming Sessions list ─────────────────────────────────────────────
-$upcoming_res = $con->query("
-    SELECT sr.request_id, sr.subject, sr.session_date, u.firstname, u.lastname,
-           pr.profile_image, a.session_type, a.duration, a.topics
-    FROM session_requests sr
-    JOIN users u ON sr.mentor_id = u.user_id
-    LEFT JOIN profile pr ON pr.user_id = u.user_id
-    LEFT JOIN availability a ON a.mentor_id = sr.mentor_id AND a.subject = sr.subject
-        AND DATE(a.date) = DATE(sr.session_date) AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE sr.mentee_id = $mentee_id AND sr.status = 'approved' AND sr.session_date >= NOW()
-    ORDER BY sr.session_date ASC
-    LIMIT 5
-");
-$upcoming_list = [];
-while ($row = $upcoming_res->fetch_assoc()) {
-    $upcoming_list[] = $row;
-}
+$upcoming_list = SessionRepository::upcomingWithSlotForMentee($con, $mentee_id, 5);
 
 // ── Past Sessions list (completed / rejected / cancelled / missed) ─────
 // 'missed' is in this list because it is not in any other one: it is not
 // 'approved', so the Upcoming list skips it too, and a missed session used to
 // disappear from the mentee's view entirely.
-$past_res = $con->query("
-    SELECT sr.request_id, sr.subject, sr.session_date, sr.status, u.firstname, u.lastname,
-           pr.profile_image, f.rating
-    FROM session_requests sr
-    JOIN users u ON sr.mentor_id = u.user_id
-    LEFT JOIN profile pr ON pr.user_id = u.user_id
-    LEFT JOIN feedback f ON f.session_id = sr.request_id AND f.mentee_id = sr.mentee_id
-    WHERE sr.mentee_id = $mentee_id AND sr.status IN ('completed','rejected','cancelled','missed')
-    ORDER BY sr.session_date DESC
-    LIMIT 4
-");
-$past_list = [];
-while ($row = $past_res->fetch_assoc()) {
-    $past_list[] = $row;
-}
+$past_list = SessionRepository::pastForMentee($con, $mentee_id, 4);
 
 // ── Upcoming Calendar (month grid + dots) ───────────────────────────────
 $cal_param = $_GET['cal'] ?? date('Y-m');
@@ -116,27 +68,14 @@ $cal_label = date('F Y', $cal_ts);
 $cal_start = "$cal_year-$cal_month-01";
 $cal_end = date('Y-m-d', strtotime('+1 month', $cal_ts));
 
-$cal_dot_map = [];
-$cal_res = $con->query("
-    SELECT DATE(session_date) d, COUNT(*) c FROM session_requests
-    WHERE mentee_id = $mentee_id AND session_date >= '$cal_start' AND session_date < '$cal_end'
-    GROUP BY DATE(session_date)
-");
-while ($row = $cal_res->fetch_assoc()) {
-    $cal_dot_map[$row['d']] = (int)$row['c'];
-}
+$cal_dot_map = SessionRepository::countsPerDayForMentee($con, $mentee_id, $cal_start, $cal_end);
 
 $today_str = date('Y-m-d');
-$todays_sessions = (int)($con->query("
-    SELECT COUNT(*) c FROM session_requests WHERE mentee_id = $mentee_id AND DATE(session_date) = '$today_str'
-")->fetch_assoc()['c'] ?? 0);
+$todays_sessions = SessionRepository::countForMenteeOnDay($con, $mentee_id, $today_str);
 
 $week_start = date('Y-m-d 00:00:00', strtotime('sunday this week', strtotime('-1 day')));
 $week_end   = date('Y-m-d 00:00:00', strtotime($week_start . ' +7 days'));
-$this_week_sessions = (int)($con->query("
-    SELECT COUNT(*) c FROM session_requests
-    WHERE mentee_id = $mentee_id AND session_date >= '$week_start' AND session_date < '$week_end'
-")->fetch_assoc()['c'] ?? 0);
+$this_week_sessions = SessionRepository::countForMenteeBetween($con, $mentee_id, $week_start, $week_end);
 
 $calendar_url = url('mentee-calendar');
 $active_page = 'sessions';
@@ -676,8 +615,8 @@ $active_page = 'sessions';
                         </tr>
                     </thead>
                     <tbody>
-                        <?php if ($sessions && $sessions->num_rows > 0): ?>
-                            <?php while ($s = $sessions->fetch_assoc()):
+                        <?php if ($sessions): ?>
+                            <?php foreach ($sessions as $s):
                                 $sid        = (int)$s['request_id'];
                                 $sdate      = date('m-d-Y', strtotime($s['session_date']));
                                 $stime      = date('g:i A', strtotime($s['session_date']));
@@ -725,7 +664,7 @@ $active_page = 'sessions';
                                         </div>
                                     </td>
                                 </tr>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
                                 <td colspan="6">
