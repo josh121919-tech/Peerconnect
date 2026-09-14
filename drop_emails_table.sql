@@ -16,6 +16,10 @@
 -- its account's users.email. Otherwise nothing is dropped and it says why.
 --
 -- Run with:  mysql -uroot cs < drop_emails_table.sql
+--
+-- RUN on 2026-09-14: the table is gone, the database has 42 tables, and
+-- database_migrations.sql was regenerated to match. Kept as the record of what
+-- was dropped and where the backup is.
 
 SET @unmatched = (
     SELECT COUNT(*)
