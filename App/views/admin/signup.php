@@ -889,7 +889,7 @@ if ($pending) {
                         </span>
                         <div>
                             <p class="as-point-t">Powerful Tools</p>
-                            <p class="as-point-d">Manage users, verifications, badges, categories and reports.</p>
+                            <p class="as-point-d">Manage users, verifications, badges and reports.</p>
                         </div>
                     </div>
 

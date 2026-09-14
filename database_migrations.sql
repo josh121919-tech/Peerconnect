@@ -19,8 +19,9 @@
 --   | sed -E 's/ AUTO_INCREMENT=[0-9]+//; s/DEFINER=`[^`]*`@`[^`]*` //' \
 --   > database_migrations.sql      (then re-add this header)
 --
--- Still includes events, event_registrations and the mentor_feedback_summary
--- view, which are unused. phase4_drop.sql removes them; regenerate once it has run.
+-- Still includes events, event_registrations, categories and the
+-- mentor_feedback_summary view, which are unused. phase4_drop.sql removes them;
+-- regenerate once it has run.
 
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;

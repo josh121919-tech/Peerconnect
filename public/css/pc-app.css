@@ -3664,21 +3664,6 @@
             grid-template-columns: 1fr !important;
         }
 
-        /* Category pill rail — scroll horizontally */
-        .category-rail {
-            grid-auto-columns: minmax(80px, 1fr);
-        }
-
-        .category-pill {
-            min-width: 80px;
-            font-size: 12px !important;
-        }
-
-        .category-icon-box {
-            width: 48px !important;
-            height: 48px !important;
-        }
-
         /* Profile left col becomes horizontal strip */
         .profile-hero {
             padding: 20px 16px !important;

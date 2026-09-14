@@ -1,7 +1,7 @@
 <?php
 if (session_status() === PHP_SESSION_NONE) session_start();
 // Only set $current_page from filename if the including page hasn't already defined it.
-// Pages like badges.php and categories.php set $current_page = 'admin-badges' BEFORE
+// Pages like badges.php set $current_page = 'admin-badges' BEFORE
 // including layout.php so their sidebar link is highlighted correctly.
 if (empty($current_page)) {
     $current_page = basename($_SERVER['PHP_SELF'], '.php');

@@ -186,10 +186,6 @@ return [
     'admin-assessments-export'    => 'App/views/admin/assessments_export.php',
     'admin-action-assessment'     => 'App/views/admin/action_assessment.php',
 
-    // Categories was replaced by Sessions in the admin nav. The route stays so
-    // the page and its data remain reachable rather than being destroyed.
-    'admin-categories'        => 'App/views/admin/categories.php',
-
     // Reports & Analytics. The summary is the overview an admin opens first;
     // Platform analytics is the older, deeper breakdown of mentors and badges.
     // Both read only — they measure, they do not change anything.
