@@ -41,12 +41,11 @@ $mentorAlerts_us = [];
 
 $upcoming_us = $con->query("
     SELECT sr.*, u.firstname, u.lastname,
-           COALESCE(u.email, e.email) AS email,
+           u.email,
            p.course,
            a.session_type, a.duration
     FROM session_requests sr
     JOIN users u        ON sr.mentee_id = u.user_id
-    LEFT JOIN emails e  ON e.user_id = u.user_id
     LEFT JOIN profile p ON p.user_id = u.user_id
     LEFT JOIN availability a
            ON a.mentor_id   = sr.mentor_id

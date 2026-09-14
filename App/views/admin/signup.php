@@ -9,7 +9,7 @@
  *      written to the database here; a verification code is emailed instead
  *      and the pending account is held in the session as a bcrypt hash.
  *   2. Verification    — the emailed code. Five attempts, fifteen minutes.
- *   3. Complete        — only now do the users/emails/passwords rows get
+ *   3. Complete        — only now do the users and passwords rows get
  *      written, in one transaction.
  *
  * Holding the pending signup in the session rather than in a table means an
@@ -118,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } elseif (!EmailService::isConfigured()) {
             $error = 'Email is not configured on this server, so the verification code cannot be sent. Contact the system owner.';
         } else {
-            $dupe = $con->prepare("SELECT 1 FROM emails WHERE email = ? LIMIT 1");
+            $dupe = $con->prepare("SELECT 1 FROM users WHERE email = ? LIMIT 1");
             $dupe->bind_param("s", $email);
             $dupe->execute();
             $email_taken = (bool)$dupe->get_result()->fetch_row();
@@ -226,7 +226,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             // Re-check both uniqueness constraints: someone may have taken the
             // email or username during the fifteen minutes we were waiting.
-            $dupe = $con->prepare("SELECT 1 FROM emails WHERE email = ? LIMIT 1");
+            $dupe = $con->prepare("SELECT 1 FROM users WHERE email = ? LIMIT 1");
             $dupe->bind_param("s", $pending['email']);
             $dupe->execute();
             $email_taken = (bool)$dupe->get_result()->fetch_row();
@@ -246,19 +246,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             } else {
                 $con->begin_transaction();
                 try {
-                    // users.email as well as the emails row. Leaving it NULL
-                    // here is how the admin account came to be missing from
-                    // every report that joins on users.email.
+                    // users.email is the one place an address is stored.
                     $ins = $con->prepare("INSERT INTO users (firstname, lastname, username, role, status, verified, email) VALUES (?,?,?,'admin','active',1,?)");
                     $ins->bind_param("ssss", $pending['firstname'], $pending['lastname'], $pending['username'], $pending['email']);
                     $ins->execute();
                     $uid = (int)$ins->insert_id;
                     $ins->close();
-
-                    $ins2 = $con->prepare("INSERT INTO emails (user_id, email) VALUES (?,?)");
-                    $ins2->bind_param("is", $uid, $pending['email']);
-                    $ins2->execute();
-                    $ins2->close();
 
                     $ins3 = $con->prepare("INSERT INTO passwords (user_id, password_hash) VALUES (?,?)");
                     $ins3->bind_param("is", $uid, $pending['hash']);

@@ -275,9 +275,8 @@ if (empty($current_page)) {
         $adm_me_mail = $_SESSION['email'] ?? '';
         if ($adm_me_id) {
             $meq = $con->prepare("
-                SELECT u.firstname, u.lastname, COALESCE(u.email, e.email) AS email, p.profile_image
+                SELECT u.firstname, u.lastname, u.email, p.profile_image
                 FROM users u
-                LEFT JOIN emails e  ON e.user_id = u.user_id
                 LEFT JOIN profile p ON p.user_id = u.user_id
                 WHERE u.user_id = ? LIMIT 1
             ");

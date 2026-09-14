@@ -59,7 +59,6 @@ $steps = [
     "DELETE FROM restrictions     WHERE user_id IN ($in)",
     "DELETE FROM google_calendar_links WHERE user_id IN ($in)",
     "DELETE FROM passwords        WHERE user_id IN ($in)",
-    "DELETE FROM emails           WHERE user_id IN ($in)",
     "DELETE FROM users            WHERE user_id IN ($in)",
 ];
 

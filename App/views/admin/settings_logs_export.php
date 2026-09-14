@@ -48,8 +48,7 @@ $sql = "
     SELECT l.log_id, l.log_date, l.email, l.activity,
            CONCAT_WS(' ', u.firstname, u.lastname) AS name, u.role, u.user_id
     FROM logs l
-    LEFT JOIN emails e ON e.email = l.email
-    LEFT JOIN users u  ON u.user_id = e.user_id
+    LEFT JOIN users u  ON u.email = l.email
     $where
     ORDER BY l.log_id DESC
 ";

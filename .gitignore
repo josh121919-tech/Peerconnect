@@ -25,6 +25,7 @@ public/uploads/*
 *.sql
 !database_migrations.sql
 !phase4_drop.sql
+!drop_emails_table.sql
 !App/views/Messages/schema.sql
 
 # ─── Dependencies ────────────────────────────────────────────────────────

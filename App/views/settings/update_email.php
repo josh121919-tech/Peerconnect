@@ -44,14 +44,9 @@ if (!$row || !password_verify($password, $row['password_hash'])) {
     exit;
 }
 
-// Uniqueness check across both users.email and the legacy emails table,
-// excluding this user's own current rows.
-$dupCheck = $con->prepare("
-    SELECT user_id FROM users WHERE email = ? AND user_id != ?
-    UNION
-    SELECT user_id FROM emails WHERE email = ? AND user_id != ?
-");
-$dupCheck->bind_param("sisi", $new_email, $user_id, $new_email, $user_id);
+// Taken by anyone else? This user's own current address is excluded.
+$dupCheck = $con->prepare("SELECT user_id FROM users WHERE email = ? AND user_id != ?");
+$dupCheck->bind_param("si", $new_email, $user_id);
 $dupCheck->execute();
 $isDuplicate = $dupCheck->get_result()->num_rows > 0;
 $dupCheck->close();
@@ -67,26 +62,6 @@ try {
     $upd->bind_param("si", $new_email, $user_id);
     $upd->execute();
     $upd->close();
-
-    // P4 migration keeps an `emails` row per user for legacy login lookups —
-    // update it if present, otherwise create it, so login stays consistent.
-    $chk = $con->prepare("SELECT email_id FROM emails WHERE user_id = ?");
-    $chk->bind_param("i", $user_id);
-    $chk->execute();
-    $existing = $chk->get_result()->fetch_assoc();
-    $chk->close();
-
-    if ($existing) {
-        $updEmails = $con->prepare("UPDATE emails SET email = ? WHERE user_id = ?");
-        $updEmails->bind_param("si", $new_email, $user_id);
-        $updEmails->execute();
-        $updEmails->close();
-    } else {
-        $insEmails = $con->prepare("INSERT INTO emails (user_id, email) VALUES (?, ?)");
-        $insEmails->bind_param("is", $user_id, $new_email);
-        $insEmails->execute();
-        $insEmails->close();
-    }
 
     $con->commit();
 } catch (Exception $e) {

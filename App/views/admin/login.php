@@ -91,9 +91,8 @@ if ($is_post && isset($_POST['admin_login'])) {
             $stmt = $con->prepare("
                 SELECT u.user_id, u.firstname, u.status, p.password_hash
                 FROM users u
-                JOIN emails e    ON e.user_id = u.user_id
                 JOIN passwords p ON p.user_id = u.user_id
-                WHERE e.email = ? AND u.role = 'admin'
+                WHERE u.email = ? AND u.role = 'admin'
                 LIMIT 1
             ");
             $stmt->bind_param("s", $email);

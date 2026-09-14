@@ -41,16 +41,13 @@ $totalRows_cs = (int)$countStmt_cs->get_result()->fetch_assoc()['c'];
 $countStmt_cs->close();
 $totalPages_cs = max(1, (int)ceil($totalRows_cs / $perPage_cs));
 
-// COALESCE on the address: legacy accounts have users.email NULL and their
-// address only in `emails` (see PasswordResetService for the same trap).
 $result_cs = $con->prepare("
     SELECT sr.request_id, sr.mentee_id, sr.subject, sr.message, sr.session_date, sr.completed_at,
            u.firstname, u.lastname,
-           COALESCE(u.email, e.email) AS email,
+           u.email,
            p.course
     FROM session_requests sr
     JOIN users u        ON u.user_id = sr.mentee_id
-    LEFT JOIN emails e  ON e.user_id = u.user_id
     LEFT JOIN profile p ON p.user_id = u.user_id
     WHERE sr.mentor_id = ?
       AND sr.status = 'completed'

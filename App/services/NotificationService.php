@@ -173,21 +173,11 @@ class NotificationService
         $upd->close();
     }
 
-    /**
-     * users.email is canonical for regular signups, but Google-OAuth
-     * signups never populate it (google-login.php only writes to `emails`)
-     * — same gap the login query in home.view.php already works around.
-     * Mirrors that exact fallback rather than inventing a new one.
-     */
+    /** The address to email, or null for an account without one (a deleted account). */
     private static function resolveEmail(mysqli $con, int $user_id): ?string
     {
-        $stmt = $con->prepare("
-            SELECT email FROM users WHERE user_id = ? AND email IS NOT NULL AND email != ''
-            UNION
-            SELECT email FROM emails WHERE user_id = ?
-            LIMIT 1
-        ");
-        $stmt->bind_param("ii", $user_id, $user_id);
+        $stmt = $con->prepare("SELECT email FROM users WHERE user_id = ? AND email IS NOT NULL AND email != ''");
+        $stmt->bind_param("i", $user_id);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();

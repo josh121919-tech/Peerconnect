@@ -57,8 +57,7 @@ $events = $con->query("
     SELECT l.activity, l.email, l.log_date,
            CONCAT_WS(' ', u.firstname, u.lastname) AS name, u.role
     FROM logs l
-    LEFT JOIN emails e ON e.email = l.email
-    LEFT JOIN users u ON u.user_id = e.user_id
+    LEFT JOIN users u ON u.email = l.email
     WHERE l.activity NOT LIKE 'admin %' OR l.activity IN ('admin login', 'admin logout', 'admin account created')
     ORDER BY l.log_id DESC LIMIT 8
 ")->fetch_all(MYSQLI_ASSOC);

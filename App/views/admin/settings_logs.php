@@ -62,8 +62,7 @@ $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
 // deleted since is a row with no user to attach.
 $base = "
     FROM logs l
-    LEFT JOIN emails e ON e.email = l.email
-    LEFT JOIN users u  ON u.user_id = e.user_id
+    LEFT JOIN users u  ON u.email = l.email
     LEFT JOIN profile p ON p.user_id = u.user_id
 ";
 
@@ -129,8 +128,7 @@ while ($r = $dq->fetch_assoc()) if (isset($days[$r['d']])) $days[$r['d']] = (int
 $topUsers = $con->query("
     SELECT l.email, COUNT(*) n, CONCAT_WS(' ', u.firstname, u.lastname) AS name, u.role, u.user_id, p.profile_image
     FROM logs l
-    LEFT JOIN emails e ON e.email = l.email
-    LEFT JOIN users u ON u.user_id = e.user_id
+    LEFT JOIN users u ON u.email = l.email
     LEFT JOIN profile p ON p.user_id = u.user_id
     GROUP BY l.email, name, u.role, u.user_id, p.profile_image
     ORDER BY n DESC LIMIT 5

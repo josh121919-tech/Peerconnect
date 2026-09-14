@@ -163,9 +163,8 @@ $st_total = array_sum($st);
 /* ── Lists ────────────────────────────────────────────────────────────── */
 $recent = $con->query("
     SELECT u.user_id, u.firstname, u.lastname, u.role, u.created_at,
-           COALESCE(u.email, e.email) AS email, p.profile_image
+           u.email, p.profile_image
     FROM users u
-    LEFT JOIN emails e  ON e.user_id = u.user_id
     LEFT JOIN profile p ON p.user_id = u.user_id
     ORDER BY u.created_at DESC
     LIMIT 6

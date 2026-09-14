@@ -68,10 +68,6 @@ try {
             'sssss', [$fn, $ln, $em, $role, date('Y-m-d H:i:s', strtotime('-40 days'))]);
         $id[$fn] = $uid;
 
-        // The app reads an address from BOTH users.email and the emails table
-        // (32 places read one, 29 the other), so a sample account that only
-        // had one of them would go missing from half the reports.
-        q($con, "INSERT INTO emails (user_id, email) VALUES (?, ?)", 'is', [$uid, $em]);
         q($con, "INSERT INTO passwords (user_id, password_hash) VALUES (?, ?)", 'is', [$uid, $hash]);
 
         // onboarded_at set: both dashboards send a member to the questionnaire

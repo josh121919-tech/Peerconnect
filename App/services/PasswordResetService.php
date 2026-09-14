@@ -225,26 +225,15 @@ class PasswordResetService
 
     // ── internals ──────────────────────────────────────────────────────
 
-    /**
-     * users.email is where addresses live now; the emails table is the
-     * historic home. Login checks both, so this must too, or an older account
-     * could sign in but never reset.
-     */
+    /** The account an address belongs to. users.email is the only place addresses are stored. */
     private static function findUser(mysqli $con, string $email): ?array
     {
-        // Each branch returns the address it MATCHED on, not u.email. A genuine
-        // legacy account has users.email NULL and its address only in `emails`;
-        // selecting u.email in both branches returned NULL for exactly those
-        // accounts, which then reached EmailService::send() as a null recipient.
         $stmt = $con->prepare("
             SELECT u.user_id, u.email AS email, u.firstname, u.status
             FROM users u WHERE u.email = ?
-            UNION
-            SELECT u.user_id, e.email AS email, u.firstname, u.status
-            FROM emails e JOIN users u ON u.user_id = e.user_id WHERE e.email = ?
             LIMIT 1
         ");
-        $stmt->bind_param("ss", $email, $email);
+        $stmt->bind_param("s", $email);
         $stmt->execute();
         $row = $stmt->get_result()->fetch_assoc();
         $stmt->close();

@@ -109,9 +109,8 @@ if ($email === '') {
 
 $stmt = $con->prepare("
     SELECT u.user_id, u.role
-    FROM emails e
-    JOIN users u ON e.user_id = u.user_id
-    WHERE e.email = ?
+    FROM users u
+    WHERE u.email = ?
 ");
 $stmt->bind_param("s", $email);
 $stmt->execute();
@@ -202,19 +201,12 @@ if ($lastname === '') {
 $con->begin_transaction();
 
 try {
-    // users.email as well as the emails row below. This path used to leave it
-    // NULL, so a Google sign-up produced an account that anything joining on
-    // users.email silently skipped.
+    // users.email is the one place an address is stored.
     $stmt1 = $con->prepare("INSERT INTO users (firstname, middlename, lastname, role, email) VALUES (?, ?, ?, ?, ?)");
     $stmt1->bind_param("sssss", $firstname, $middlename, $lastname, $role, $email);
     $stmt1->execute();
     $user_id = $stmt1->insert_id;
     $stmt1->close();
-
-    $stmt2 = $con->prepare("INSERT INTO emails (user_id, email) VALUES (?, ?)");
-    $stmt2->bind_param("is", $user_id, $email);
-    $stmt2->execute();
-    $stmt2->close();
 
     $randomPasswordHash = password_hash(bin2hex(random_bytes(24)), PASSWORD_BCRYPT);
     $stmt3 = $con->prepare("INSERT INTO passwords (user_id, password_hash) VALUES (?, ?)");

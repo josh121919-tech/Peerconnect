@@ -49,11 +49,10 @@ $totalPages_hist = max(1, (int)ceil($totalRows_hist / $perPage_hist));
 
 $historyStmt = $con->prepare("
     SELECT sr.*, u.firstname, u.lastname,
-           COALESCE(u.email, e.email) AS email,
+           u.email,
            p.course
     FROM session_requests sr
     JOIN users u        ON sr.mentee_id = u.user_id
-    LEFT JOIN emails e  ON e.user_id = u.user_id
     LEFT JOIN profile p ON p.user_id = u.user_id
     WHERE sr.mentor_id = ?
       AND sr.status IN ('rejected','cancelled','missed')

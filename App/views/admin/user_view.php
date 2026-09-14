@@ -31,11 +31,10 @@ $uid = (int)($_GET['id'] ?? 0);
 $us = $con->prepare("
     SELECT u.user_id, u.firstname, u.middlename, u.lastname, u.suffix, u.username,
            u.role, u.status, u.verified, u.created_at,
-           COALESCE(u.email, e.email) AS email,
+           u.email,
            p.full_name, p.student_id, p.course, p.year_level, p.section, p.club,
            p.profile_image, p.phone, p.location, p.bio, p.visibility, p.onboarded_at
     FROM users u
-    LEFT JOIN emails e  ON e.user_id = u.user_id
     LEFT JOIN profile p ON p.user_id = u.user_id
     WHERE u.user_id = ?
     LIMIT 1

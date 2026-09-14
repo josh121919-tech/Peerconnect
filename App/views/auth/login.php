@@ -135,17 +135,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
             } elseif ($email === '' || $password === '') {
                 $login_error = "All fields are required.";
             } else {
-                // users.email first, falling back to the emails table for
-                // accounts that pre-date the merge.
                 $stmt = $con->prepare("
                     SELECT u.user_id, u.role, u.status, u.verified
                     FROM users u WHERE u.email = ?
-                    UNION
-                    SELECT u.user_id, u.role, u.status, u.verified
-                    FROM emails e JOIN users u ON e.user_id = u.user_id WHERE e.email = ?
                     LIMIT 1
                 ");
-                $stmt->bind_param("ss", $email, $email);
+                $stmt->bind_param("s", $email);
                 $stmt->execute();
                 $stmt->store_result();
                 $stmt->bind_result($user_id, $role, $user_status, $verified);

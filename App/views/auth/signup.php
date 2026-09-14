@@ -5,7 +5,7 @@
  *
  * Moved out of the modal in home.view.php with every guard intact: CSRF,
  * reCAPTCHA, the name/email/password validation, the duplicate-email check
- * and the transactional insert across users / emails / passwords.
+ * and the transactional insert across users / passwords.
  */
 
 require_once __DIR__ . '/../db.php';
@@ -94,16 +94,8 @@ if (!$registration_open && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST
         if (!$response_data || empty($response_data->success)) {
             $signup_error = "Please complete the CAPTCHA verification.";
         } else {
-            // Both tables: `emails` is the historic home, `users.email` the
-            // current one. Checking only `emails` (as the old handler did)
-            // would let a duplicate through for any account created since.
-            $dupe = $con->prepare("
-                SELECT 1 FROM users  WHERE email = ?
-                UNION
-                SELECT 1 FROM emails WHERE email = ?
-                LIMIT 1
-            ");
-            $dupe->bind_param("ss", $email, $email);
+            $dupe = $con->prepare("SELECT 1 FROM users WHERE email = ? LIMIT 1");
+            $dupe->bind_param("s", $email);
             $dupe->execute();
             $dupe->store_result();
             $already = $dupe->num_rows > 0;
@@ -119,11 +111,6 @@ if (!$registration_open && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST
                     $stmt1->execute();
                     $new_user_id = $stmt1->insert_id;
                     $stmt1->close();
-
-                    $stmt2 = $con->prepare("INSERT INTO emails (user_id, email) VALUES (?, ?)");
-                    $stmt2->bind_param("is", $new_user_id, $email);
-                    $stmt2->execute();
-                    $stmt2->close();
 
                     $hashed = password_hash($password, PASSWORD_BCRYPT);
                     $stmt3 = $con->prepare("INSERT INTO passwords (user_id, password_hash) VALUES (?, ?)");

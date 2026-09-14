@@ -49,11 +49,6 @@ try {
     $s2->execute();
     $s2->close();
 
-    $s3 = $con->prepare("DELETE FROM emails WHERE user_id = ?");
-    $s3->bind_param("i", $user_id);
-    $s3->execute();
-    $s3->close();
-
     // Clear identifying profile info; leave session/feedback/badge history
     // intact so other users' records (a mentor's earned rating, a session
     // history) aren't corrupted by this account's deletion.

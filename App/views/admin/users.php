@@ -93,7 +93,7 @@ if (in_array($view, ['all', 'mentee', 'mentor', 'admin', 'restricted', 'blocked'
     }
 
     if ($q !== '') {
-        $clauses[] = "CONCAT_WS(' ', u.firstname, u.lastname, u.username, e.email) LIKE ?";
+        $clauses[] = "CONCAT_WS(' ', u.firstname, u.lastname, u.username, u.email) LIKE ?";
         $types .= 's';
         $args[] = '%' . $q . '%';
     }
@@ -114,7 +114,7 @@ if (in_array($view, ['all', 'mentee', 'mentor', 'admin', 'restricted', 'blocked'
         'role'   => 'u.role ASC, u.created_at DESC',
     ][$sort];
 
-    $cs = $con->prepare("SELECT COUNT(*) c FROM users u LEFT JOIN emails e ON e.user_id = u.user_id $where");
+    $cs = $con->prepare("SELECT COUNT(*) c FROM users u $where");
     if ($types !== '') $cs->bind_param($types, ...$args);
     $cs->execute();
     $total = (int)$cs->get_result()->fetch_assoc()['c'];
@@ -123,7 +123,7 @@ if (in_array($view, ['all', 'mentee', 'mentor', 'admin', 'restricted', 'blocked'
     $offset = ($page - 1) * $perPage;
     $ls = $con->prepare("
         SELECT u.user_id, u.firstname, u.lastname, u.role, u.status, u.verified, u.created_at,
-               COALESCE(u.email, e.email) AS email,
+               u.email,
                p.profile_image,
                -- Course and club are collected twice: once on the verification
                -- form, once on the member's own profile. The profile row wins
@@ -150,7 +150,6 @@ if (in_array($view, ['all', 'mentee', 'mentor', 'admin', 'restricted', 'blocked'
                (SELECT AVG(f.rating) FROM feedback f WHERE f.mentor_id = u.user_id)      AS rating_as_mentor,
                (SELECT AVG(m.rating) FROM mentee_reviews m WHERE m.mentee_id = u.user_id) AS rating_as_mentee
         FROM users u
-        LEFT JOIN emails e  ON e.user_id = u.user_id
         LEFT JOIN profile p ON p.user_id = u.user_id
         $where
         ORDER BY $order
@@ -166,10 +165,9 @@ if (in_array($view, ['all', 'mentee', 'mentor', 'admin', 'restricted', 'blocked'
 $verif = [];
 if ($view === 'pending') {
     $verif = $con->query("
-        SELECT v.*, u.firstname, u.lastname, u.role, COALESCE(u.email, e.email) AS email, p.profile_image
+        SELECT v.*, u.firstname, u.lastname, u.role, u.email, p.profile_image
         FROM user_verifications v
         JOIN users u        ON u.user_id = v.user_id
-        LEFT JOIN emails e  ON e.user_id = u.user_id
         LEFT JOIN profile p ON p.user_id = u.user_id
         WHERE v.status = 'pending'
         ORDER BY v.submitted_at ASC

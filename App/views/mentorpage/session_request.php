@@ -229,16 +229,14 @@ if ($mentee_ids) {
     }
 }
 
-// Addresses for the Declined cards. COALESCE because a legacy account has
-// users.email NULL and its address only in `emails`.
+// Addresses for the Declined cards.
 $declined_email = [];
 if ($mentee_ids) {
     $in = implode(',', array_map('intval', $mentee_ids));
     $er = $con->query("
-        SELECT u.user_id, COALESCE(u.email, e.email) AS email
-        FROM users u LEFT JOIN emails e ON e.user_id = u.user_id
+        SELECT u.user_id, u.email
+        FROM users u
         WHERE u.user_id IN ($in)
-        GROUP BY u.user_id
     ");
     while ($x = $er->fetch_assoc()) {
         $declined_email[(int)$x['user_id']] = (string)($x['email'] ?? '');
