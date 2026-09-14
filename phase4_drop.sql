@@ -20,6 +20,10 @@
 --                                              (categories, schema + 15 rows)
 --
 -- Run with:  mysql -uroot cs < phase4_drop.sql
+--
+-- RUN on 2026-09-14: the database now has 43 tables and no views, and
+-- database_migrations.sql was regenerated to match. Kept as the record of what
+-- was dropped and where the backups are.
 
 DROP TABLE IF EXISTS `event_registrations`;
 DROP TABLE IF EXISTS `events`;

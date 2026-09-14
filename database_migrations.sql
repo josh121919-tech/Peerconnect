@@ -18,10 +18,6 @@
 --     --skip-dump-date --skip-comments cs \
 --   | sed -E 's/ AUTO_INCREMENT=[0-9]+//; s/DEFINER=`[^`]*`@`[^`]*` //' \
 --   > database_migrations.sql      (then re-add this header)
---
--- Still includes events, event_registrations, categories and the
--- mentor_feedback_summary view, which are unused. phase4_drop.sql removes them;
--- regenerate once it has run.
 
 
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
@@ -227,22 +223,6 @@ CREATE TABLE `blocks` (
   CONSTRAINT `blocks_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-DROP TABLE IF EXISTS `categories`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `categories` (
-  `category_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `name` varchar(120) NOT NULL,
-  `slug` varchar(120) NOT NULL COMMENT 'URL-safe identifier',
-  `icon` varchar(50) NOT NULL DEFAULT 'explore' COMMENT 'pc_icon() key',
-  `sort_order` int(11) NOT NULL DEFAULT 0,
-  `is_active` tinyint(1) NOT NULL DEFAULT 1,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`category_id`),
-  UNIQUE KEY `ux_slug` (`slug`),
-  KEY `idx_cat_active_sort` (`is_active`,`sort_order`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `certificate_templates`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -270,39 +250,6 @@ CREATE TABLE `emails` (
   UNIQUE KEY `email` (`email`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `emails_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-DROP TABLE IF EXISTS `event_registrations`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `event_registrations` (
-  `event_id` int(10) unsigned NOT NULL,
-  `user_id` int(11) NOT NULL,
-  `registered_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`event_id`,`user_id`),
-  KEY `idx_er_user` (`user_id`),
-  CONSTRAINT `fk_er_event` FOREIGN KEY (`event_id`) REFERENCES `events` (`event_id`) ON DELETE CASCADE,
-  CONSTRAINT `fk_er_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-DROP TABLE IF EXISTS `events`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8 */;
-CREATE TABLE `events` (
-  `event_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
-  `title` varchar(200) NOT NULL,
-  `description` text DEFAULT NULL,
-  `category` varchar(60) NOT NULL DEFAULT 'General',
-  `event_date` date NOT NULL,
-  `start_time` time NOT NULL,
-  `end_time` time NOT NULL,
-  `location` varchar(200) NOT NULL DEFAULT 'Online',
-  `is_online` tinyint(1) NOT NULL DEFAULT 1,
-  `image_path` varchar(500) DEFAULT NULL,
-  `created_by` int(10) unsigned NOT NULL,
-  `created_at` datetime NOT NULL DEFAULT current_timestamp(),
-  PRIMARY KEY (`event_id`),
-  KEY `idx_date` (`event_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `feedback`;
@@ -451,19 +398,6 @@ CREATE TABLE `mentee_reviews` (
   CONSTRAINT `fk_mr_session` FOREIGN KEY (`session_id`) REFERENCES `session_requests` (`request_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-DROP TABLE IF EXISTS `mentor_feedback_summary`;
-/*!50001 DROP VIEW IF EXISTS `mentor_feedback_summary`*/;
-SET @saved_cs_client     = @@character_set_client;
-SET character_set_client = utf8;
-/*!50001 CREATE VIEW `mentor_feedback_summary` AS SELECT
- 1 AS `mentor_id`,
-  1 AS `total_reviews`,
-  1 AS `avg_rating`,
-  1 AS `avg_communication`,
-  1 AS `avg_efficiency`,
-  1 AS `avg_knowledge`,
-  1 AS `avg_skill` */;
-SET character_set_client = @saved_cs_client;
 DROP TABLE IF EXISTS `mentor_scores`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!40101 SET character_set_client = utf8 */;
@@ -866,19 +800,6 @@ CREATE TABLE `users` (
   KEY `idx_users_created` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
-/*!50001 DROP VIEW IF EXISTS `mentor_feedback_summary`*/;
-/*!50001 SET @saved_cs_client          = @@character_set_client */;
-/*!50001 SET @saved_cs_results         = @@character_set_results */;
-/*!50001 SET @saved_col_connection     = @@collation_connection */;
-/*!50001 SET character_set_client      = utf8mb4 */;
-/*!50001 SET character_set_results     = utf8mb4 */;
-/*!50001 SET collation_connection      = utf8mb4_unicode_ci */;
-/*!50001 CREATE ALGORITHM=UNDEFINED */
-/*!50013 SQL SECURITY DEFINER */
-/*!50001 VIEW `mentor_feedback_summary` AS select `feedback`.`mentor_id` AS `mentor_id`,count(0) AS `total_reviews`,round(avg(`feedback`.`rating`),2) AS `avg_rating`,round(avg(`feedback`.`communication`),1) AS `avg_communication`,round(avg(`feedback`.`efficiency`),1) AS `avg_efficiency`,round(avg(`feedback`.`knowledge`),1) AS `avg_knowledge`,round(avg(`feedback`.`skill`),1) AS `avg_skill` from `feedback` group by `feedback`.`mentor_id` */;
-/*!50001 SET character_set_client      = @saved_cs_client */;
-/*!50001 SET character_set_results     = @saved_cs_results */;
-/*!50001 SET collation_connection      = @saved_col_connection */;
 /*!40103 SET TIME_ZONE=@OLD_TIME_ZONE */;
 
 /*!40101 SET SQL_MODE=@OLD_SQL_MODE */;
