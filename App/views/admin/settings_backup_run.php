@@ -31,6 +31,11 @@ date_default_timezone_set('Asia/Manila');
 $dbName = (string)$con->query("SELECT DATABASE()")->fetch_row()[0];
 $file   = 'peerconnect-backup-' . date('Y-m-d-Hi') . '.sql';
 
+// Logged before streaming starts: the file holds every account's data,
+// including password hashes, so the attempt is worth a record even if the
+// download is interrupted.
+pc_admin_log('downloaded a full database backup (' . $file . ')');
+
 header('Content-Type: application/sql; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $file . '"');
 header('Cache-Control: no-store');

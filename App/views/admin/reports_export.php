@@ -30,6 +30,7 @@ $now  = rp_window($con, $from, $to);
 $prev = $R['prev'] ? rp_window($con, $R['prev'][0], $R['prev'][1]) : null;
 
 $name = 'peerconnect-summary-' . $from . '-to-' . $to . '.csv';
+pc_admin_log('exported the overall summary report (' . $name . ')');
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $name . '"');
 header('Cache-Control: no-store');

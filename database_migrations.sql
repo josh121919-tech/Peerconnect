@@ -396,7 +396,7 @@ DROP TABLE IF EXISTS `logs`;
 CREATE TABLE `logs` (
   `log_id` int(11) NOT NULL AUTO_INCREMENT,
   `email` varchar(100) NOT NULL,
-  `activity` varchar(100) NOT NULL,
+  `activity` varchar(255) NOT NULL,
   `log_date` datetime NOT NULL,
   PRIMARY KEY (`log_id`),
   KEY `idx_logs_date` (`log_date`),

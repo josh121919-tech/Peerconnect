@@ -82,6 +82,7 @@ if ($action === 'publish') {
             'Assessment Published',
             'An admin published "' . $title . '". Your mentees can take it now.',
             url('assessments'));
+        pc_admin_log('published assessment #' . $id . ' "' . $title . '"');
         pc_flash('success', '"' . $title . '" is live for that mentor’s mentees.', 'Published');
     } else {
         pc_flash('warning', 'Nothing changed.');
@@ -104,6 +105,7 @@ if ($action === 'publish') {
             'Assessment Taken Offline',
             'An admin took "' . $title . '" offline. Mentees can no longer start it. Attempts already made are kept.',
             url('assessments'));
+        pc_admin_log('took assessment #' . $id . ' "' . $title . '" offline');
         pc_flash('success', '"' . $title . '" is back to draft. Attempts already made are kept.', 'Taken offline');
     } else {
         pc_flash('warning', 'Nothing changed.');

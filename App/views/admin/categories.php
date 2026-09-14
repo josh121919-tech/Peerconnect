@@ -30,6 +30,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $st->bind_param("sssi", $name, $slug, $icon, $order);
             $st->execute() ? $success = "Category {$name} added." : $errors[] = 'Name already exists.';
             $st->close();
+            if ($success !== '') {
+                pc_admin_log('added category "' . $name . '"');
+            }
         }
     } elseif ($action === 'edit') {
         $id    = (int)($_POST['category_id'] ?? 0);
@@ -45,6 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $st->execute();
             $st->close();
             $success = "Category updated.";
+            pc_admin_log('edited category #' . $id . ' "' . $name . '"');
         }
     } elseif ($action === 'toggle') {
         $id = (int)($_POST['category_id'] ?? 0);
@@ -54,17 +58,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $st->execute();
             $st->close();
             $success = "Visibility toggled.";
+            $st = $con->prepare("SELECT name, is_active FROM categories WHERE category_id=?");
+            $st->bind_param("i", $id);
+            $st->execute();
+            $cat = $st->get_result()->fetch_assoc();
+            $st->close();
+            if ($cat) {
+                pc_admin_log(((int)$cat['is_active'] === 1 ? 'showed' : 'hid') . ' category #' . $id . ' "' . $cat['name'] . '"');
+            }
         }
     } elseif ($action === 'delete') {
         $id = (int)($_POST['category_id'] ?? 0);
         if ($id <= 15) {
             $errors[] = 'Default categories cannot be deleted — hide them instead.';
         } elseif ($id) {
+            $st = $con->prepare("SELECT name FROM categories WHERE category_id=?");
+            $st->bind_param("i", $id);
+            $st->execute();
+            $cat = $st->get_result()->fetch_row();
+            $st->close();
             $st = $con->prepare("DELETE FROM categories WHERE category_id=?");
             $st->bind_param("i", $id);
             $st->execute();
+            $deleted = $st->affected_rows > 0;
             $st->close();
             $success = "Category deleted.";
+            if ($deleted) {
+                pc_admin_log('deleted category #' . $id . ($cat ? ' "' . $cat[0] . '"' : ''));
+            }
         }
     } elseif ($action === 'reorder') {
         $ids = json_decode($_POST['order'] ?? '[]', true);
@@ -77,6 +98,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $st->execute();
             }
             $st->close();
+            pc_admin_log('reordered the categories');
             header('Content-Type: application/json');
             echo json_encode(['ok' => true]);
             exit;

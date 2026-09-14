@@ -73,6 +73,7 @@ if ($action === 'archive' || $action === 'restore') {
         $up->bind_param('i', $id);
         $up->execute();
         $up->close();
+        pc_admin_log('archived announcement #' . $id . ' "' . $row['title'] . '"');
         pc_flash('success', '“' . $row['title'] . '” is no longer shown to members. Nothing was deleted.', 'Archived');
     } else {
         // Back to a draft, not straight back out to everyone — restoring
@@ -81,6 +82,7 @@ if ($action === 'archive' || $action === 'restore') {
         $up->bind_param('i', $id);
         $up->execute();
         $up->close();
+        pc_admin_log('restored announcement #' . $id . ' "' . $row['title'] . '" as a draft');
         pc_flash('success', '“' . $row['title'] . '” is back as a draft. Publish it when you are ready.', 'Restored');
     }
     header('Location: ' . $back);
@@ -192,12 +194,18 @@ if ($id > 0) {
     $up->execute();
     $up->close();
 
+    $logRef = 'announcement #' . $id . ' "' . $title . '"';
     if ($goLive) {
         $n = pc_ann_send($con, $id, $title, $aud);
+        pc_admin_log('published ' . $logRef . ' to ' . $n . ' ' . ($n === 1 ? 'person' : 'people'));
         pc_flash('success', 'Published and ' . $n . ' ' . ($n === 1 ? 'person was' : 'people were') . ' notified.', 'Announcement sent');
     } elseif ($status === 'scheduled') {
+        pc_admin_log('scheduled ' . $logRef . ' for ' . date('M j, Y g:i A', strtotime($publishAt)));
         pc_flash('success', 'Scheduled for ' . date('M j, Y \a\t g:i A', strtotime($publishAt)) . '.', 'Scheduled');
     } else {
+        pc_admin_log($wasLive && $status === 'draft'
+            ? 'moved ' . $logRef . ' back to draft'
+            : 'edited ' . $logRef);
         pc_flash('success', 'Your changes to “' . $title . '” were saved.', 'Saved');
     }
 
@@ -215,12 +223,16 @@ if ($id > 0) {
     $newId = (int)$ins->insert_id;
     $ins->close();
 
+    $logRef = 'announcement #' . $newId . ' "' . $title . '"';
     if ($status === 'published') {
         $n = pc_ann_send($con, $newId, $title, $aud);
+        pc_admin_log('published ' . $logRef . ' to ' . $n . ' ' . ($n === 1 ? 'person' : 'people'));
         pc_flash('success', $n . ' ' . ($n === 1 ? 'person was' : 'people were') . ' notified.', 'Announcement sent');
     } elseif ($status === 'scheduled') {
+        pc_admin_log('scheduled ' . $logRef . ' for ' . date('M j, Y g:i A', strtotime($publishAt)));
         pc_flash('success', 'It goes out on ' . date('M j, Y \a\t g:i A', strtotime($publishAt)) . '.', 'Scheduled');
     } else {
+        pc_admin_log('saved ' . $logRef . ' as a draft');
         pc_flash('success', 'Saved as a draft. Nobody has been notified.', 'Draft saved');
     }
 }

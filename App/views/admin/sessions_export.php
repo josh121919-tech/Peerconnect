@@ -64,6 +64,9 @@ if ($types !== '') {
 $labels = ad_session_states();
 $name = 'peerconnect-sessions-' . date('Y-m-d') . ($view !== 'all' ? '-' . $view : '') . '.csv';
 
+// It holds names and session details, so who took a copy is worth a record.
+pc_admin_log('exported ' . count($rows) . ' session' . (count($rows) === 1 ? '' : 's') . ' (' . $name . ')');
+
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $name . '"');
 header('Cache-Control: no-store');

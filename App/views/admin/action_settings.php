@@ -86,6 +86,74 @@ function ast_upload(array $f, int $maxBytes, array $allow, string $prefix): arra
     return [asset('uploads/brand/' . $name), null];
 }
 
+/**
+ * What a save changed, in words, for the activity log — e.g.
+ * ["CAPTCHA off", "sign-in attempts 5 → 3"]. Unchanged values are left out,
+ * so re-saving a form without touching it records nothing. Free text is named
+ * but not copied: a description or message can be long, and the setting row
+ * keeps the value.
+ */
+function ast_changes(array $before, array $pairs): array
+{
+    $labels = [
+        'platform_name'         => ['platform name', 'text'],
+        'platform_tagline'      => ['tagline', 'text'],
+        'platform_description'  => ['description', 'text'],
+        'site_url'              => ['site URL', 'text'],
+        'support_email'         => ['support email', 'text'],
+        'allow_registration'    => ['registration', 'switch'],
+        'auto_approve_mentors'  => ['auto-approve mentors', 'switch'],
+        'require_verification'  => ['require verification', 'switch'],
+        'default_role'          => ['default role', 'value'],
+        'booking_limit_week'    => ['weekly booking limit', 'value'],
+        'maintenance_mode'      => ['maintenance mode', 'switch'],
+        'maintenance_message'   => ['maintenance message', 'text'],
+        'login_lockout_enable'  => ['sign-in lockout', 'switch'],
+        'login_max_attempts'    => ['sign-in attempts', 'value'],
+        'login_lockout_mins'    => ['lockout minutes', 'value'],
+        'captcha_enable'        => ['CAPTCHA', 'switch'],
+        'password_min_length'   => ['minimum password length', 'value'],
+        'email_enable'          => ['email', 'switch'],
+        'email_on_registration' => ['registration emails', 'switch'],
+        'email_on_booking'      => ['booking emails', 'switch'],
+        'email_on_reminder'     => ['reminder emails', 'switch'],
+        'email_on_message'      => ['message emails', 'switch'],
+        'email_on_assessment'   => ['assessment emails', 'switch'],
+        'email_on_announcement' => ['announcement emails', 'switch'],
+        'brand_primary'         => ['primary colour', 'value'],
+        'brand_accent'          => ['accent colour', 'value'],
+        'brand_logo'            => ['logo', 'file'],
+        'brand_favicon'         => ['favicon', 'file'],
+    ];
+
+    $out = [];
+    foreach ($pairs as $key => $new) {
+        $old = (string)($before[$key] ?? '');
+        $new = (string)$new;
+        if ($old === $new || !isset($labels[$key])) continue;
+        [$label, $kind] = $labels[$key];
+        switch ($kind) {
+            case 'switch': $out[] = $label . ($new === '1' ? ' on' : ' off'); break;
+            case 'value':  $out[] = $label . ' ' . ($old === '' ? '(unset)' : $old) . ' → ' . $new; break;
+            case 'file':   $out[] = $label . ($new === '' ? ' removed' : ($old === '' ? ' added' : ' replaced')); break;
+            default:       $out[] = $label;
+        }
+    }
+    return $out;
+}
+
+/** Log a settings save, if it changed anything. */
+function ast_log(array $before, array $pairs, string $what): void
+{
+    $changes = ast_changes($before, $pairs);
+    if ($changes) {
+        pc_admin_log('changed ' . $what . ': ' . implode(', ', $changes));
+    }
+}
+
+// Read before any save below overwrites it, so each log entry can say what changed.
+$before = pc_settings($con);
+
 switch ($section) {
 
     /* ── General ─────────────────────────────────────────────────────── */
@@ -105,13 +173,15 @@ switch ($section) {
             pc_flash('error', 'That support email does not look right.');
             break;
         }
-        pc_setting_save($con, [
+        $pairs = [
             'platform_name'        => mb_substr($name, 0, 60),
             'platform_tagline'     => mb_substr(trim((string)($_POST['platform_tagline'] ?? '')), 0, 120),
             'platform_description' => mb_substr(trim((string)($_POST['platform_description'] ?? '')), 0, 500),
             'site_url'             => $url,
             'support_email'        => $mail,
-        ], $me);
+        ];
+        pc_setting_save($con, $pairs, $me);
+        ast_log($before, $pairs, 'platform details');
         pc_flash('success', 'Platform details saved.', 'Settings updated');
         break;
     }
@@ -121,13 +191,15 @@ switch ($section) {
         $cap  = max(0, min(50, (int)($_POST['booking_limit_week'] ?? 0)));
         $open = ($_POST['allow_registration'] ?? '0') === '1';
 
-        pc_setting_save($con, [
+        $pairs = [
             'allow_registration'   => $open ? '1' : '0',
             'auto_approve_mentors' => ($_POST['auto_approve_mentors'] ?? '0') === '1' ? '1' : '0',
             'require_verification' => ($_POST['require_verification'] ?? '0') === '1' ? '1' : '0',
             'default_role'         => $role,
             'booking_limit_week'   => (string)$cap,
-        ], $me);
+        ];
+        pc_setting_save($con, $pairs, $me);
+        ast_log($before, $pairs, 'platform preferences');
 
         pc_flash('success',
             $open ? 'Preferences saved.' : 'Preferences saved — new registrations are now closed.',
@@ -137,10 +209,12 @@ switch ($section) {
 
     case 'maintenance': {
         $on = ($_POST['maintenance_mode'] ?? '0') === '1';
-        pc_setting_save($con, [
+        $pairs = [
             'maintenance_mode'    => $on ? '1' : '0',
             'maintenance_message' => mb_substr(trim((string)($_POST['maintenance_message'] ?? '')), 0, 300),
-        ], $me);
+        ];
+        pc_setting_save($con, $pairs, $me);
+        ast_log($before, $pairs, 'maintenance settings');
         pc_flash($on ? 'warning' : 'success',
             $on
                 ? 'Members now see the maintenance page. Admins are unaffected, and the sign-in pages stay open.'
@@ -156,13 +230,15 @@ switch ($section) {
         $pwLen = max(6, min(20, (int)($_POST['password_min_length'] ?? 8)));
         $captcha = ($_POST['captcha_enable'] ?? '0') === '1';
 
-        pc_setting_save($con, [
+        $pairs = [
             'login_lockout_enable' => ($_POST['login_lockout_enable'] ?? '0') === '1' ? '1' : '0',
             'login_max_attempts'   => (string)$tries,
             'login_lockout_mins'   => (string)$mins,
             'captcha_enable'       => $captcha ? '1' : '0',
             'password_min_length'  => (string)$pwLen,
-        ], $me);
+        ];
+        pc_setting_save($con, $pairs, $me);
+        ast_log($before, $pairs, 'security settings');
 
         if (!$captcha) {
             pc_flash('warning', 'Saved, but CAPTCHA is now off — the sign-up form has nothing stopping automated accounts.', 'Security updated');
@@ -175,11 +251,20 @@ switch ($section) {
     case 'revoke_token': {
         $tid = (int)($_POST['token_id'] ?? 0);
         if (!$tid) { pc_flash('error', 'No device was given.'); break; }
+        // Whose device, read before the row is gone, for the activity log.
+        $own = $con->prepare("SELECT user_id FROM remember_tokens WHERE token_id = ?");
+        $own->bind_param('i', $tid);
+        $own->execute();
+        $owner = $own->get_result()->fetch_row();
+        $own->close();
         $del = $con->prepare("DELETE FROM remember_tokens WHERE token_id = ?");
         $del->bind_param('i', $tid);
         $del->execute();
         $gone = $del->affected_rows > 0;
         $del->close();
+        if ($gone && $owner) {
+            pc_admin_log('revoked a remembered device of ' . pc_user_name($con, (int)$owner[0]));
+        }
         pc_flash($gone ? 'success' : 'warning',
             $gone ? 'That device has to sign in with a password again.' : 'That device was already revoked.',
             $gone ? 'Device revoked' : '');
@@ -194,6 +279,7 @@ switch ($section) {
             $pairs[$k] = ($_POST[$k] ?? '0') === '1' ? '1' : '0';
         }
         pc_setting_save($con, $pairs, $me);
+        ast_log($before, $pairs, 'email settings');
         pc_flash('success',
             $pairs['email_enable'] === '1'
                 ? 'Email settings saved. In-app notifications are unaffected.'
@@ -226,6 +312,7 @@ switch ($section) {
         );
         $r = EmailService::send($to, 'PeerConnect test email', $html);
         if ($r['success']) {
+            pc_admin_log('sent a test email to ' . $to);
             pc_flash('success', 'Sent to ' . $to . '. If it does not arrive, check the spam folder.', 'Test email sent');
         } else {
             pc_flash('error', 'It did not send: ' . ($r['error'] ?? 'unknown error'));
@@ -237,7 +324,9 @@ switch ($section) {
     case 'brand_colors': {
         if (!empty($_POST['reset'])) {
             $d = pc_setting_defaults();
-            pc_setting_save($con, ['brand_primary' => $d['brand_primary'], 'brand_accent' => $d['brand_accent']], $me);
+            $pairs = ['brand_primary' => $d['brand_primary'], 'brand_accent' => $d['brand_accent']];
+            pc_setting_save($con, $pairs, $me);
+            ast_log($before, $pairs, 'brand colours back to the defaults');
             pc_flash('success', 'Brand colours are back to the PeerConnect defaults.', 'Reset');
             break;
         }
@@ -252,7 +341,9 @@ switch ($section) {
             pc_flash('error', 'Colours have to be a six-digit hex value, like #0087CF.');
             break;
         }
-        pc_setting_save($con, ['brand_primary' => strtoupper($primary), 'brand_accent' => strtoupper($accent)], $me);
+        $pairs = ['brand_primary' => strtoupper($primary), 'brand_accent' => strtoupper($accent)];
+        pc_setting_save($con, $pairs, $me);
+        ast_log($before, $pairs, 'brand colours');
         pc_flash('success', 'Brand colours applied across the whole platform.', 'Appearance updated');
         break;
     }
@@ -265,6 +356,7 @@ switch ($section) {
 
         if (!empty($_POST['remove'])) {
             pc_setting_save($con, [$key => ''], $me);
+            ast_log($before, [$key => ''], 'appearance');
             pc_flash('success', $label . ' removed. The built-in mark is used again.', 'Appearance updated');
             break;
         }
@@ -285,6 +377,7 @@ switch ($section) {
             break;
         }
         pc_setting_save($con, [$key => $path], $me);
+        ast_log($before, [$key => $path], 'appearance');
         pc_flash('success', $label . ' updated.', 'Appearance updated');
         break;
     }

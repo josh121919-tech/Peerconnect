@@ -62,6 +62,8 @@ if ($v) {
     } else {
         NotificationService::verificationRejected($con, $uid, $notes, url('mentee-verification'));
     }
+
+    pc_admin_log(($action === 'approve' ? 'approved' : 'rejected') . ' the verification of ' . pc_user_name($con, $uid));
 }
 
 // Verification lives inside User Management now, so come back to its queue.

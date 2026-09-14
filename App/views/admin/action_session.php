@@ -69,6 +69,10 @@ if (!$s) {
 $ref  = 'the ' . ($s['subject'] ?: 'mentoring') . ' session';
 $when = date('M j, g:i A', strtotime($s['session_date']));
 
+// How the activity log names this session.
+$logRef = 'session #' . $id . ' (' . ($s['subject'] ?: 'mentoring') . ', '
+        . trim($s['mentor_name']) . ' with ' . trim($s['mentee_name']) . ')';
+
 /** Tell both people the same thing. */
 $tell = function (string $title, string $message) use ($con, $s) {
     foreach ([(int)$s['mentor_id'] => url('mentor-requests'), (int)$s['mentee_id'] => url('mentee-sessions')] as $uid => $link) {
@@ -96,6 +100,7 @@ switch ($action) {
 
         if ($ok) {
             $tell('Session Completed', 'An admin closed ' . $ref . ' on ' . $when . ' as completed. You can leave feedback for it now.');
+            pc_admin_log('closed ' . $logRef . ' as completed');
             pc_flash('success', 'It is closed as completed and both people can now leave feedback.', 'Session completed');
         } else {
             pc_flash('warning', 'Nothing changed — it may already be closed.');
@@ -116,6 +121,7 @@ switch ($action) {
 
         if ($ok) {
             $tell('Session Missed', 'An admin recorded ' . $ref . ' on ' . $when . ' as missed.');
+            pc_admin_log('recorded ' . $logRef . ' as missed by ' . $by);
             pc_flash('success', 'It is recorded as missed and both people have been told.', 'Marked missed');
         } else {
             pc_flash('warning', 'Nothing changed.');
@@ -141,6 +147,8 @@ switch ($action) {
             // Take it back out of any connected Google Calendar. Never fatal.
             GoogleCalendarService::pushSession($con, $id);
             $tell('Session Cancelled', 'An admin cancelled ' . $ref . ' on ' . $when . '. Reason: ' . $reason);
+            // The reason is kept on the session itself (rejection_reason).
+            pc_admin_log('cancelled ' . $logRef);
             pc_flash('success', 'Both people have been told, along with your reason.', 'Session cancelled');
         } else {
             pc_flash('warning', 'Nothing changed.');
@@ -195,6 +203,7 @@ switch ($action) {
             $newWhen = date('M j, g:i A', $newTs);
             $note = $reason !== '' ? ' Reason: ' . $reason : '';
             $tell('Session Moved', 'An admin moved ' . $ref . ' from ' . $when . ' to ' . $newWhen . '.' . $note);
+            pc_admin_log('moved ' . $logRef . ' from ' . $when . ' to ' . $newWhen);
             pc_flash('success', 'Moved to ' . $newWhen . ' — both people have been told.', 'Session rescheduled');
         } else {
             pc_flash('warning', 'That is already when the session is.');

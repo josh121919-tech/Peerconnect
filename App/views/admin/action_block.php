@@ -69,6 +69,9 @@ if ($user_id) {
 
     // Notify the blocked user, with the reason that was recorded.
     NotificationService::accountBlocked($con, $user_id, $reason);
+
+    // The reason itself is kept in `blocks`; the log says who and when.
+    pc_admin_log('blocked ' . pc_user_name($con, $user_id) . ($report_id ? ' from report #' . $report_id : ''));
 }
 
 pc_flash('success', 'Account blocked. They are signed out on their next request.', 'Blocked');

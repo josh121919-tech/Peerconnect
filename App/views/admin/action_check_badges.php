@@ -72,5 +72,7 @@ foreach ($mentors as $m) {
     }
 }
 
+pc_admin_log('ran the automatic badge check: ' . $awarded . ' badge' . ($awarded === 1 ? '' : 's') . ' awarded');
+
 header('Location: ' . url('admin-badges') . '?msg=checked&awarded=' . $awarded);
 exit;

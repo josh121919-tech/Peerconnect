@@ -224,6 +224,8 @@ if ($processed > 0) {
 if ($completed > 0) {
     $parts[] = 'closed ' . $completed . ' as completed because both people joined';
 }
+// Only the button is an admin action; the scheduled run above is not logged here.
+pc_admin_log('ran the missed-session check: ' . ($summary ? implode(', ', $summary) : 'nothing to close'));
 pc_flash(
     $parts ? 'success' : 'info',
     $parts

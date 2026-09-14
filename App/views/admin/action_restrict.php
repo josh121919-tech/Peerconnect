@@ -68,6 +68,10 @@ if ($user_id) {
 
     // The person serving the restriction is told how long it lasts and why.
     NotificationService::accountRestricted($con, $user_id, $end_date, $days, $reason);
+
+    // The reason itself is kept in `restrictions`; the log says who and when.
+    pc_admin_log('restricted ' . pc_user_name($con, $user_id) . ' for ' . $days . ' day' . ($days === 1 ? '' : 's')
+        . ($report_id ? ' from report #' . $report_id : ''));
 }
 
 pc_flash('success', 'Restriction applied — it lifts itself on ' . date('F j, Y', strtotime($end_date)) . '.', 'Restricted');

@@ -19,6 +19,13 @@ ini_set('log_errors', '1');
 ini_set('display_errors', PC_DEBUG ? '1' : '0');
 ini_set('display_startup_errors', PC_DEBUG ? '1' : '0');
 
+// Every date the app writes or shows is Philippine time, the same clock MySQL's
+// NOW() runs on. PHP's own default comes from php.ini, which XAMPP ships as
+// Europe/Berlin, and only some pages set Manila themselves — so sign-in entries
+// in the activity log were stamped six hours behind the admin entries beside
+// them. Set once here, for every request and every script.
+date_default_timezone_set('Asia/Manila');
+
 // With display off a fatal would otherwise render as a blank page, which
 // tells the visitor nothing. Give them a plain sentence and a 500 instead.
 if (!PC_DEBUG) {

@@ -29,7 +29,8 @@ $one = function (string $sql) use ($con) {
 $userCount   = (int)$one("SELECT COUNT(*) FROM users");
 $memberCount = (int)$one("SELECT COUNT(*) FROM users WHERE role IN ('mentee','mentor')");
 $sessionN    = (int)$one("SELECT COUNT(*) FROM session_requests");
-$lastSignIn  = $one("SELECT MAX(log_date) FROM logs");
+// Sign-ins only: the log also holds sign-outs, resets and admin changes.
+$lastSignIn  = $one("SELECT MAX(log_date) FROM logs WHERE activity IN ('user login', 'user login via google', 'admin login')");
 
 /* Storage actually used by uploads — a real figure, from the filesystem. */
 function st_dir_size(string $dir): int

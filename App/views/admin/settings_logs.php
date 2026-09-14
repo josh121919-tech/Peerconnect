@@ -173,14 +173,14 @@ include __DIR__ . '/includes/settings_ui.php';
 <?php $actions = ob_get_clean(); ?>
 
 <?php st_header('admin-settings-logs', 'Activity Logs',
-    'Every sign-in, sign-out, sign-up and password reset the platform has recorded.', $actions); ?>
+    'Every sign-in, sign-out, sign-up and password reset the platform has recorded, and what admins changed or exported.', $actions); ?>
 
 <div class="ss-stats">
     <?php foreach ([
         ['Entries', number_format($allN), 'Since the platform started', '#EAF1FB', '#1A5C9A', 'chart'],
         ['Today', number_format($today), $week . ' in the last 7 days', '#E6F5EE', '#17654B', 'clock'],
         ['People seen', number_format($people), 'Distinct email addresses', '#EAF6FB', '#0087CF', 'cal'],
-        ['Admin activity', number_format($adminN), 'Admin sign-ins and account creation', '#F3E8FF', '#6B21A8', 'star'],
+        ['Admin activity', number_format($adminN), 'Admin sign-ins, changes and exports', '#F3E8FF', '#6B21A8', 'star'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
             <span class="ss-stat-ico" style="background:<?= $bg ?>;color:<?= $fg ?>;"><?= ss_icon($ico) ?></span>

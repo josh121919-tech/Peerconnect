@@ -23,6 +23,9 @@ $to   = ($_GET['to'] ?? '')   !== '' && strtotime($_GET['to'])   ? date('Y-m-d',
 
 $name = 'peerconnect-' . $what . '-' . date('Y-m-d') . '.csv';
 
+// Results name each mentee and their score, so who took a copy is worth a record.
+pc_admin_log('exported assessment ' . $what . ' (' . $name . ')');
+
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="' . $name . '"');
 header('Cache-Control: no-store');

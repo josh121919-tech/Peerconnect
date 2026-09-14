@@ -59,7 +59,7 @@ if ($changed < 1) {
     exit;
 }
 
-logMe($_SESSION['email'] ?? '', date('Y-m-d H:i:s'), "set role of user {$user_id} to {$wanted}");
+pc_admin_log('set the role of ' . pc_user_name($con, $user_id) . ' to ' . $wanted);
 
 pc_flash('success', 'Role set to ' . ucfirst($wanted) . '. They can now reach their dashboard.', 'Role set');
 header('Location: ' . $back);

@@ -22,12 +22,18 @@ if (!$user_id) { header('Location: ' . url('admin-users')); exit; }
 $stmt = $con->prepare("UPDATE users SET status = 'active' WHERE user_id = ?");
 $stmt->bind_param("i", $user_id);
 $stmt->execute();
+$changed = $stmt->affected_rows;
 $stmt->close();
 
 $stmt2 = $con->prepare("DELETE FROM blocks WHERE user_id = ?");
 $stmt2->bind_param("i", $user_id);
 $stmt2->execute();
+$changed += $stmt2->affected_rows;
 $stmt2->close();
+
+if ($changed > 0) {
+    pc_admin_log('unblocked ' . pc_user_name($con, $user_id));
+}
 
 // Tell them, so they are not left guessing whether they can sign in.
 NotificationService::accountUnblocked($con, $user_id, url('login'));

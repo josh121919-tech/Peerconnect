@@ -63,6 +63,9 @@ if ($types !== '') {
     $rows = $con->query($sql)->fetch_all(MYSQLI_ASSOC);
 }
 
+// After the query, so the file does not contain its own entry.
+pc_admin_log('exported ' . count($rows) . ' activity log entr' . (count($rows) === 1 ? 'y' : 'ies'));
+
 header('Content-Type: text/csv; charset=utf-8');
 header('Content-Disposition: attachment; filename="peerconnect-activity-' . date('Y-m-d') . '.csv"');
 header('Cache-Control: no-store');

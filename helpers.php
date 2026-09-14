@@ -125,10 +125,55 @@ if (!function_exists('logMe')) {
 
         global $con;
 
-        $stmt = mysqli_prepare($con, "INSERT INTO logs (email, log_date, activity) VALUES (?, ?, ?)");
-        mysqli_stmt_bind_param($stmt, 'sss', $username, $dateTime, $activity);
-        mysqli_stmt_execute($stmt);
-        mysqli_stmt_close($stmt);
+        // Cut to the column sizes (email 100, activity 255). A strict-mode
+        // MySQL rejects a longer value outright instead of trimming it.
+        $username = mb_substr((string)$username, 0, 100);
+        $activity = (string)$activity;
+        if (mb_strlen($activity) > 255) {
+            $activity = mb_substr($activity, 0, 254) . '…';
+        }
+
+        // By the time anything is logged the change it describes has already
+        // been made, so a failed insert must not turn that page into an error.
+        // It goes to the PHP error log instead.
+        try {
+            $stmt = mysqli_prepare($con, "INSERT INTO logs (email, log_date, activity) VALUES (?, ?, ?)");
+            mysqli_stmt_bind_param($stmt, 'sss', $username, $dateTime, $activity);
+            mysqli_stmt_execute($stmt);
+            mysqli_stmt_close($stmt);
+        } catch (Throwable $e) {
+            error_log('logMe could not record "' . $activity . '": ' . $e->getMessage());
+        }
+    }
+}
+
+if (!function_exists('pc_admin_log')) {
+    /**
+     * Record something an admin did, under the signed-in admin's email.
+     *
+     * Every entry starts with "admin " — the Activity Logs page files an entry
+     * under Admin, and counts it, by that prefix. Avoid the words "login" and
+     * "via google" in $what: the sign-in counts on Reports and Integrations
+     * match on them.
+     */
+    function pc_admin_log(string $what): void
+    {
+        logMe($_SESSION['email'] ?? '', date('Y-m-d H:i:s'), 'admin ' . $what);
+    }
+}
+
+if (!function_exists('pc_user_name')) {
+    /** A person as a log entry names them: "First Last (user #12)". */
+    function pc_user_name(mysqli $con, int $user_id): string
+    {
+        $st = $con->prepare("SELECT TRIM(CONCAT_WS(' ', firstname, lastname)) AS name, email FROM users WHERE user_id = ?");
+        $st->bind_param('i', $user_id);
+        $st->execute();
+        $u = $st->get_result()->fetch_assoc();
+        $st->close();
+
+        $name = $u ? ($u['name'] !== '' ? $u['name'] : (string)$u['email']) : '';
+        return ($name !== '' ? $name . ' ' : '') . '(user #' . $user_id . ')';
     }
 }
 

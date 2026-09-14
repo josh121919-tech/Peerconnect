@@ -26,6 +26,15 @@ $stmt->bind_param("i", $report_id);
 $stmt->execute();
 $stmt->close();
 
+$who = $con->prepare("SELECT reported_user_id FROM reports WHERE report_id = ?");
+$who->bind_param("i", $report_id);
+$who->execute();
+$reported = $who->get_result()->fetch_row();
+$who->close();
+if ($reported) {
+    pc_admin_log('dismissed report #' . $report_id . ' against ' . pc_user_name($con, (int)$reported[0]));
+}
+
 pc_flash('success', 'Report dismissed.', 'Resolved');
 header('Location: ' . url('admin-users') . '?tab=resolved');
 exit;
