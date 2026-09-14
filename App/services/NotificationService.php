@@ -297,6 +297,43 @@ class NotificationService
         );
     }
 
+    /**
+     * To someone who did not join a session they were booked into. Sent by
+     * the missed-session detector, which knows from session_attendance who
+     * opened the call.
+     */
+    public static function noShow(mysqli $con, int $user_id, string $other_name, string $subject, string $when, string $link = ''): void
+    {
+        self::send($con, $user_id, 'missed_session',
+            'You missed a session',
+            "You didn't join your {$subject} session with {$other_name} on {$when}, so it was recorded as missed.",
+            $link
+        );
+    }
+
+    /** To the person who did join, when the other one did not. */
+    public static function otherNoShow(mysqli $con, int $user_id, string $absent_name, string $subject, string $when, string $link = ''): void
+    {
+        self::send($con, $user_id, 'missed_session',
+            'Session missed',
+            "{$absent_name} didn't join your {$subject} session on {$when}. It is recorded as missed by them, not by you.",
+            $link
+        );
+    }
+
+    /**
+     * To the mentee, when both people were in the call but nobody closed the
+     * session afterwards, so the detector closed it as completed.
+     */
+    public static function sessionAutoCompleted(mysqli $con, int $mentee_id, string $mentor_name, string $subject, string $when, string $link = ''): void
+    {
+        self::send($con, $mentee_id, 'session_ended',
+            'Session completed',
+            "Your {$subject} session with {$mentor_name} on {$when} has been recorded as completed. You can leave feedback for it now.",
+            $link
+        );
+    }
+
     public static function badgeAwarded(mysqli $con, int $user_id, string $badge_name, string $link = ''): void
     {
         self::send($con, $user_id, 'badge_awarded',

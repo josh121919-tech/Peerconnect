@@ -5,7 +5,7 @@
 -- is why .gitignore lets this one .sql file through while ignoring dumps.
 --
 -- This replaces the hand-written migration history that used to live here. That
--- file had fallen behind the running database (31 tables against 45), so a fresh
+-- file had fallen behind the running database (31 tables against the 45 it had then), so a fresh
 -- install built from it was missing tables the app needs, auth_throttle among them.
 --
 -- Create a database from it:
@@ -705,6 +705,22 @@ CREATE TABLE `restrictions` (
   PRIMARY KEY (`restriction_id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `restrictions_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+DROP TABLE IF EXISTS `session_attendance`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8 */;
+CREATE TABLE `session_attendance` (
+  `attendance_id` int(10) unsigned NOT NULL AUTO_INCREMENT,
+  `session_id` int(11) NOT NULL,
+  `user_id` int(11) NOT NULL,
+  `role` enum('mentor','mentee') NOT NULL,
+  `joined_at` datetime NOT NULL,
+  PRIMARY KEY (`attendance_id`),
+  UNIQUE KEY `uniq_session_user` (`session_id`,`user_id`),
+  KEY `idx_attendance_user` (`user_id`),
+  CONSTRAINT `fk_att_session` FOREIGN KEY (`session_id`) REFERENCES `session_requests` (`request_id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_att_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `session_requests`;

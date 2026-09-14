@@ -81,6 +81,15 @@ if (!defined('PC_SESSION_DAYS')) {
     define('PC_SESSION_DAYS', 20);
 }
 
+// How long after an approved session ends the missed-session detector waits
+// before closing it. By then the call has shut (the video room closes five
+// minutes after the end), and session_attendance records who opened it: both
+// people → completed, only one → missed by the other, nobody → missed by both.
+// Each person is told what was recorded. Change the one number.
+if (!defined('PC_MISSED_GRACE_HOURS')) {
+    define('PC_MISSED_GRACE_HOURS', 1);
+}
+
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.cookie_httponly', '1');
     ini_set('session.cookie_samesite', 'Lax');

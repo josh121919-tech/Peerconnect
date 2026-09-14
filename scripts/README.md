@@ -1,0 +1,114 @@
+# Scheduled jobs
+
+Two command-line jobs keep PeerConnect's data safe and up to date. Windows Task
+Scheduler runs them; both can also be run by hand from the project root.
+
+| Job | Schedule | What it does |
+|---|---|---|
+| `scripts/backup.php` | Every day at 02:00 | Dumps the whole database with `mysqldump`, and archives `public/uploads` once a week |
+| `scripts/maintenance.php` | Every 30 minutes | Closes sessions that ended over an hour ago (completed, or missed by whoever did not join), then refreshes every mentor's score |
+
+Everything they write goes to **`C:\PeerConnectBackups`** (set `BACKUP_DIR` in
+`.env` to change it):
+
+```
+C:\PeerConnectBackups\
+    database\cs_YYYY-MM-DD_HHMMSS.sql       newest 30 kept
+    uploads\uploads_YYYY-MM-DD_HHMMSS.zip   one a week, newest 4 kept
+    logs\backup.log
+    logs\maintenance.log
+```
+
+These files hold every member's email and password hash, and the scanned
+student IDs from verification. That is why the folder is outside `htdocs` and
+outside git. It is still on this laptop's own disk, so copy it somewhere else
+regularly: a backup that lives on the same disk as the database does not
+survive losing that disk.
+
+`System Settings → Backup & Restore` in the admin panel shows when the last
+backup was written, and warns when the newest one is more than 36 hours old or
+the last attempt failed.
+
+## Running them by hand
+
+```
+php scripts/backup.php                    back up now
+php scripts/backup.php --verify=FILE      check a dump is complete, without restoring it
+php scripts/maintenance.php --dry-run     list what would be closed, and how; writes nothing
+php scripts/maintenance.php               run the 30-minute job now
+```
+
+Both print what they did and exit with 0 on success, 1 on failure.
+
+## Missed sessions
+
+Opening the video call for a session records who joined, in
+`session_attendance` (first visit only). **One hour after a session ends**, if
+nobody has closed it — the mentor ending the call, the mentee leaving
+feedback, or an admin — the detector decides from that record:
+
+| Who joined | Recorded as | Who is told |
+|---|---|---|
+| Both | completed | the mentee, with a link to leave feedback |
+| Only the mentor | missed by the mentee | the mentee that they missed it; the mentor that it does not count against them |
+| Only the mentee | missed by the mentor | the same, the other way round |
+| Nobody | missed by both | both |
+
+A mentor's reliability score counts only sessions missed by the mentor or by
+both, so a mentor who shows up is not penalised for an absent mentee. In a
+group session the mentor's join counts for every mentee booked into that slot.
+
+"Joined" means opened the call page during its window (15 minutes before the
+start until 5 minutes after the end). The call itself runs in an embedded
+frame the server cannot see, so a camera or microphone that never connected
+still counts as joined.
+
+Change `PC_MISSED_GRACE_HOURS` in `Framework/bootstrap.php` to wait longer;
+the button on Platform analytics uses the same number. An admin can still
+close any session by hand from `Sessions`.
+
+## Setting up Task Scheduler
+
+The tasks run as your own Windows account, in the background, whether you are
+signed in or not, with **"do not store password"**. No password is saved. Tasks
+that run only while you are signed in run on your desktop, and `mysqldump`
+then opens a terminal window at every backup.
+
+Creating tasks of that kind needs administrator rights. Open **PowerShell with
+"Run as administrator"** and run:
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\xampp\htdocs\case\case\scripts\tasks.ps1 -Register
+```
+
+`-ExecutionPolicy Bypass` applies to that one command only. Read
+`scripts/tasks.ps1` first if you like — it is short.
+
+Check on them at any time (no administrator rights needed):
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\xampp\htdocs\case\case\scripts\tasks.ps1 -Status
+```
+
+`result 0x0` means the last run succeeded. Remove both tasks (administrator
+PowerShell again):
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\xampp\htdocs\case\case\scripts\tasks.ps1 -Remove
+```
+
+If the laptop is off or asleep at the scheduled time, the task runs as soon as
+it can afterwards. MySQL has to be running for either job to succeed; on this
+install it starts automatically as a Windows service.
+
+## Restoring
+
+The database, from a command prompt (no administrator rights needed). This **replaces**
+everything currently in `cs` — take a fresh backup first:
+
+```
+php scripts/backup.php --verify=C:\PeerConnectBackups\database\cs_2026-09-14_171832.sql
+mysql -u root cs < C:\PeerConnectBackups\database\cs_2026-09-14_171832.sql
+```
+
+Uploaded files: extract the newest `uploads_*.zip` into `public\uploads`.

@@ -68,6 +68,20 @@ if ($minutesUntilStart > 15 || time() > $sessionEndTs) {
     exit;
 }
 
+// ── Attendance ────────────────────────────────────────────────
+// Everything above has confirmed this person belongs to this approved session
+// and is inside its join window, so reaching this line means they opened the
+// call. The missed-session detector reads this to tell who did not show up,
+// instead of recording every missed session as missed by both people.
+// First visit only: re-opening the call keeps the original join time.
+// It records opening the call page — the call itself runs in an embedded
+// frame the server cannot see, so a dropped camera or microphone is invisible.
+$attendRole = ((int)$session['mentor_id'] === $user_id) ? 'mentor' : 'mentee';
+$attend = $con->prepare("INSERT IGNORE INTO session_attendance (session_id, user_id, role, joined_at) VALUES (?, ?, ?, NOW())");
+$attend->bind_param("iis", $session_id, $user_id, $attendRole);
+$attend->execute();
+$attend->close();
+
 // ── Room name (private, deterministic) ────────────────────────
 // Derived from the mentor+subject+slot, NOT request_id, so every
 // approved participant booked into the same slot (1:1 or group)

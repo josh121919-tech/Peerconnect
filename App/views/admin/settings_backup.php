@@ -6,6 +6,10 @@
  * Backup is real: it writes a genuine SQL dump of every table, generated in
  * PHP so it needs no mysqldump on PATH, and streams it as a download.
  *
+ * Scheduled backups are written by scripts/backup.php into pc_backup_dir().
+ * This page reads that folder and reports only what is actually there: it
+ * cannot see Task Scheduler, so it never claims that a schedule exists.
+ *
  * Restore is deliberately not offered. Uploading a SQL file through a web
  * form and executing it is the single most destructive thing this panel could
  * do — one bad file and every account, session and message is gone, with the
@@ -68,6 +72,37 @@ function bk_dir(string $dir): array
 }
 [$fileN, $fileBytes] = bk_dir(PUBLIC_PATH . '/uploads');
 
+/* ── Scheduled backups: what is actually on disk ────────────────────────── */
+$bkDir   = pc_backup_dir();
+$bkDs    = DIRECTORY_SEPARATOR;
+$bkDumps = glob($bkDir . $bkDs . 'database' . $bkDs . '*_????-??-??_??????.sql') ?: [];
+$bkZips  = glob($bkDir . $bkDs . 'uploads' . $bkDs . 'uploads_????-??-??_??????.zip') ?: [];
+rsort($bkDumps, SORT_STRING);   // names carry the timestamp, so this is newest first
+rsort($bkZips, SORT_STRING);
+$bkLastAt = $bkDumps ? filemtime($bkDumps[0]) : null;
+$bkZipAt  = $bkZips ? filemtime($bkZips[0]) : null;
+$bkStale  = $bkLastAt !== null && time() - $bkLastAt > 36 * 3600;   // a nightly job, plus slack
+
+// The newest file can be a good backup from days ago while last night's attempt
+// failed. Only the last line of the log tells those two apart.
+$bkLastLine = '';
+$bkLog = $bkDir . $bkDs . 'logs' . $bkDs . 'backup.log';
+if (is_file($bkLog) && ($bkFh = @fopen($bkLog, 'rb'))) {
+    fseek($bkFh, max(0, filesize($bkLog) - 2048));
+    $bkLines = array_values(array_filter(array_map('trim', explode("\n", (string)stream_get_contents($bkFh)))));
+    fclose($bkFh);
+    $bkLastLine = (string)end($bkLines);
+}
+$bkFailed = str_contains($bkLastLine, 'FAILED:');
+
+function bk_when(int $ts): string
+{
+    $mins = max(0, (int)floor((time() - $ts) / 60));
+    $ago  = $mins < 60 ? $mins . ' min ago'
+          : ($mins < 2880 ? floor($mins / 60) . ' h ago' : floor($mins / 1440) . ' days ago');
+    return date('M j, g:i A', $ts) . ' · ' . $ago;
+}
+
 $current_page = 'settings-backup';
 include 'layout.php';
 include __DIR__ . '/includes/settings_ui.php';
@@ -91,7 +126,10 @@ include __DIR__ . '/includes/settings_ui.php';
         ['Database', bk_size((int)$dbBytes), $tableN . ' tables in ' . $dbName, '#EAF1FB', '#1A5C9A', 'chart'],
         ['Core records', number_format($exactRows), 'Users, sessions, messages, feedback', '#E6F5EE', '#17654B', 'check'],
         ['Uploaded files', number_format($fileN), bk_size((int)$fileBytes) . ' in public/uploads', '#EAF6FB', '#0087CF', 'cal'],
-        ['Backups taken here', '—', 'Downloads are not recorded', '#F3F4F6', '#565B66', 'clock'],
+        $bkLastAt !== null
+            ? ['Last automatic backup', date('M j, g:i A', $bkLastAt), count($bkDumps) . ' kept in ' . $bkDir,
+               ($bkStale || $bkFailed) ? '#FEF6DC' : '#E6F5EE', ($bkStale || $bkFailed) ? '#7A5A00' : '#17654B', 'clock']
+            : ['Last automatic backup', 'None yet', 'Nothing in ' . $bkDir, '#F3F4F6', '#565B66', 'clock'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
             <span class="ss-stat-ico" style="background:<?= $bg ?>;color:<?= $fg ?>;"><?= ss_icon($ico) ?></span>
@@ -122,6 +160,7 @@ include __DIR__ . '/includes/settings_ui.php';
                 Uploaded files. Profile photos, verification documents, resources and announcement banners live
                 in <code>public/uploads</code> (<?= number_format($fileN) ?> files, <?= bk_size((int)$fileBytes) ?>)
                 and have to be copied separately. A database restored without them will show broken images.
+                The scheduled backup archives them once a week; a download from this page does not.
             </div>
 
             <form method="post" action="<?= url('admin-settings-backup-run') ?>">
@@ -146,7 +185,8 @@ include __DIR__ . '/includes/settings_ui.php';
             </div>
 
             <p style="font-size:13px;color:var(--gray-600);line-height:1.65;margin:0 0 10px;">
-                To restore a backup you downloaded above, from the XAMPP shell:
+                To restore a backup you downloaded above, or one from
+                <code><?= htmlspecialchars($bkDir) ?>\database</code>, from the XAMPP shell:
             </p>
             <pre style="margin:0;padding:13px 15px;background:#0B1440;color:#D9E4F5;border-radius:10px;font-size:12.5px;overflow-x:auto;line-height:1.6;"><code>mysql -u root <?= htmlspecialchars($dbName) ?> &lt; peerconnect-backup.sql</code></pre>
             <p style="font-size:12px;color:var(--gray-400);margin:9px 0 0;line-height:1.6;">
@@ -185,7 +225,7 @@ include __DIR__ . '/includes/settings_ui.php';
     <div class="st-stack">
         <div class="st-card">
             <h2>A backup routine</h2>
-            <p class="sub">Nothing here runs on a schedule — this app has no task runner.</p>
+            <p class="sub">A scheduled job writes copies to <code><?= htmlspecialchars($bkDir) ?></code>; the card below shows whether they are arriving.</p>
             <?php foreach ([
                 ['Before any change you cannot undo', 'Take one from this page first. It takes seconds.'],
                 ['Weekly, kept off this machine', 'A backup on the same disk as the database is not a backup.'],
@@ -201,13 +241,52 @@ include __DIR__ . '/includes/settings_ui.php';
 
         <div class="st-card">
             <h2>Scheduled backups</h2>
-            <div class="st-note">
-                <b>Not automatic.</b>
-                The reference design showed a "Last backup: successful" tile and a daily schedule. Nothing in
-                this install runs on a timer — there is no cron job and no queue — so that tile would report a
-                backup that never happened. To automate it, point a Windows Task Scheduler entry at
-                <code>mysqldump</code>; the page above is the manual equivalent.
-            </div>
+            <?php if ($bkLastAt === null): ?>
+                <div class="st-note warn">
+                    <b>No automatic backup found.</b>
+                    Nothing has been written to <code><?= htmlspecialchars($bkDir) ?></code> yet.
+                    <code>scripts/backup.php</code> writes them there, and <code>scripts/README.md</code>
+                    sets up the nightly Task Scheduler entry that runs it.
+                </div>
+            <?php else: ?>
+                <div class="st-row">
+                    <span class="st-dot" style="background:#EAF1FB;color:#1A5C9A;"><?= ss_icon('chart') ?></span>
+                    <span style="min-width:0;flex:1;">
+                        <b>Database · <?= htmlspecialchars(bk_when($bkLastAt)) ?></b>
+                        <span class="h"><?= htmlspecialchars(basename($bkDumps[0])) ?>, <?= bk_size((int)filesize($bkDumps[0])) ?> · <?= count($bkDumps) ?> <?= count($bkDumps) === 1 ? 'copy' : 'copies' ?> kept, nightly</span>
+                    </span>
+                </div>
+                <div class="st-row">
+                    <span class="st-dot" style="background:#EAF6FB;color:#0087CF;"><?= ss_icon('cal') ?></span>
+                    <span style="min-width:0;flex:1;">
+                        <?php if ($bkZipAt !== null): ?>
+                            <b>Uploaded files · <?= htmlspecialchars(bk_when($bkZipAt)) ?></b>
+                            <span class="h"><?= htmlspecialchars(basename($bkZips[0])) ?>, <?= bk_size((int)filesize($bkZips[0])) ?> · <?= count($bkZips) ?> <?= count($bkZips) === 1 ? 'archive' : 'archives' ?> kept, weekly</span>
+                        <?php else: ?>
+                            <b>Uploaded files · no archive yet</b>
+                            <span class="h">The next scheduled backup creates one.</span>
+                        <?php endif; ?>
+                    </span>
+                </div>
+
+                <?php if ($bkFailed): ?>
+                    <div class="st-note bad" style="margin-top:12px;">
+                        <b>The most recent backup attempt failed.</b>
+                        <?= htmlspecialchars(trim(substr($bkLastLine, strpos($bkLastLine, 'FAILED:') + 7))) ?>
+                        The copies listed above are the newest ones that succeeded.
+                    </div>
+                <?php elseif ($bkStale): ?>
+                    <div class="st-note warn" style="margin-top:12px;">
+                        <b>No backup in the last 36 hours.</b>
+                        The nightly job should have run by now. Check that the computer was on overnight and that the
+                        "PeerConnect Backup" task is still enabled in Task Scheduler.
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
+            <p class="sub" style="margin:12px 0 0;">
+                These copies are on this computer's own disk, so they do not survive losing it. Copy the folder
+                somewhere else regularly.
+            </p>
         </div>
     </div>
 </div>

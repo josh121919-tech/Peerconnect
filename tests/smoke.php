@@ -353,6 +353,7 @@ const TRACKED = [
     'notifications'     => ['notification_id', ['user_id']],
     'user_badges'       => ['user_badge_id',   ['user_id']],
     'user_certificates' => ['cert_id',         ['user_id']],
+    'session_attendance'=> ['attendance_id',   ['user_id']],
     'session_requests'  => ['request_id',      ['mentee_id', 'mentor_id']],
     'availability'      => ['availability_id', ['mentor_id']],
 ];

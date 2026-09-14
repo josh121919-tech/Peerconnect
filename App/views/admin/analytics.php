@@ -365,7 +365,7 @@ require_once __DIR__ . '/includes/report_data.php';
     </div>
     <div class="ss-hd-actions">
         <form method="post" action="<?= url('cron-missed-sessions') ?>" style="margin:0;"
-              onsubmit="return confirm('Mark every approved session whose time has passed with nobody present as missed?\n\nThis writes to the sessions themselves and notifies the people involved.');">
+              onsubmit="return confirm('Close every approved session that ended more than <?= (int)PC_MISSED_GRACE_HOURS ?> hour<?= PC_MISSED_GRACE_HOURS === 1 ? '' : 's' ?> ago?\n\nIf both people joined the call it is marked completed. Otherwise it is recorded as missed by whoever did not join, and both people are told. This also runs every 30 minutes on its own.');">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
             <button type="submit" class="an-run">
                 <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path stroke-linecap="round" d="m16.5 16.5 4 4" /></svg>

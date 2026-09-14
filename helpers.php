@@ -601,3 +601,19 @@ if (!function_exists('pc_back_url')) {
         return $path . (isset($parts['query']) ? '?' . $parts['query'] : '');
     }
 }
+
+if (!function_exists('pc_backup_dir')) {
+    /**
+     * Where scripts/backup.php writes, where scripts/maintenance.php logs, and
+     * where the admin Backup page looks to report the last backup.
+     *
+     * BACKUP_DIR in .env, else C:\PeerConnectBackups. Outside the web root on
+     * purpose: the dumps hold password hashes and the upload archives hold
+     * scanned student IDs, and .htaccess only protects folders inside htdocs.
+     */
+    function pc_backup_dir(): string
+    {
+        $dir = trim((string)($_ENV['BACKUP_DIR'] ?? getenv('BACKUP_DIR') ?: ''));
+        return rtrim($dir !== '' ? $dir : 'C:\\PeerConnectBackups', '\\/');
+    }
+}
