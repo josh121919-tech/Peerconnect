@@ -16,33 +16,17 @@ date_default_timezone_set('Asia/Manila');
 require_once __DIR__ . '/../includes/onboarding_gate.php';
 pc_onboarding_gate($con, (int)$_SESSION['user_id'], $_SESSION['role'] ?? '');
 
-$mentee_id = $_SESSION['user_id'];
+$mentee_id = (int)$_SESSION['user_id'];
 
-$mentee_row = $con->query("SELECT firstname FROM users WHERE user_id = $mentee_id")->fetch_assoc();
-$mentee_firstname = $mentee_row['firstname'] ?? 'there';
+// Every figure on this page comes from App/repositories; this file only
+// arranges it. See SessionRepository for what counts as an upcoming session.
+$mentee_firstname = UserRepository::firstName($con, $mentee_id) ?? 'there';
 
 // ── Stat cards (real counts, not placeholders) ──────────────────────────
-$active_mentorships = (int)($con->query("
-    SELECT COUNT(DISTINCT mentor_id) c FROM session_requests
-    WHERE mentee_id = $mentee_id AND status IN ('approved','completed')
-")->fetch_assoc()['c'] ?? 0);
-
-// Joined to users to match the Upcoming list, which cannot render a session
-// whose mentor account no longer exists.
-$upcoming_count = (int)($con->query("
-    SELECT COUNT(*) c FROM session_requests sr
-    JOIN users u ON u.user_id = sr.mentor_id
-    WHERE sr.mentee_id = $mentee_id AND sr.status = 'approved' AND sr.session_date >= NOW()
-")->fetch_assoc()['c'] ?? 0);
-
-$unread_messages = (int)($con->query("
-    SELECT COUNT(*) c FROM messages WHERE receiver_id = $mentee_id AND is_read = 0
-")->fetch_assoc()['c'] ?? 0);
-
-$assessments_done = (int)($con->query("
-    SELECT COUNT(*) c FROM assessment_attempts
-    WHERE mentee_id = $mentee_id AND status = 'submitted'
-")->fetch_assoc()['c'] ?? 0);
+$active_mentorships = SessionRepository::countMentorsForMentee($con, $mentee_id);
+$upcoming_count     = SessionRepository::countUpcomingForMentee($con, $mentee_id);
+$unread_messages    = MessageRepository::countUnread($con, $mentee_id);
+$assessments_done   = AssessmentRepository::countSubmittedByMentee($con, $mentee_id);
 
 // ── "vs last month" trend (pc_trend(), in helpers.php) — only shown where a
 //    stat has a genuinely stable historical timestamp to compare against
@@ -50,48 +34,18 @@ $assessments_done = (int)($con->query("
 //    Sessions and Unread Messages are live/mutable snapshots with no
 //    faithful "as of a month ago" state, so those two cards get a real
 //    supporting fact instead of a fabricated %. ─────────────────────────
-$am_prior = (int)($con->query("
-    SELECT COUNT(DISTINCT mentor_id) c FROM session_requests
-    WHERE mentee_id = $mentee_id AND status IN ('approved','completed')
-    AND session_date <= DATE_SUB(NOW(), INTERVAL 30 DAY)
-")->fetch_assoc()['c'] ?? 0);
+$am_prior          = SessionRepository::countMentorsForMentee($con, $mentee_id, 30);
 $trend_mentorships = pc_trend($active_mentorships, $am_prior);
 
-$as_last30 = (int)($con->query("
-    SELECT COUNT(*) c FROM assessment_attempts
-    WHERE mentee_id = $mentee_id AND status = 'submitted'
-    AND submitted_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-")->fetch_assoc()['c'] ?? 0);
-$as_prior30 = (int)($con->query("
-    SELECT COUNT(*) c FROM assessment_attempts
-    WHERE mentee_id = $mentee_id AND status = 'submitted'
-    AND submitted_at >= DATE_SUB(NOW(), INTERVAL 60 DAY) AND submitted_at < DATE_SUB(NOW(), INTERVAL 30 DAY)
-")->fetch_assoc()['c'] ?? 0);
+$as_last30         = AssessmentRepository::countSubmittedByMenteeBetween($con, $mentee_id, 30);
+$as_prior30        = AssessmentRepository::countSubmittedByMenteeBetween($con, $mentee_id, 60, 30);
 $trend_assessments = pc_trend($as_last30, $as_prior30);
 
-$msgs_last7 = (int)($con->query("
-    SELECT COUNT(*) c FROM messages WHERE receiver_id = $mentee_id
-    AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-")->fetch_assoc()['c'] ?? 0);
+$msgs_last7 = MessageRepository::countReceivedInLastDays($con, $mentee_id, 7);
 
 // ── Assessments Overview — published assessments from mentors this mentee
 //    has actually worked with, split by where each one stands. ────────────
-$assess_rows = $con->query("
-    SELECT a.assessment_id, a.title, a.topic,
-           u.firstname, u.lastname,
-           at.status AS attempt_status, at.score, at.total_points
-    FROM assessments a
-    JOIN users u ON u.user_id = a.mentor_id
-    LEFT JOIN assessment_attempts at
-           ON at.assessment_id = a.assessment_id AND at.mentee_id = $mentee_id
-    WHERE a.status = 'published'
-      AND EXISTS (
-          SELECT 1 FROM session_requests sr
-           WHERE sr.mentor_id = a.mentor_id AND sr.mentee_id = $mentee_id
-             AND sr.status IN ('approved','completed')
-      )
-    ORDER BY (at.attempt_id IS NOT NULL AND at.status = 'submitted'), a.published_at DESC
-")->fetch_all(MYSQLI_ASSOC);
+$assess_rows = AssessmentRepository::publishedForMentee($con, $mentee_id);
 
 $assess_breakdown = ['completed' => 0, 'in_progress' => 0, 'not_started' => 0];
 foreach ($assess_rows as $r) {
@@ -104,19 +58,15 @@ $assess_total = count($assess_rows);
 $assess_list  = array_slice($assess_rows, 0, 4);
 
 // Average score across everything submitted, for the card's headline stat.
-$assess_avg = (int)($con->query("
-    SELECT COALESCE(ROUND(AVG(score / NULLIF(total_points,0) * 100)), 0) c
-    FROM assessment_attempts
-    WHERE mentee_id = $mentee_id AND status = 'submitted'
-")->fetch_assoc()['c'] ?? 0);
+$assess_avg = AssessmentRepository::averageScorePercentForMentee($con, $mentee_id);
 
 // ── Mentorship Progress — real completion rate + status mix from
 //    session_requests, not fabricated "skill" percentages. ────────────────
 $status_breakdown = ['completed' => 0, 'approved' => 0, 'pending' => 0, 'rejected' => 0];
-$sbr = $con->query("SELECT status, COUNT(*) c FROM session_requests WHERE mentee_id = $mentee_id GROUP BY status");
-while ($row = $sbr->fetch_assoc()) {
-    $key = $row['status'] === 'cancelled' ? 'rejected' : $row['status'];
-    $status_breakdown[$key] = ($status_breakdown[$key] ?? 0) + (int)$row['c'];
+foreach (SessionRepository::statusCountsForMentee($con, $mentee_id) as $status => $count) {
+    // The progress card shows a cancelled session under Rejected.
+    $key = $status === 'cancelled' ? 'rejected' : $status;
+    $status_breakdown[$key] = ($status_breakdown[$key] ?? 0) + $count;
 }
 $sessions_total = array_sum($status_breakdown);
 $completion_rate = $sessions_total > 0 ? (int)round(($status_breakdown['completed'] / $sessions_total) * 100) : 0;
@@ -128,28 +78,10 @@ $status_rows = [
 ];
 
 // ── Upcoming Sessions (up to 3) ───────────────────────────────────────────
-$upcoming_res = $con->query("
-    SELECT sr.request_id, sr.subject, sr.session_date, u.firstname, u.lastname, pr.profile_image
-    FROM session_requests sr
-    JOIN users u ON sr.mentor_id = u.user_id
-    LEFT JOIN profile pr ON pr.user_id = u.user_id
-    WHERE sr.mentee_id = $mentee_id AND sr.status = 'approved' AND sr.session_date >= NOW()
-    ORDER BY sr.session_date ASC
-    LIMIT 3
-");
-$upcoming_list = [];
-while ($row = $upcoming_res->fetch_assoc()) {
-    $upcoming_list[] = $row;
-}
+$upcoming_list = SessionRepository::upcomingForMentee($con, $mentee_id, 3);
 
 // ── Recent Activity — reuses the existing notifications table ────────────
-$recent_activity = $con->query("
-    SELECT type, title, message, created_at
-    FROM notifications
-    WHERE user_id = $mentee_id
-    ORDER BY created_at DESC
-    LIMIT 4
-");
+$recent_activity = NotificationRepository::latestForUser($con, $mentee_id, 4);
 $activity_icons = [
     'session_approved'       => ['bg' => 'var(--mint-faint)', 'color' => 'var(--forest)', 'svg' => '<path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>'],
     'session_ended'          => ['bg' => 'var(--info-bg)', 'color' => 'var(--info)', 'svg' => '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>'],
@@ -163,24 +95,12 @@ $activity_icons = [
 // ── Recommended for You — reuses the existing MentorScoreService /
 //    matching engine, not a new recommendation algorithm. Excludes mentors
 //    the mentee already has a request/relationship with. ─────────────────
-require_once __DIR__ . '/../../services/MentorScoreService.php';
-
 // Settings → Data Privacy → "Personalized recommendations". Off means we rank
 // mentors on their public score alone and ignore this mentee's preferences.
-$personalized = (int)($con->query("
-    SELECT COALESCE(MAX(personalized_recommendations), 1) v FROM privacy_settings WHERE user_id = $mentee_id
-")->fetch_assoc()['v'] ?? 1) === 1;
+$personalized = UserRepository::wantsPersonalizedRecommendations($con, $mentee_id);
 
-$mentee_prefs = $personalized
-    ? ($con->query("
-        SELECT preferred_topic, session_type, skill_level FROM mentee_preferences WHERE mentee_id = $mentee_id
-    ")->fetch_assoc() ?: [])
-    : [];
-$existing_mentor_ids = [];
-$emr = $con->query("SELECT DISTINCT mentor_id FROM session_requests WHERE mentee_id = $mentee_id");
-while ($row = $emr->fetch_assoc()) {
-    $existing_mentor_ids[] = (int)$row['mentor_id'];
-}
+$mentee_prefs        = $personalized ? UserRepository::menteePreferences($con, $mentee_id) : [];
+$existing_mentor_ids = SessionRepository::mentorIdsForMentee($con, $mentee_id);
 // Passing $mentee_id lets the service rank on this mentee's questionnaire
 // answers first and the mentor's performance score second. Withheld when
 // personalized recommendations are switched off in Settings → Data Privacy,
@@ -403,8 +323,8 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                             <span class="pcard-title">Recent Activity</span>
                             <button type="button" class="pcard-link" onclick="if (typeof toggleNotifPanel==='function') toggleNotifPanel();">View all →</button>
                         </div>
-                        <?php if ($recent_activity->num_rows > 0): ?>
-                            <?php while ($a = $recent_activity->fetch_assoc()):
+                        <?php if ($recent_activity): ?>
+                            <?php foreach ($recent_activity as $a):
                                 $ic = $activity_icons[$a['type']] ?? $activity_icons['_default'];
                                 $diff = time() - strtotime($a['created_at']);
                                 if ($diff < 3600) $ago = max(1, (int)($diff / 60)) . 'm ago';
@@ -418,7 +338,7 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                                     <div style="flex:1;min-width:0;font-size:13px;color:var(--gray-700);"><?= htmlspecialchars($a['title']) ?></div>
                                     <div style="font-size:11.5px;color:var(--gray-400);white-space:nowrap;flex-shrink:0;"><?= $ago ?></div>
                                 </div>
-                            <?php endwhile; ?>
+                            <?php endforeach; ?>
                         <?php else: ?>
                             <div class="prow-empty">No recent activity yet.</div>
                         <?php endif; ?>

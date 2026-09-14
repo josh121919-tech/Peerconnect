@@ -153,6 +153,23 @@ if (!defined('APP_BOOTSTRAPPED')) {
         require_once $autoload;
     }
 
+    // The app's own classes: App/repositories (where pages get their data) and
+    // App/services (business rules). A page can call SessionRepository::... or
+    // NotificationService::... without requiring the file first. The explicit
+    // require_once lines that already exist still work alongside this.
+    spl_autoload_register(function (string $class): void {
+        if (!preg_match('/^[A-Za-z][A-Za-z0-9_]*$/', $class)) {
+            return;   // namespaced classes belong to Composer's loader above
+        }
+        foreach (['repositories', 'services'] as $dir) {
+            $file = BASE_PATH . '/App/' . $dir . '/' . $class . '.php';
+            if (is_file($file)) {
+                require_once $file;
+                return;
+            }
+        }
+    });
+
     // .env must load before helpers.php below — helpers.php reads getenv()
     // to fill in its define()'d constants (DAILY_API_KEY, JAAS_*, etc.), and
     // those reads only see .env values if Dotenv has already run. Loading
