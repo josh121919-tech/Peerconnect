@@ -11,7 +11,8 @@ Options -MultiViews
     # stays open for certificate validation.
     RewriteRule (^|/)\.(?!well-known(/|$)) - [F,L]
 
-    RewriteRule ^(?:App|Framework|vendor)/ - [F,L,NC]
+    # tests/ holds command-line tools that write to the database.
+    RewriteRule ^(?:App|Framework|vendor|tests)/ - [F,L,NC]
 
     # Legacy upload URLs now point to the new public storage folders.
     RewriteRule ^menteepage/view/uploads/reports/(.*)$ public/uploads/reports/$1 [L,NC]
