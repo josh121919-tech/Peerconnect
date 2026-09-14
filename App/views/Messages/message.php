@@ -8,7 +8,7 @@ include __DIR__ . "/../db.php";
 // through, because an empty string is still "set" — see the onboarding gap.
 if (!isset($_SESSION['user_id'], $_SESSION['role'])
     || !in_array($_SESSION['role'], ['mentee', 'mentor', 'admin'], true)) {
-  header("Location: /case/case/edf9af138e2da896fcfd1a892f49a4b9");
+  header("Location: " . url('welcomepage'));
   exit;
 }
 

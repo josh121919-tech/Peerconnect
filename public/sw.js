@@ -6,6 +6,10 @@
  *  - Images                      → Cache First with expiry
  */
 
+// The app's folder, worked out from where this file is served
+// (<folder>/public/sw.js), so nothing here names a particular install.
+const BASE = new URL('..', self.location).pathname;
+
 const CACHE_VERSION  = 'pc-v1';
 const SHELL_CACHE    = `${CACHE_VERSION}-shell`;
 const DYNAMIC_CACHE  = `${CACHE_VERSION}-dynamic`;
@@ -13,15 +17,15 @@ const IMAGE_CACHE    = `${CACHE_VERSION}-images`;
 
 // ── Assets to precache (app shell) ─────────────────────────────────────────
 const SHELL_ASSETS = [
-  '/case/case/public/css/design-system.css',
-  '/case/case/public/offline.html',
-  '/case/case/public/icons/icon.svg',
+  BASE + 'public/css/design-system.css',
+  BASE + 'public/offline.html',
+  BASE + 'public/icons/icon.svg',
   'https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,400&family=Playfair+Display:wght@600;700&display=swap',
 ];
 
 // ── Routes that should never be served from cache ──────────────────────────
 const NETWORK_ONLY = [
-  '/case/case/public/index.php',
+  BASE + 'public/index.php',
   'google-login',
   'logout',
   'save-booking',
@@ -135,7 +139,7 @@ async function networkFirst(req) {
 async function offlineFallback(req) {
   const accept = req.headers.get('Accept') || '';
   if (accept.includes('text/html')) {
-    const offline = await caches.match('/case/case/public/offline.html');
+    const offline = await caches.match(BASE + 'public/offline.html');
     if (offline) return offline;
   }
   return new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
@@ -172,10 +176,10 @@ self.addEventListener('push', event => {
 
   const options = {
     body:    data.body   || 'You have a new notification.',
-    icon:    '/case/case/public/icons/icon.svg',
-    badge:   '/case/case/public/icons/icon.svg',
+    icon:    BASE + 'public/icons/icon.svg',
+    badge:   BASE + 'public/icons/icon.svg',
     tag:     data.tag    || 'pc-notification',
-    data:    { url: data.url || '/case/case/' },
+    data:    { url: data.url || BASE },
     actions: data.actions || [{ action: 'open', title: 'Open' }],
     vibrate: [200, 100, 200],
   };
@@ -187,7 +191,7 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const url = event.notification.data?.url || '/case/case/';
+  const url = event.notification.data?.url || BASE;
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
       for (const client of list) {

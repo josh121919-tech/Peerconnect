@@ -1,7 +1,13 @@
 <?php
 
+// The folder the app is served from, e.g. "/case/case", or "" at a domain's
+// root. Taken from the path of APP_URL in .env, so moving the install means
+// changing that one line; every link, redirect and asset goes through it.
+// Without APP_URL it falls back to the local XAMPP folder.
 if (!defined('BASE_URL')) {
-    define('BASE_URL', '/case/case');
+    define('BASE_URL', ($_ENV['APP_URL'] ?? '') !== ''
+        ? rtrim((string)parse_url($_ENV['APP_URL'], PHP_URL_PATH), '/')
+        : '/case/case');
 }
 
 if (!defined('ROUTE_SECRET_KEY')) {
@@ -70,6 +76,52 @@ if (!defined('MAIL_FROM_NAME')) {
 // environment; the fallback below is the local XAMPP install only.
 if (!defined('APP_URL')) {
     define('APP_URL', rtrim($_ENV['APP_URL'] ?? 'http://localhost' . BASE_URL, '/'));
+}
+
+if (!function_exists('pc_https_decision')) {
+    /**
+     * What to do about the connection's scheme, given APP_URL and the request.
+     *
+     * Only an https:// APP_URL turns anything on, so a local http:// install is
+     * untouched. Then a plain-HTTP request is sent to the same path on APP_URL's
+     * own host (never the Host header, which the client controls), and an HTTPS
+     * response tells the browser to use HTTPS from now on (HSTS, one year).
+     * A GET or HEAD is moved with 301; anything else with 308, which keeps the
+     * method and body instead of turning a form post into a GET.
+     *
+     * @return array{0: string, 1: string}  ['none', ''], ['redirect', url], or ['hsts', header]
+     */
+    function pc_https_decision(string $appUrl, array $server): array
+    {
+        if (stripos($appUrl, 'https://') !== 0) {
+            return ['none', ''];
+        }
+        if (pc_request_is_https($server)) {
+            return ['hsts', 'Strict-Transport-Security: max-age=31536000'];
+        }
+        $origin = 'https://' . parse_url($appUrl, PHP_URL_HOST)
+                . (parse_url($appUrl, PHP_URL_PORT) ? ':' . parse_url($appUrl, PHP_URL_PORT) : '');
+        return ['redirect', $origin . ($server['REQUEST_URI'] ?? '/')];
+    }
+}
+
+if (!function_exists('pc_enforce_https')) {
+    /** Applies pc_https_decision() to the current web request. */
+    function pc_enforce_https(): void
+    {
+        if (PHP_SAPI === 'cli' || headers_sent()) {
+            return;
+        }
+        [$action, $value] = pc_https_decision(APP_URL, $_SERVER);
+        if ($action === 'redirect') {
+            $method = strtoupper($_SERVER['REQUEST_METHOD'] ?? 'GET');
+            header('Location: ' . $value, true, in_array($method, ['GET', 'HEAD'], true) ? 301 : 308);
+            exit;
+        }
+        if ($action === 'hsts') {
+            header($value);
+        }
+    }
 }
 
 if (!function_exists('base_url')) {

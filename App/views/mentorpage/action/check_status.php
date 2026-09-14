@@ -55,6 +55,6 @@ $dashboards = [
 echo json_encode([
     'status'          => $status,
     'redirect'        => $dashboards[$role] ?? url('welcomepage'),
-    'reject_redirect' => '/case/case/8002a71bf36398e654ce5d3ba3494d8d',
+    'reject_redirect' => url('mentor-verification'),
 ]);
 exit;

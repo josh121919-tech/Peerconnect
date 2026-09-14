@@ -27,7 +27,8 @@ class RememberService
             'path'     => '/',
             // Off in local XAMPP (plain http); on automatically once the site
             // is served over TLS, where the cookie must never travel in clear.
-            'secure'   => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+            // Same test as the session cookie (Framework/bootstrap.php).
+            'secure'   => pc_request_is_https(),
             'httponly' => true,
             'samesite' => 'Lax',
         ];

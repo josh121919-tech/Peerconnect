@@ -40,7 +40,7 @@ function force_logout(string $redirect): void {
     exit;
 }
 
-$login_url = "/case/case/edf9af138e2da896fcfd1a892f49a4b9";
+$login_url = url('welcomepage');
 
 // Redirect unauthenticated users
 if (!isset($_SESSION['email']) || !isset($_SESSION['user_id'])) {

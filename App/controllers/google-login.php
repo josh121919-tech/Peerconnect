@@ -13,7 +13,7 @@ function redirect_with_error(string $message, string $mode = 'login'): void
         $_SESSION['login_error'] = $message;
     }
 
-    header("Location: /case/case/edf9af138e2da896fcfd1a892f49a4b9");
+    header("Location: " . url('welcomepage'));
     exit;
 }
 
@@ -159,17 +159,17 @@ if ($stmt->num_rows === 1) {
 
     if ($row['status'] !== 'active' || !$row['verified']) {
         if ($existingRole === 'mentor') {
-            header("Location: /case/case/8002a71bf36398e654ce5d3ba3494d8d");
+            header("Location: " . url('mentor-verification'));
         } else {
-            header("Location: /case/case/140204565c663d348ed7ae748f5a5802");
+            header("Location: " . url('mentee-verification'));
         }
         exit;
     }
 
     if ($existingRole === 'mentor') {
-        header("Location: /case/case/140e248d98c42c91deb10e1064e644ec");
+        header("Location: " . url('mentor-dashboard'));
     } else {
-        header("Location: /case/case/10efedb5f85d976aecf4f27238f7ec3b");
+        header("Location: " . url('mentee-dashboard'));
     }
     exit;
 }
@@ -232,8 +232,8 @@ logMe($email, date('Y-m-d H:i:s'), "user signup via google");
 
 // New signups always go to verification — they're never verified yet
 if ($role === 'mentor') {
-    header("Location: /case/case/8002a71bf36398e654ce5d3ba3494d8d");
+    header("Location: " . url('mentor-verification'));
 } else {
-    header("Location: /case/case/140204565c663d348ed7ae748f5a5802");
+    header("Location: " . url('mentee-verification'));
 }
 exit;

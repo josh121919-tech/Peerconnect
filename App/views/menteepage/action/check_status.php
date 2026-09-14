@@ -55,6 +55,6 @@ $dashboards = [
 echo json_encode([
     'status'          => $status,
     'redirect'        => $dashboards[$role] ?? url('welcomepage'),
-    'reject_redirect' => '/case/case/140204565c663d348ed7ae748f5a5802',
+    'reject_redirect' => url('mentee-verification'),
 ]);
 exit;

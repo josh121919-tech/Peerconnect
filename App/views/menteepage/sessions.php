@@ -706,7 +706,7 @@ $active_page = 'sessions';
                                     <td>
                                         <div style="display:flex;align-items:center;gap:6px;">
                                             <?php if ($isJoinable): ?>
-                                                <a href="/case/case/6b4396b7d830104eb41d706cefe6a991?session_id=<?= $sid ?>" class="btn btn-blue" style="font-size:12px;padding:6px 12px;">
+                                                <a href="<?= url('video-join') ?>?session_id=<?= $sid ?>" class="btn btn-blue" style="font-size:12px;padding:6px 12px;">
                                                     <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                                         <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
                                                     </svg>

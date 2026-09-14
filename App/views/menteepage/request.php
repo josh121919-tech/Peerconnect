@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../services/GoogleCalendarService.php';
 require_once __DIR__ . '/../../services/NotificationService.php';
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'mentee') {
-    header("Location: /case/case/edf9af138e2da896fcfd1a892f49a4b9");
+    header("Location: " . url('welcomepage'));
     exit;
 }
 

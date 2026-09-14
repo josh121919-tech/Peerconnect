@@ -97,10 +97,34 @@ if (!defined('PC_MISSED_GRACE_HOURS')) {
     define('PC_MISSED_GRACE_HOURS', 1);
 }
 
+if (!function_exists('pc_request_is_https')) {
+    /**
+     * Whether this request arrived over HTTPS. X-Forwarded-Proto covers a host
+     * that ends TLS at a proxy in front of PHP. Trusting it is safe for the one
+     * thing it decides here, the Secure cookie flag: a client that lies about it
+     * only stops its own cookie coming back over plain HTTP.
+     */
+    function pc_request_is_https(?array $server = null): bool
+    {
+        $server = $server ?? $_SERVER;
+        return (!empty($server['HTTPS']) && strtolower((string)$server['HTTPS']) !== 'off')
+            || strtolower((string)($server['HTTP_X_FORWARDED_PROTO'] ?? '')) === 'https';
+    }
+}
+
+// The PHP version is nobody's business; it only helps someone pick an exploit.
+if (PHP_SAPI !== 'cli') {
+    header_remove('X-Powered-By');
+}
+
 if (session_status() === PHP_SESSION_NONE) {
     ini_set('session.cookie_httponly', '1');
     ini_set('session.cookie_samesite', 'Lax');
     ini_set('session.use_strict_mode', '1');
+    // Over HTTPS the session cookie must never be sent back over plain HTTP,
+    // where anyone on the network could read the session id. Off on a local
+    // http:// install, where a Secure cookie would never come back at all.
+    ini_set('session.cookie_secure', pc_request_is_https() ? '1' : '0');
 
     $pc_session_seconds = PC_SESSION_DAYS * 24 * 60 * 60;
 
@@ -143,3 +167,7 @@ if (!defined('APP_BOOTSTRAPPED')) {
 }
 
 require_once BASE_PATH . '/helpers.php';
+
+// An https:// APP_URL moves plain-HTTP visitors to HTTPS and sends HSTS.
+// Nothing happens for an http:// APP_URL. See pc_https_decision().
+pc_enforce_https();

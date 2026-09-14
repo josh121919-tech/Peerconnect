@@ -14,6 +14,14 @@ Options -MultiViews
     # tests/ and scripts/ hold command-line tools that write to the database.
     RewriteRule ^(?:App|Framework|vendor|tests|scripts)/ - [F,L,NC]
 
+    # Code and notes in the web root that are not pages. helpers.php and
+    # routes.php only define things, and the pass-through rule below would run
+    # them for anyone who asked; the __seed scripts are command-line only; the
+    # .md files describe how the app is secured and deployed.
+    RewriteRule ^(?:helpers|routes)\.php$ - [F,L,NC]
+    RewriteRule ^__ - [F,L]
+    RewriteRule \.md$ - [F,L,NC]
+
     # Legacy upload URLs now point to the new public storage folders.
     RewriteRule ^menteepage/view/uploads/reports/(.*)$ public/uploads/reports/$1 [L,NC]
     RewriteRule ^(?:menteepage|mentorpage)/uploads/profiles/(.*)$ public/uploads/profiles/$1 [L,NC]
@@ -63,14 +71,27 @@ Options -MultiViews
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
 
+# "Require all denied" is Apache 2.4's own syntax. The old "Order/Deny" form
+# only works where the mod_access_compat module is loaded, which many hosts
+# leave out, and then every request here fails with a 500.
 <FilesMatch "\.(env|log|sql|bak|htpasswd)$">
-    Order Allow,Deny
-    Deny from all
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order Allow,Deny
+        Deny from all
+    </IfModule>
 </FilesMatch>
 
 <FilesMatch "^(composer\.(json|lock)|package\.json)$">
-    Order Allow,Deny
-    Deny from all
+    <IfModule mod_authz_core.c>
+        Require all denied
+    </IfModule>
+    <IfModule !mod_authz_core.c>
+        Order Allow,Deny
+        Deny from all
+    </IfModule>
 </FilesMatch>
 
 # The two extracted stylesheets are always requested with ?v=<file mtime>, so

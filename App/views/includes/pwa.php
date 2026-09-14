@@ -8,14 +8,14 @@ if (defined('PWA_INCLUDED')) return;
 define('PWA_INCLUDED', true);
 ?>
 <!-- ── PWA Manifest & Meta ─────────────────────────────────────── -->
-<link rel="manifest" href="/case/case/public/manifest.json">
+<link rel="manifest" href="<?= htmlspecialchars(url('pwa-manifest')) ?>">
 <meta name="theme-color" content="#023047">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="PeerConnect">
-<link rel="apple-touch-icon" href="/case/case/public/icons/icon.svg">
-<link rel="icon" type="image/svg+xml" href="/case/case/public/icons/icon.svg">
+<link rel="apple-touch-icon" href="<?= htmlspecialchars(BASE_URL) ?>/public/icons/icon.svg">
+<link rel="icon" type="image/svg+xml" href="<?= htmlspecialchars(BASE_URL) ?>/public/icons/icon.svg">
 
 <!-- ── Service Worker Registration ───────────────────────────── -->
 <script>
@@ -23,8 +23,8 @@ define('PWA_INCLUDED', true);
     if (!('serviceWorker' in navigator)) return;
 
     window.addEventListener('load', function() {
-        navigator.serviceWorker.register('/case/case/public/sw.js', {
-            scope: '/case/case/'
+        navigator.serviceWorker.register(<?= json_encode(BASE_URL . '/public/sw.js', JSON_UNESCAPED_SLASHES) ?>, {
+            scope: <?= json_encode(BASE_URL . '/', JSON_UNESCAPED_SLASHES) ?>,
         }).then(function(reg) {
             // Check for updates every 60s
             setInterval(() => reg.update(), 60000);

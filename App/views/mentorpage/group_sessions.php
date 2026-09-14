@@ -13,7 +13,7 @@ if (!isset($con)) {
     include __DIR__ . "/../db.php";
 }
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'mentor') {
-    header("Location: /case/case/edf9af138e2da896fcfd1a892f49a4b9");
+    header("Location: " . url('welcomepage'));
     exit;
 }
 
@@ -143,7 +143,7 @@ $groups_gs = $con->query("
                     ? (int)$firstReqRow_gs->fetch_assoc()['request_id']
                     : 0;
                 $joinUrl_gs = $firstReqId_gs > 0
-                    ? '/case/case/6b4396b7d830104eb41d706cefe6a991?session_id=' . $firstReqId_gs . '&type=group'
+                    ? url('video-join') . '?session_id=' . $firstReqId_gs . '&type=group'
                     : '#';
 
                 // Reserved students list
@@ -232,7 +232,7 @@ $groups_gs = $con->query("
                                             const endAt = <?= $sessionEnd_gs->getTimestamp() ?>;
                                             const firstReqId = <?= $firstReqId_gs ?>;
                                             const url = firstReqId > 0 ?
-                                                '/case/case/6b4396b7d830104eb41d706cefe6a991?session_id=' + firstReqId + '&type=group' :
+                                                '<?= url('video-join') ?>?session_id=' + firstReqId + '&type=group' :
                                                 null;
                                             const timerEl = document.getElementById('group-timer-' + aid);
                                             const actionEl = document.getElementById('group-action-' + aid);
@@ -252,7 +252,7 @@ $groups_gs = $con->query("
                                                 if ('Notification' in window && Notification.permission === 'granted') {
                                                     new Notification('NEUST – Group Session starting now!', {
                                                         body: 'Your group session is ready. Click to join.',
-                                                        icon: '/case/case/assets/logo.png'
+                                                        icon: '<?= BASE_URL ?>/public/icons/icon.svg'
                                                     });
                                                 }
                                             }

@@ -12,4 +12,12 @@
     </FilesMatch>
 </IfModule>
 
-php_flag engine off
+# A second lock where PHP runs inside Apache (mod_php, as in XAMPP). On hosts
+# that run PHP separately (PHP-FPM) this directive does not exist, and outside
+# these guards it made every file in this folder answer with a 500.
+<IfModule mod_php.c>
+    php_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+    php_flag engine off
+</IfModule>

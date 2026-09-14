@@ -3,7 +3,7 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 include __DIR__ . "/../db.php";
 
 if (!isset($_SESSION['user_id'])) {
-    header("Location: /case/case/edf9af138e2da896fcfd1a892f49a4b9");
+    header("Location: " . url('welcomepage'));
     exit;
 }
 
@@ -345,7 +345,7 @@ endif;
 
 // ── Approved ──────────────────────────────────────────────────
 if ($status === 'approved') {
-    header("Location: /case/case/10efedb5f85d976aecf4f27238f7ec3b");
+    header("Location: " . url('mentee-dashboard'));
     exit;
 }
 
@@ -434,7 +434,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
         // NOTE: users.verified is intentionally NOT set here — it is granted only
         // by admin approval (see admin/verify.php), not on submission.
         pc_flash('success', 'An admin will review it and you will be notified either way.', 'Verification submitted');
-        header("Location: /case/case/140204565c663d348ed7ae748f5a5802");
+        header("Location: " . url('mentee-verification'));
         exit;
     }
 

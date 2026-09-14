@@ -192,4 +192,8 @@ return [
     'admin-reports'           => 'App/views/admin/reports.php',
     'admin-reports-export'    => 'App/views/admin/reports_export.php',
     'admin-analytics'         => 'App/views/admin/analytics.php',
+
+    // The web app manifest, built from BASE_URL and url() so it follows the
+    // install's folder and route secret. Linked from includes/pwa.php.
+    'pwa-manifest'            => 'App/views/includes/manifest.php',
 ];

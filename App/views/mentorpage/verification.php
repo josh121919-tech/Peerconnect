@@ -2,32 +2,13 @@
 if (session_status() === PHP_SESSION_NONE) session_start();
 include __DIR__ . "/../db.php";
 
-
-// Auto-create / patch user_verifications table
-$con->query("
-    CREATE TABLE IF NOT EXISTS user_verifications (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        user_id INT NOT NULL,
-        full_name VARCHAR(255),
-        student_id VARCHAR(100),
-        course VARCHAR(255),
-        year_level VARCHAR(50),
-        club VARCHAR(255),
-        expertise TEXT,
-        id_image VARCHAR(255),
-        credential_image VARCHAR(255),
-        status ENUM('pending','approved','rejected') DEFAULT 'pending',
-        admin_notes TEXT,
-        submitted_at DATETIME,
-        reviewed_at DATETIME
-    )
-");
-
-// Patch expertise column onto older tables that may lack it
-$con->query("ALTER TABLE user_verifications ADD COLUMN IF NOT EXISTS expertise TEXT");
+// user_verifications, including its expertise column, is part of the schema
+// (database_migrations.sql). This page used to CREATE and ALTER it on every
+// load, which needs table-changing rights the app's database account should
+// not have.
 
 if (!isset($_SESSION['user_id'])) {
-    header("Location: /case/case/edf9af138e2da896fcfd1a892f49a4b9");
+    header("Location: " . url('welcomepage'));
     exit;
 }
 
@@ -172,7 +153,7 @@ endif;
 
 // ── Approved → redirect ──────────────────────────────────────
 if ($status === 'approved') {
-    header("Location: /case/case/140e248d98c42c91deb10e1064e644ec");
+    header("Location: " . url('mentor-dashboard'));
     exit;
 }
 
@@ -300,7 +281,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
         // is granted only by admin approval (see admin/verify.php), not on submission.
 
         pc_flash('success', 'An admin will review it and you will be notified either way.', 'Application submitted');
-        header("Location: /case/case/8002a71bf36398e654ce5d3ba3494d8d");
+        header("Location: " . url('mentor-verification'));
         exit;
     }
 
