@@ -45,12 +45,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
     $id     = (int)$_POST['id'];
     $action = $_POST['action'];
     if (in_array($action, ['approve', 'reject'], true)) {
-        $newStatus = $action === 'approve' ? 'approved' : 'rejected';
-        $stmt = $con->prepare("UPDATE session_requests SET status=? WHERE request_id=? AND mentor_id=? AND status='pending'");
-        $stmt->bind_param("sii", $newStatus, $id, $mentor_id);
-        $stmt->execute();
-        $notifyMentee = $stmt->affected_rows > 0;
-        $stmt->close();
+        // Decided from here without a reason; the Requests tab is where one can be given.
+        $notifyMentee = ($action === 'approve'
+            ? SessionRepository::approveByMentor($con, $id, $mentor_id)
+            : SessionRepository::rejectByMentor($con, $id, $mentor_id)) > 0;
 
         if ($notifyMentee) {
             // Add to (or drop from) any connected Google Calendar. Never fatal.
@@ -58,17 +56,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
         }
 
         // Notify mentee
-        $nq = $con->prepare("
-            SELECT sr.mentee_id, CONCAT(u.firstname,' ',u.lastname) as mentor_name
-            FROM session_requests sr
-            JOIN users u ON u.user_id = sr.mentor_id
-            WHERE sr.request_id = ? AND sr.mentor_id = ?
-            LIMIT 1
-        ");
-        $nq->bind_param("ii", $id, $mentor_id);
-        $nq->execute();
-        $nr = $nq->get_result()->fetch_assoc();
-        $nq->close();
+        $nr = SessionRepository::menteeAndMentorName($con, $id, $mentor_id);
 
         if ($notifyMentee && $nr) {
             $link = url('mentee-sessions');
@@ -83,151 +71,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
     exit;
 }
 
-/** Small helper: run a prepared single-row query with one int parameter. */
-$one = function (string $sql) use ($con, $mentor_id) {
-    $q = $con->prepare($sql);
-    $q->bind_param("i", $mentor_id);
-    $q->execute();
-    $row = $q->get_result()->fetch_assoc() ?: [];
-    $q->close();
-    return $row;
-};
-
-// ── Stat 1: active mentees ────────────────────────────────────────────
-// A mentee counts as active once a session with them is approved or done.
-$active_mentees = (int)($one("
-    SELECT COUNT(DISTINCT mentee_id) c FROM session_requests
-    WHERE mentor_id = ? AND status IN ('approved','completed')
-")['c'] ?? 0);
+// ── Stats 1 and 2: active mentees, upcoming sessions ──────────────────
+// The same counts the Sessions page shows, from the same query, so the two
+// pages always agree: a mentee counts as active once a session with them is
+// approved or done, and sessions of deleted mentee accounts are left out.
+$session_stats  = SessionRepository::statsForMentor($con, $mentor_id);
+$active_mentees = (int)($session_stats['mentees'] ?? 0);
+$upcoming_count = (int)($session_stats['upcoming'] ?? 0);
 
 // "New this month" is measured on the first session ever booked with each
 // mentee, which is a fixed point in the past — the condition pc_trend() needs.
-$new_this_month = (int)($one("
-    SELECT COUNT(*) c FROM (
-        SELECT mentee_id, MIN(session_date) first_on
-        FROM session_requests
-        WHERE mentor_id = ? AND status IN ('approved','completed')
-        GROUP BY mentee_id
-    ) f
-    WHERE f.first_on >= DATE_FORMAT(NOW(), '%Y-%m-01')
-")['c'] ?? 0);
+$new_this_month = SessionRepository::countNewMenteesThisMonthForMentor($con, $mentor_id);
 
-// ── Stat 2: upcoming sessions ─────────────────────────────────────────
-$upcoming_count = (int)($one("
-    SELECT COUNT(*) c FROM session_requests
-    WHERE mentor_id = ? AND status = 'approved' AND session_date >= NOW()
-")['c'] ?? 0);
-
-$next_session = $one("
-    SELECT sr.request_id, sr.session_date, sr.subject, u.firstname, u.lastname
-    FROM session_requests sr JOIN users u ON u.user_id = sr.mentee_id
-    WHERE sr.mentor_id = ? AND sr.status = 'approved' AND sr.session_date >= NOW()
-    ORDER BY sr.session_date ASC LIMIT 1
-");
+$next_session = SessionRepository::nextUpcomingForMentor($con, $mentor_id) ?? [];
 
 // ── Stat 3: messages ──────────────────────────────────────────────────
-$unread_messages = (int)($one("
-    SELECT COUNT(*) c FROM messages WHERE receiver_id = ? AND is_read = 0
-")['c'] ?? 0);
-$messages_week = (int)($one("
-    SELECT COUNT(*) c FROM messages
-    WHERE receiver_id = ? AND created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-")['c'] ?? 0);
+$unread_messages = MessageRepository::countUnread($con, $mentor_id);
+$messages_week   = MessageRepository::countReceivedInLastDays($con, $mentor_id, 7);
 
 // ── Stat 4: rating ────────────────────────────────────────────────────
-$rrow         = $one("SELECT ROUND(AVG(rating),1) r, COUNT(*) cnt FROM feedback WHERE mentor_id = ?");
-$avg_rating   = $rrow['r'] ?? null;
-$rating_count = (int)($rrow['cnt'] ?? 0);
+$rrow         = FeedbackRepository::ratingSummaryForMentor($con, $mentor_id);
+$avg_rating   = $rrow['average'];
+$rating_count = (int)$rrow['reviews'];
 
 // ── Pending requests (the actions that already lived on this page) ────
-$rq = $con->prepare("
-    SELECT sr.*, u.firstname, u.lastname
-    FROM session_requests sr JOIN users u ON sr.mentee_id = u.user_id
-    WHERE sr.mentor_id = ? AND sr.status = 'pending'
-    ORDER BY sr.session_date ASC
-");
-$rq->bind_param("i", $mentor_id);
-$rq->execute();
-$pending_rows = $rq->get_result()->fetch_all(MYSQLI_ASSOC);
-$rq->close();
+$pending_rows = SessionRepository::pendingSoonestForMentor($con, $mentor_id);
 $pending = count($pending_rows);
 
 // ── Today's schedule ──────────────────────────────────────────────────
-$tq = $con->prepare("
-    SELECT sr.request_id, sr.session_date, sr.subject, sr.status,
-           u.user_id AS mentee_id, u.firstname, u.lastname
-    FROM session_requests sr JOIN users u ON u.user_id = sr.mentee_id
-    WHERE sr.mentor_id = ? AND DATE(sr.session_date) = CURDATE()
-      AND sr.status IN ('approved','completed')
-    ORDER BY sr.session_date ASC
-");
-$tq->bind_param("i", $mentor_id);
-$tq->execute();
-$today_rows = $tq->get_result()->fetch_all(MYSQLI_ASSOC);
-$tq->close();
+$today_rows = SessionRepository::todayForMentor($con, $mentor_id);
 
 // ── Mentee progress ───────────────────────────────────────────────────
 // `goals` is the table that actually models progress (one row per goal, with
 // a status), so the bar is goals completed over goals set. Most pairs have no
 // goals yet and only a mentee can create one, so those rows show their session
 // count instead of an invented percentage.
-$pq = $con->prepare("
-    SELECT u.user_id, u.firstname, u.lastname,
-           SUM(sr.status = 'completed')                        AS done,
-           MAX(sr.subject)                                     AS subject,
-           (SELECT COUNT(*) FROM goals g
-             WHERE g.mentee_id = u.user_id AND g.mentor_id = ?) AS goals_total,
-           (SELECT COUNT(*) FROM goals g
-             WHERE g.mentee_id = u.user_id AND g.mentor_id = ?
-               AND g.status = 'completed')                      AS goals_done
-    FROM session_requests sr
-    JOIN users u ON u.user_id = sr.mentee_id
-    WHERE sr.mentor_id = ? AND sr.status IN ('approved','completed')
-    GROUP BY u.user_id, u.firstname, u.lastname
-    ORDER BY done DESC, u.firstname ASC
-    LIMIT 5
-");
-$pq->bind_param("iii", $mentor_id, $mentor_id, $mentor_id);
-$pq->execute();
-$progress_rows = $pq->get_result()->fetch_all(MYSQLI_ASSOC);
-$pq->close();
+$progress_rows = SessionRepository::menteeProgressForMentor($con, $mentor_id, 5);
 
 // ── Recent activity ───────────────────────────────────────────────────
 // Straight from this mentor's notifications, each with the link the
 // notification itself carries, so every row goes somewhere real.
-$aq = $con->prepare("
-    SELECT type, title, message, link, is_read, created_at
-    FROM notifications WHERE user_id = ?
-    ORDER BY created_at DESC LIMIT 5
-");
-$aq->bind_param("i", $mentor_id);
-$aq->execute();
-$activity_rows = $aq->get_result()->fetch_all(MYSQLI_ASSOC);
-$aq->close();
+$activity_rows = NotificationRepository::latestForUser($con, $mentor_id, 5);
 
 // ── Active mentees ────────────────────────────────────────────────────
-$mq = $con->prepare("
-    SELECT u.user_id, u.firstname, u.lastname, pr.profile_image,
-           MIN(sr.session_date)                                   AS since_on,
-           SUM(sr.status = 'completed')                           AS done,
-           SUM(sr.status = 'approved' AND sr.session_date >= NOW()) AS upcoming,
-           (SELECT MIN(sr2.request_id) FROM session_requests sr2
-             WHERE sr2.mentor_id = sr.mentor_id AND sr2.mentee_id = u.user_id
-               AND sr2.status = 'approved' AND sr2.session_date >= NOW()) AS next_id,
-           (SELECT ROUND(AVG(f.rating),1) FROM feedback f
-             WHERE f.mentor_id = sr.mentor_id AND f.mentee_id = u.user_id)  AS their_rating
-    FROM session_requests sr
-    JOIN users u ON u.user_id = sr.mentee_id
-    LEFT JOIN profile pr ON pr.user_id = u.user_id
-    WHERE sr.mentor_id = ? AND sr.status IN ('approved','completed')
-    GROUP BY u.user_id, u.firstname, u.lastname, pr.profile_image, sr.mentor_id
-    ORDER BY upcoming DESC, since_on DESC
-    LIMIT 6
-");
-$mq->bind_param("i", $mentor_id);
-$mq->execute();
-$mentee_rows = $mq->get_result()->fetch_all(MYSQLI_ASSOC);
-$mq->close();
+$mentee_rows = SessionRepository::activeMenteesForMentor($con, $mentor_id, 6);
 
 $mentor_name = trim(($_SESSION['firstname'] ?? '') . ' ' . ($_SESSION['lastname'] ?? '')) ?: 'Mentor';
 $first_name  = $_SESSION['firstname'] ?? 'Mentor';

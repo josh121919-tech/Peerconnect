@@ -450,6 +450,129 @@ class SessionRepository extends Repository
         ", 'is', [$mentorId, $status]);
     }
 
+    // ── The mentor dashboard (native types: the page used prepared statements) ──
+
+    /**
+     * How many different mentees had their first approved or completed session
+     * with the mentor this calendar month. Only mentees whose account still
+     * exists count, as in statsForMentor().
+     */
+    public static function countNewMenteesThisMonthForMentor(mysqli $con, int $mentorId): int
+    {
+        return (int)self::value($con, "
+            SELECT COUNT(*) FROM (
+                SELECT sr.mentee_id, MIN(sr.session_date) AS first_on
+                FROM session_requests sr
+                JOIN users u ON u.user_id = sr.mentee_id
+                WHERE sr.mentor_id = ? AND sr.status IN ('approved','completed')
+                GROUP BY sr.mentee_id
+            ) f
+            WHERE f.first_on >= DATE_FORMAT(NOW(), '%Y-%m-01')
+        ", 'i', [$mentorId]);
+    }
+
+    /** The mentor's next upcoming session with the mentee's name, or null when there is none. */
+    public static function nextUpcomingForMentor(mysqli $con, int $mentorId): ?array
+    {
+        return self::row($con, "
+            SELECT sr.request_id, sr.session_date, sr.subject, u.firstname, u.lastname
+            FROM session_requests sr JOIN users u ON u.user_id = sr.mentee_id
+            WHERE sr.mentor_id = ? AND " . self::upcomingCondition('sr') . "
+            ORDER BY sr.session_date ASC LIMIT 1
+        ", 'i', [$mentorId]);
+    }
+
+    /** The mentor's pending requests, soonest first, with the mentee's first and last name. */
+    public static function pendingSoonestForMentor(mysqli $con, int $mentorId): array
+    {
+        return self::typedRows($con, "
+            SELECT sr.*, u.firstname, u.lastname
+            FROM session_requests sr JOIN users u ON sr.mentee_id = u.user_id
+            WHERE sr.mentor_id = ? AND sr.status = 'pending'
+            ORDER BY sr.session_date ASC
+        ", 'i', [$mentorId]);
+    }
+
+    /** The mentor's approved and completed sessions dated today, earliest first, with the mentee's name. */
+    public static function todayForMentor(mysqli $con, int $mentorId): array
+    {
+        return self::typedRows($con, "
+            SELECT sr.request_id, sr.session_date, sr.subject, sr.status,
+                   u.user_id AS mentee_id, u.firstname, u.lastname
+            FROM session_requests sr JOIN users u ON u.user_id = sr.mentee_id
+            WHERE sr.mentor_id = ? AND DATE(sr.session_date) = CURDATE()
+              AND sr.status IN ('approved','completed')
+            ORDER BY sr.session_date ASC
+        ", 'i', [$mentorId]);
+    }
+
+    /**
+     * Mentee Progress: up to $limit mentees with an approved or completed
+     * session, most completed sessions first, each with 'done' (completed
+     * sessions), a 'subject', and 'goals_total' / 'goals_done' for this pair.
+     */
+    public static function menteeProgressForMentor(mysqli $con, int $mentorId, int $limit): array
+    {
+        return self::typedRows($con, "
+            SELECT u.user_id, u.firstname, u.lastname,
+                   SUM(sr.status = 'completed')                        AS done,
+                   MAX(sr.subject)                                     AS subject,
+                   (SELECT COUNT(*) FROM goals g
+                     WHERE g.mentee_id = u.user_id AND g.mentor_id = ?) AS goals_total,
+                   (SELECT COUNT(*) FROM goals g
+                     WHERE g.mentee_id = u.user_id AND g.mentor_id = ?
+                       AND g.status = 'completed')                      AS goals_done
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentee_id
+            WHERE sr.mentor_id = ? AND sr.status IN ('approved','completed')
+            GROUP BY u.user_id, u.firstname, u.lastname
+            ORDER BY done DESC, u.firstname ASC
+            LIMIT ?
+        ", 'iiii', [$mentorId, $mentorId, $mentorId, $limit]);
+    }
+
+    /**
+     * Active Mentees cards: up to $limit mentees with an approved or completed
+     * session, those with something upcoming first, each with their photo,
+     * 'since_on' (first session), 'done', 'upcoming', 'next_id' (the upcoming
+     * session with the lowest id) and 'their_rating' (their average rating of
+     * this mentor, null when none).
+     */
+    public static function activeMenteesForMentor(mysqli $con, int $mentorId, int $limit): array
+    {
+        return self::typedRows($con, "
+            SELECT u.user_id, u.firstname, u.lastname, pr.profile_image,
+                   MIN(sr.session_date)                                   AS since_on,
+                   SUM(sr.status = 'completed')                           AS done,
+                   SUM(" . self::upcomingCondition('sr') . ") AS upcoming,
+                   (SELECT MIN(sr2.request_id) FROM session_requests sr2
+                     WHERE sr2.mentor_id = sr.mentor_id AND sr2.mentee_id = u.user_id
+                       AND " . self::upcomingCondition('sr2') . ") AS next_id,
+                   (SELECT ROUND(AVG(f.rating),1) FROM feedback f
+                     WHERE f.mentor_id = sr.mentor_id AND f.mentee_id = u.user_id)  AS their_rating
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentee_id
+            LEFT JOIN profile pr ON pr.user_id = u.user_id
+            WHERE sr.mentor_id = ? AND sr.status IN ('approved','completed')
+            GROUP BY u.user_id, u.firstname, u.lastname, pr.profile_image, sr.mentor_id
+            ORDER BY upcoming DESC, since_on DESC
+            LIMIT ?
+        ", 'ii', [$mentorId, $limit]);
+    }
+
+    // ── The mentor calendar ─────────────────────────────────────────────────
+
+    /** Every approved session of the mentor with the mentee's first and last name, in no particular order. */
+    public static function approvedWithMenteeForMentor(mysqli $con, int $mentorId): array
+    {
+        return self::rows($con, "
+            SELECT sr.session_date, sr.subject, u.firstname, u.lastname
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentee_id
+            WHERE sr.mentor_id = ? AND sr.status = 'approved'
+        ", 'i', [$mentorId]);
+    }
+
     // ── A mentor's session lists ────────────────────────────────────────────
 
     /** How many of the mentor's sessions are in any of $statuses. */
@@ -546,6 +669,20 @@ class SessionRepository extends Repository
               AND status = 'approved'
             ORDER BY request_id ASC LIMIT 1
         ", 'isss', [$mentorId, $subject, $date, $startTime]);
+    }
+
+    /**
+     * How many pending, approved or completed sessions belong to the slot. A
+     * slot with any is booked: its date, time and subject have to stay as they
+     * are, or those sessions would no longer match it.
+     */
+    public static function countLiveInSlot(mysqli $con, int $mentorId, string $subject, string $date, string $startTime): int
+    {
+        return (int)self::value($con, "
+            SELECT COUNT(*) FROM session_requests
+            WHERE mentor_id = ? AND DATE(session_date) = ? AND TIME(session_date) = ?
+              AND subject = ? AND status IN ('pending','approved','completed')
+        ", 'isss', [$mentorId, $date, $startTime, $subject]);
     }
 
     /** The slot's pending and approved reservations with each mentee's name. */

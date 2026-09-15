@@ -8,11 +8,11 @@
  */
 class NotificationRepository extends Repository
 {
-    /** The user's most recent notifications, newest first. */
+    /** The user's most recent notifications, newest first, each with the link it carries (null or '' when none). */
     public static function latestForUser(mysqli $con, int $userId, int $limit): array
     {
         return self::rows($con, "
-            SELECT type, title, message, created_at
+            SELECT type, title, message, link, is_read, created_at
             FROM notifications
             WHERE user_id = ?
             ORDER BY created_at DESC

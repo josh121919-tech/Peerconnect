@@ -33,22 +33,102 @@ $self_url  = url('mentor-calendar');
 $success   = false;
 $error     = '';
 
-/** True when a booking already points at this slot. */
-function cal_is_booked(mysqli $con, int $mentor_id, string $date, string $start, string $subject): bool
+// ── Reading the form ──────────────────────────────────────────────────
+// A field that is not plain text (one sent as a list, say) counts as empty,
+// so a tampered form gets the ordinary message instead of a PHP error.
+
+/** A text field, trimmed. */
+function cal_text(string $key): string
 {
-    $q = $con->prepare("
-        SELECT 1 FROM session_requests
-        WHERE mentor_id = ? AND DATE(session_date) = ? AND TIME(session_date) = ?
-          AND subject = ? AND status IN ('pending','approved','completed')
-        LIMIT 1
-    ");
-    $q->bind_param("isss", $mentor_id, $date, $start, $subject);
-    $q->execute();
-    $q->store_result();
-    $hit = $q->num_rows > 0;
-    $q->close();
-    return $hit;
+    return is_string($_POST[$key] ?? null) ? trim($_POST[$key]) : '';
 }
+
+/** An id field; 0 when missing or not plain text. */
+function cal_id(string $key): int
+{
+    return is_string($_POST[$key] ?? null) ? (int)$_POST[$key] : 0;
+}
+
+/** A list field such as start_time[], each entry trimmed; entries that are not text become ''. */
+function cal_list(string $key): array
+{
+    $list = $_POST[$key] ?? [];
+    return is_array($list) ? array_map(fn($v) => is_string($v) ? trim($v) : '', $list) : [];
+}
+
+/** True for a real calendar date written 'Y-m-d'. */
+function cal_valid_date(string $date): bool
+{
+    $d = DateTime::createFromFormat('!Y-m-d', $date);
+    return $d !== false && $d->format('Y-m-d') === $date;
+}
+
+/** A clock time ('9:00', '09:00' or '09:00:00') as seconds into the day, or null when it is not one. */
+function cal_seconds(string $time): ?int
+{
+    if (!preg_match('/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/', $time, $m)) return null;
+    [$h, $i, $s] = [(int)$m[1], (int)$m[2], (int)($m[3] ?? 0)];
+    return ($h > 23 || $i > 59 || $s > 59) ? null : $h * 3600 + $i * 60 + $s;
+}
+
+/** Seconds into the day as a clock time, e.g. '9:30 AM'. */
+function cal_clock(int $seconds): string
+{
+    return gmdate('g:i A', $seconds);
+}
+
+/** Why the subject, topics or description cannot be saved as typed, or '' when they can. */
+function cal_text_problem(string $subject, string $topics, string $about): string
+{
+    foreach ([$subject, $topics, $about] as $text) {
+        if (!mb_check_encoding($text, 'UTF-8')) {
+            return "Some of the text could not be read. Please type it again.";
+        }
+    }
+    // The column sizes: anything longer would be cut off without a word.
+    if (mb_strlen($subject) > 100) return "Keep the subject to 100 characters or fewer.";
+    if (mb_strlen($topics) > 255)  return "Keep the topics to 255 characters or fewer.";
+    if (strlen($about) > 65535)    return "The description is too long. Please shorten it.";
+    return '';
+}
+
+/**
+ * The first slot in $slots that overlaps the time from $from to $to (seconds
+ * into the day), or null. Each slot is ['from' => …, 'to' => …]. A slot that
+ * ends exactly when another starts does not overlap it.
+ */
+function cal_overlap(array $slots, int $from, int $to): ?array
+{
+    foreach ($slots as $slot) {
+        if ($slot['from'] < $to && $from < $slot['to']) return $slot;
+    }
+    return null;
+}
+
+/** The mentor's slots on $date as ['id', 'from', 'to'], leaving out $exceptId. A slot with no length counts as 60 minutes, as booking does. */
+function cal_day_slots(mysqli $con, int $mentor_id, string $date, int $exceptId = 0): array
+{
+    $out = [];
+    foreach (AvailabilityRepository::onDateForMentor($con, $mentor_id, $date) as $s) {
+        if ((int)$s['availability_id'] === $exceptId) continue;
+        $from  = cal_seconds((string)$s['start_time']) ?? 0;
+        $out[] = ['id' => (int)$s['availability_id'], 'from' => $from, 'to' => $from + ((int)($s['duration'] ?? 60) ?: 60) * 60];
+    }
+    return $out;
+}
+
+// A save holds the mentor's calendar (see AvailabilityRepository::lockMentor);
+// this lets it go however the request ends.
+$cal_locked = false;
+register_shutdown_function(function () use ($con, $mentor_id, &$cal_locked) {
+    if (!$cal_locked) return;
+    try {
+        AvailabilityRepository::unlockMentor($con, $mentor_id);
+    } catch (Throwable $e) {
+        // The connection closing releases it regardless.
+    }
+});
+const CAL_BUSY = "Your calendar is saving another change right now. Please try again in a moment.";
 
 // ── Delete ────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
@@ -56,12 +136,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
         http_response_code(403);
         exit('CSRF token mismatch.');
     }
-    $delId = (int)$_POST['delete_id'];
-    $del = $con->prepare("DELETE FROM availability WHERE availability_id = ? AND mentor_id = ?");
-    $del->bind_param("ii", $delId, $mentor_id);
-    $del->execute();
-    $gone = $del->affected_rows > 0;
-    $del->close();
+    $gone = AvailabilityRepository::deleteForMentor($con, cal_id('delete_id'), $mentor_id) > 0;
     if ($gone) {
         pc_flash('success', 'That availability slot was removed.', 'Availability deleted');
     } else {
@@ -71,21 +146,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
     exit;
 }
 
-/** How many live bookings point at this slot. */
-function cal_booking_count(mysqli $con, int $mentor_id, string $date, string $start, string $subject): int
-{
-    $q = $con->prepare("
-        SELECT COUNT(*) AS n FROM session_requests
-        WHERE mentor_id = ? AND DATE(session_date) = ? AND TIME(session_date) = ?
-          AND subject = ? AND status IN ('pending','approved','completed')
-    ");
-    $q->bind_param("isss", $mentor_id, $date, $start, $subject);
-    $q->execute();
-    $n = (int)($q->get_result()->fetch_assoc()['n'] ?? 0);
-    $q->close();
-    return $n;
-}
-
 // ── Edit ──────────────────────────────────────────────────────────────
 // One row, so this takes a single start/end rather than the create form's list.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['edit_id'])) {
@@ -93,25 +153,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['edit_id'])) {
         http_response_code(403);
         exit('CSRF token mismatch.');
     }
-    $editId  = (int)$_POST['edit_id'];
-    $date    = $_POST['date'] ?? '';
-    $subject = trim($_POST['subject'] ?? '');
-    $about   = trim($_POST['about'] ?? '');
-    $topics  = trim($_POST['topics'] ?? '');
-    $stype   = $_POST['session_type'] ?? '';
-    $start   = trim(($_POST['start_time'] ?? [''])[0] ?? '');
-    $end     = trim(($_POST['end_time'] ?? [''])[0] ?? '');
+    $editId  = cal_id('edit_id');
+    $date    = cal_text('date');
+    $subject = cal_text('subject');
+    $about   = cal_text('about');
+    $topics  = cal_text('topics');
+    $stype   = cal_text('session_type');
+    $start   = cal_list('start_time')[0] ?? '';
+    $end     = cal_list('end_time')[0] ?? '';
 
     // Only slots this mentor owns, and only ones nobody has booked.
-    $own = $con->prepare("SELECT date, start_time, subject, duration FROM availability WHERE availability_id = ? AND mentor_id = ?");
-    $own->bind_param("ii", $editId, $mentor_id);
-    $own->execute();
-    $row = $own->get_result()->fetch_assoc();
-    $own->close();
+    $row = AvailabilityRepository::findForMentor($con, $editId, $mentor_id);
 
-    $mins = ($start !== '' && $end !== '')
-        ? (int)round((strtotime($end) - strtotime($start)) / 60)
-        : 0;
+    $from    = cal_seconds($start);
+    $to      = cal_seconds($end);
+    $badTime = ($start !== '' && $from === null) || ($end !== '' && $to === null);
+    $mins    = ($from !== null && $to !== null) ? (int)round(($to - $from) / 60) : 0;
 
     // A booking is joined to a slot only by (mentor, subject, date, start_time)
     // — session_requests carries no availability_id. On a slot someone has
@@ -119,35 +176,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['edit_id'])) {
     // orphaned. Topics, the blurb and the session type are not part of that
     // join, so they are safe to change: a booked slot used to refuse every
     // edit, which also blocked the fields that were never at risk.
-    $isBooked = $row && cal_is_booked($con, $mentor_id, $row['date'], $row['start_time'], $row['subject']);
+    $liveBookings = $row ? SessionRepository::countLiveInSlot($con, $mentor_id, $row['subject'], $row['date'], $row['start_time']) : 0;
+    $isBooked = $liveBookings > 0;
     if ($isBooked) {
         $date    = $row['date'];
         $start   = substr((string)$row['start_time'], 0, 5);
         $subject = $row['subject'];
         $mins    = max(1, (int)$row['duration']);
+        $from    = cal_seconds($start);
+        $badTime = false;
     }
+
+    // Only a change to when the slot runs can make it clash with another slot
+    // or put it in the past, so a slot that already does either can still
+    // have its topics or description corrected.
+    $moved = $row && !$isBooked && $from !== null
+        && ($date !== $row['date'] || $from !== cal_seconds((string)$row['start_time']) || $mins !== (int)$row['duration']);
 
     if (!$row) {
         $error = "That slot could not be found.";
-    } elseif ($isBooked && $stype === '1v1'
-              && cal_booking_count($con, $mentor_id, $row['date'], $row['start_time'], $row['subject']) > 1) {
+    } elseif ($isBooked && $stype === '1v1' && $liveBookings > 1) {
         // 1v1 drops capacity to 1, which would leave existing reservations
         // sitting above the limit.
         $error = "This slot has more than one booking, so it cannot be changed to 1v1. Remove the extra reservations first.";
     } elseif ($date === '' || $subject === '' || $topics === '' || !in_array($stype, ['1v1', 'group'], true)) {
         $error = "Date, subject, topics and session type are all required.";
+    } elseif (!cal_valid_date($date)) {
+        $error = "That date is not a real date. Pick a day on the calendar.";
+    } elseif ($badTime) {
+        $error = "Each time slot needs a valid start and end time.";
     } elseif ($mins <= 0) {
         $error = "The end time has to be after the start time.";
-    } else {
+    } elseif (($problem = cal_text_problem($subject, $topics, $about)) !== '') {
+        $error = $problem;
+    } elseif ($date !== $row['date'] && $date < date('Y-m-d')) {
+        // The same rule as a new slot: no moving one onto a day that has passed.
+        $error = "Cannot set availability for past dates.";
+    } elseif ($moved) {
+        if (!AvailabilityRepository::lockMentor($con, $mentor_id)) {
+            $error = CAL_BUSY;
+        } else {
+            $cal_locked = true;
+            $clash = cal_overlap(cal_day_slots($con, $mentor_id, $date, $editId), $from, $from + $mins * 60);
+            if ($clash) {
+                $error = 'The new time, ' . cal_clock($from) . ' – ' . cal_clock($from + $mins * 60)
+                    . ', overlaps another slot you have that day (' . cal_clock($clash['from']) . ' – ' . cal_clock($clash['to'])
+                    . '), so nothing was changed. Pick a time that does not overlap.';
+            }
+        }
+    }
+
+    if ($error === '') {
         $capacity = $stype === 'group' ? 15 : 1;
-        $up = $con->prepare("
-            UPDATE availability
-               SET date = ?, start_time = ?, duration = ?, subject = ?, about = ?, topics = ?, session_type = ?, capacity = ?
-             WHERE availability_id = ? AND mentor_id = ?
-        ");
-        $up->bind_param("ssissssiii", $date, $start, $mins, $subject, $about, $topics, $stype, $capacity, $editId, $mentor_id);
-        $up->execute();
-        $up->close();
+        AvailabilityRepository::updateForMentor($con, $editId, $mentor_id, $date, $start, $mins, $subject, $about, $topics, $stype, $capacity);
+    }
+    if ($cal_locked) {
+        AvailabilityRepository::unlockMentor($con, $mentor_id);
+        $cal_locked = false;
+    }
+    if ($error === '') {
         pc_flash(
             'success',
             $isBooked
@@ -162,54 +249,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['edit_id'])) {
 
 // ── Create ────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subject']) && empty($_POST['edit_id'])) {
+    $date         = cal_text('date');
+    $subject      = cal_text('subject');
+    $about        = cal_text('about');
+    $topics       = cal_text('topics');
+    $session_type = cal_text('session_type');
+
     if (!verify_csrf()) {
         $error = "Security token mismatch. Please refresh and try again.";
-    } elseif (empty($_POST['date']) || empty($_POST['subject']) || empty($_POST['topics']) || empty($_POST['session_type'])) {
+    } elseif ($date === '' || $subject === '' || $topics === '' || !in_array($session_type, ['1v1', 'group'], true)) {
         // `about` is genuinely optional — the column is nullable and nothing
         // reads it as required.
         $error = "Date, subject, topics and session type are all required.";
-    } elseif ($_POST['date'] < date("Y-m-d")) {
+    } elseif (!cal_valid_date($date)) {
+        $error = "That date is not a real date. Pick a day on the calendar.";
+    } elseif ($date < date("Y-m-d")) {
         $error = "Cannot set availability for past dates.";
+    } elseif (($problem = cal_text_problem($subject, $topics, $about)) !== '') {
+        $error = $problem;
     } else {
-        $date         = $_POST['date'];
-        $subject      = trim($_POST['subject']);
-        $about        = trim($_POST['about'] ?? '');
-        $topics       = trim($_POST['topics']);
-        $session_type = $_POST['session_type'];
-        $start_times  = $_POST['start_time'] ?? [];
-        $end_times    = $_POST['end_time']   ?? [];
+        $start_times  = cal_list('start_time');
+        $end_times    = cal_list('end_time');
         $capacity     = $session_type === 'group' ? 15 : 1;
         $inserted     = 0;
         $badRange     = false;
 
+        // Every row is checked before any is saved, so a clash anywhere in
+        // the form leaves the calendar exactly as it was.
+        $rows = [];
         foreach ($start_times as $i => $start) {
-            $start = trim($start);
-            $end   = trim($end_times[$i] ?? '');
+            $end = $end_times[$i] ?? '';
             if ($start === '' || $end === '') continue;
+
+            $from = cal_seconds($start);
+            $to   = cal_seconds($end);
+            if ($from === null || $to === null) {
+                $error = "Each time slot needs a valid start and end time.";
+                break;
+            }
 
             // Duration is derived from the pair the form collects, which is
             // what the mentor actually thinks in.
-            $duration = (int)round((strtotime($end) - strtotime($start)) / 60);
+            $duration = (int)round(($to - $from) / 60);
             if ($duration <= 0) {
                 $badRange = true;
                 continue;
             }
-
-            // Prevent duplicate slots from a double-click or resubmit of the same form
-            $dupCheck = $con->prepare("SELECT 1 FROM availability WHERE mentor_id = ? AND date = ? AND start_time = ? AND subject = ? AND session_type = ? LIMIT 1");
-            $dupCheck->bind_param("issss", $mentor_id, $date, $start, $subject, $session_type);
-            $dupCheck->execute();
-            $isDuplicate = $dupCheck->get_result()->num_rows > 0;
-            $dupCheck->close();
-            if ($isDuplicate) continue;
-
-            $stmt = $con->prepare("INSERT INTO availability (mentor_id, date, start_time, duration, subject, about, topics, session_type, capacity) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->bind_param("ississssi", $mentor_id, $date, $start, $duration, $subject, $about, $topics, $session_type, $capacity);
-            $stmt->execute();
-            $stmt->close();
-            $inserted++;
+            $rows[] = ['start' => $start, 'duration' => $duration, 'from' => $from, 'to' => $from + $duration * 60];
         }
-        if ($inserted > 0) {
+
+        if ($error === '' && $rows) {
+            if (!AvailabilityRepository::lockMentor($con, $mentor_id)) {
+                $error = CAL_BUSY;
+            } else {
+                $cal_locked = true;
+                $taken = cal_day_slots($con, $mentor_id, $date);
+                $toAdd = [];
+                foreach ($rows as $r) {
+                    // Prevent duplicate slots from a double-click or resubmit of
+                    // the same form, or the same time entered twice in it.
+                    if (AvailabilityRepository::existsForMentor($con, $mentor_id, $date, $r['start'], $subject, $session_type)) continue;
+                    foreach ($toAdd as $a) {
+                        if ($a['from'] === $r['from']) continue 2;
+                    }
+
+                    if ($clash = cal_overlap($taken, $r['from'], $r['to'])) {
+                        $error = 'The ' . cal_clock($r['from']) . ' – ' . cal_clock($r['to']) . ' slot overlaps a slot you already have that day ('
+                            . cal_clock($clash['from']) . ' – ' . cal_clock($clash['to']) . '), so nothing was saved. Pick a time that does not overlap.';
+                        break;
+                    }
+                    if ($clash = cal_overlap($toAdd, $r['from'], $r['to'])) {
+                        $error = 'Two of the time slots overlap each other (' . cal_clock($clash['from']) . ' – ' . cal_clock($clash['to'])
+                            . ' and ' . cal_clock($r['from']) . ' – ' . cal_clock($r['to']) . '), so nothing was saved. Pick times that do not overlap.';
+                        break;
+                    }
+                    $toAdd[] = $r;
+                }
+
+                if ($error === '') {
+                    foreach ($toAdd as $r) {
+                        $inserted += AvailabilityRepository::createForMentor($con, $mentor_id, $date, $r['start'], $r['duration'],
+                            $subject, $about, $topics, $session_type, $capacity);
+                    }
+                }
+                AvailabilityRepository::unlockMentor($con, $mentor_id);
+                $cal_locked = false;
+            }
+        }
+
+        if ($error !== '') {
+            // Reported below.
+        } elseif ($inserted > 0) {
             $success = true;
             pc_flash('success',
                 $inserted . ' time slot' . ($inserted === 1 ? '' : 's') . ' added for ' . date('F j', strtotime($date)) . '.',
@@ -223,14 +353,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subject']) && empty($
 }
 
 // ── Saved slots ───────────────────────────────────────────────────────
-$savedResult = $con->query("
-    SELECT availability_id AS id, date, start_time, duration, subject, about, topics, session_type, capacity
-    FROM availability WHERE mentor_id = $mentor_id
-    ORDER BY date DESC, start_time DESC
-");
 $saved = [];
-while ($row = $savedResult->fetch_assoc()) {
-    $row['booked'] = cal_is_booked($con, $mentor_id, $row['date'], $row['start_time'], $row['subject']);
+foreach (AvailabilityRepository::allForMentor($con, $mentor_id) as $row) {
+    $row['booked'] = SessionRepository::countLiveInSlot($con, $mentor_id, $row['subject'], $row['date'], $row['start_time']) > 0;
     $saved[] = $row;
 }
 
@@ -247,13 +372,7 @@ foreach ($saved as $av) {
         'type'    => $av['session_type'],
     ];
 }
-$sessRes = $con->query("
-    SELECT sr.session_date, sr.subject, u.firstname, u.lastname
-    FROM session_requests sr
-    JOIN users u ON u.user_id = sr.mentee_id
-    WHERE sr.mentor_id = $mentor_id AND sr.status = 'approved'
-");
-while ($s = $sessRes->fetch_assoc()) {
+foreach (SessionRepository::approvedWithMenteeForMentor($con, $mentor_id) as $s) {
     $calEvents[] = [
         'date'    => date('Y-m-d', strtotime($s['session_date'])),
         'time'    => date('g:i A', strtotime($s['session_date'])),
@@ -284,10 +403,7 @@ if ($gcal) {
     $gcal = GoogleCalendarService::linkFor($con, $mentor_id);
 }
 
-$approved_total = (int)($con->query("
-    SELECT COUNT(*) c FROM session_requests
-    WHERE mentor_id = $mentor_id AND status = 'approved'
-")->fetch_assoc()['c'] ?? 0);
+$approved_total = SessionRepository::countForMentorInStatuses($con, $mentor_id, ['approved']);
 
 $active_page = 'calendar';
 ?>
@@ -1156,12 +1272,12 @@ $active_page = 'calendar';
 
                             <div class="fld">
                                 <label for="subjectIn">Subject</label>
-                                <input type="text" id="subjectIn" name="subject" required class="form-input" placeholder="e.g. Mathematics, Teaching Strategies">
+                                <input type="text" id="subjectIn" name="subject" required maxlength="100" class="form-input" placeholder="e.g. Mathematics, Teaching Strategies">
                             </div>
 
                             <div class="fld">
                                 <label for="topicsIn">Topics</label>
-                                <input type="text" id="topicsIn" name="topics" required class="form-input" placeholder="e.g. Algebra, Equations">
+                                <input type="text" id="topicsIn" name="topics" required maxlength="255" class="form-input" placeholder="e.g. Algebra, Equations">
                             </div>
 
                             <div class="fld">
