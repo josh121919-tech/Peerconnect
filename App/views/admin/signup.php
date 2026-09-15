@@ -78,7 +78,7 @@ function adm_send_code(string $to, string $name, string $code): array
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['action'] ?? '';
 
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+    if (!verify_csrf()) {
         $error = 'Security token mismatch. Please refresh the page and try again.';
     }
 

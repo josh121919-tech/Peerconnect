@@ -42,7 +42,7 @@ $self_url   = url('mentor-requests');
 
 // SECURITY: approve/reject/bulk are state-changing — POST + CSRF only (was GET, forgeable via a link)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'])) {
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    if (!verify_csrf()) {
         http_response_code(403);
         exit('CSRF token mismatch.');
     }
@@ -93,7 +93,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk'], $_POST['ids'])) {
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    if (!verify_csrf()) {
         http_response_code(403);
         exit('CSRF token mismatch.');
     }

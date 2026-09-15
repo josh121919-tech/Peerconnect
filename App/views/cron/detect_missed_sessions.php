@@ -34,9 +34,7 @@ if (!RUNNING_AS_CRON) {
         http_response_code(405);
         exit('Method Not Allowed');
     }
-    $expected = $_SESSION['csrf_token'] ?? '';
-    $given    = $_POST['csrf_token'] ?? '';
-    if ($expected === '' || $given === '' || !hash_equals($expected, $given)) {
+    if (!verify_csrf()) {
         http_response_code(403);
         exit('CSRF token mismatch.');
     }

@@ -6,8 +6,7 @@ header('Content-Type: application/json');
 if (!isset($_SESSION['user_id'])) { http_response_code(401); echo json_encode(['ok'=>false]); exit; }
 
 // CSRF check
-$csrf = $_POST['csrf_token'] ?? '';
-if (!hash_equals($_SESSION['csrf_token'] ?? '', $csrf)) { http_response_code(403); echo json_encode(['ok'=>false]); exit; }
+if (!verify_csrf()) { http_response_code(403); echo json_encode(['ok'=>false]); exit; }
 
 $uid  = (int)$_SESSION['user_id'];
 $nid  = (int)($_POST['notification_id'] ?? 0);

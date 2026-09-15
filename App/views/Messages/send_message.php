@@ -23,7 +23,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 // SECURITY: CSRF check — this endpoint mutates data (inserts a message)
-if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+if (!verify_csrf()) {
     http_response_code(403);
     echo json_encode(['success' => false, 'error' => 'Security token mismatch. Please refresh and try again.']);
     exit;

@@ -247,21 +247,35 @@ if (!function_exists('csrf_field')) {
 }
 
 if (!function_exists('verify_csrf')) {
+    /**
+     * Whether this POST carries the session's security token. Every form and
+     * AJAX endpoint that changes something checks this — once, here, rather
+     * than each writing its own comparison. See verify_csrf_token().
+     */
     function verify_csrf(): bool
     {
-        $submitted = $_POST['csrf_token'] ?? '';
-        $expected  = $_SESSION['csrf_token'] ?? '';
-        return $expected !== '' && hash_equals($expected, $submitted);
+        return verify_csrf_token($_POST['csrf_token'] ?? null);
     }
 }
 
 if (!function_exists('verify_csrf_token')) {
-    // For JSON endpoints, where the token travels in the request body
-    // instead of $_POST — verify_csrf() above only checks $_POST.
-    function verify_csrf_token(?string $submitted): bool
+    /**
+     * Whether $submitted is the session's security token. On its own for JSON
+     * endpoints, where the token travels in the request body instead of $_POST.
+     *
+     * $submitted is whatever arrived, so only a non-empty string can match. A
+     * request can send the token as a list (csrf_token[]=x), or in JSON as a
+     * number or an object, and hash_equals() throws on anything but a string —
+     * which turned a refused request into a server error page. A session with no
+     * token yet matches nothing: hash_equals('', '') is true, so an empty token
+     * would otherwise pass.
+     */
+    function verify_csrf_token(mixed $submitted): bool
     {
         $expected = $_SESSION['csrf_token'] ?? '';
-        return $expected !== '' && $submitted !== null && hash_equals($expected, $submitted);
+        return is_string($expected) && $expected !== ''
+            && is_string($submitted) && $submitted !== ''
+            && hash_equals($expected, $submitted);
     }
 }
 

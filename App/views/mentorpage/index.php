@@ -34,7 +34,7 @@ $mentor_id = (int)$_SESSION['user_id'];
 // SECURITY: Quick-action approve/reject via POST only (was GET — state-changing via GET is insecure)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'])) {
     // CSRF check
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    if (!verify_csrf()) {
         // 403, not 419. 419 is a Laravel convention, not a registered HTTP
         // status: PHP will set it, but Apache does not recognise it and sends
         // 500 instead — so a correctly-rejected request reported itself as a

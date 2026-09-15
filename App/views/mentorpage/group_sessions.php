@@ -30,7 +30,7 @@ if (empty($sr_embedded) && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
 // owned by this mentor; sets status to 'cancelled' (same pattern the rest
 // of the app uses for session_requests rather than hard-deleting rows).
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_request_id'])) {
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    if (!verify_csrf()) {
         http_response_code(403);
         exit('CSRF token mismatch.');
     }

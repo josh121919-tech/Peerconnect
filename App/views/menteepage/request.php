@@ -21,7 +21,7 @@ $menteeAlerts = [];
 // SECURITY: cancel/remove are state-changing — POST + CSRF only (was GET, forgeable via a link)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cancel' && isset($_POST['id'])) {
     $ajax = !empty($_POST['ajax']);
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    if (!verify_csrf()) {
         http_response_code(403);
         if ($ajax) {
             header('Content-Type: application/json');
@@ -81,7 +81,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cance
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'remove' && isset($_POST['id'])) {
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    if (!verify_csrf()) {
         http_response_code(403);
         exit('CSRF token mismatch.');
     }

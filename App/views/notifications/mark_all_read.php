@@ -25,13 +25,11 @@ $fail = function (int $code, string $why) use ($wants_json) {
 if (!isset($_SESSION['user_id'])) $fail(401, 'Not signed in.');
 
 /*
- * The empty session token has to be rejected explicitly: hash_equals('', '')
- * is true, so a request arriving before any page had generated a token would
+ * verify_csrf() rejects an empty session token too: hash_equals('', '') is
+ * true, so a request arriving before any page had generated a token would
  * otherwise pass the check by sending nothing at all.
  */
-$expected = $_SESSION['csrf_token'] ?? '';
-$csrf     = $_POST['csrf_token'] ?? '';
-if ($expected === '' || $csrf === '' || !hash_equals($expected, $csrf)) {
+if (!verify_csrf()) {
     $fail(403, 'Security token mismatch.');
 }
 

@@ -41,9 +41,7 @@ if (!function_exists('require_post')) {
 
 if (!function_exists('check_csrf')) {
     function check_csrf(): void {
-        $submitted = $_POST['csrf_token'] ?? '';
-        $expected  = $_SESSION['csrf_token'] ?? '';
-        if ($expected === '' || !hash_equals($expected, $submitted)) {
+        if (!verify_csrf()) {
             http_response_code(403);
             exit('CSRF token mismatch.');
         }

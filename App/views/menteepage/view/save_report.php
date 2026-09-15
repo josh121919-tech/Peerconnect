@@ -12,9 +12,7 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // SECURITY: CSRF check
-$csrfSubmitted = $_POST['csrf_token'] ?? '';
-$csrfExpected  = $_SESSION['csrf_token'] ?? '';
-if ($csrfExpected === '' || !hash_equals($csrfExpected, $csrfSubmitted)) {
+if (!verify_csrf()) {
     http_response_code(403);
     echo json_encode(['success' => false, 'message' => 'Security token invalid.']);
     exit;

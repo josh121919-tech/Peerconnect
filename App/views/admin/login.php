@@ -78,7 +78,7 @@ if ($is_post && isset($_POST['admin_login'])) {
         ? 0
         : pc_throttle_retry_after($con, $throttle, ADMIN_LOCK_SECS, ADMIN_MAX_TRIES);
 
-    if (!hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'] ?? '')) {
+    if (!verify_csrf()) {
         $login_error = 'Security token mismatch. Please refresh and try again.';
     } elseif ($retry_after > 0) {
         $login_error = 'Too many failed attempts. Try again in '

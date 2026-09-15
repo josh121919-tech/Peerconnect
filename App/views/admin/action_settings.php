@@ -20,9 +20,7 @@ require_once __DIR__ . '/../../services/EmailService.php';
 require_admin();
 require_post();
 
-$expected = $_SESSION['csrf_token'] ?? '';
-$given    = $_POST['csrf_token'] ?? '';
-if ($expected === '' || $given === '' || !hash_equals($expected, $given)) {
+if (!verify_csrf()) {
     http_response_code(403);
     exit('CSRF token mismatch.');
 }

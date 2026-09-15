@@ -10,7 +10,7 @@ require_once __DIR__ . '/../../services/NotificationService.php';
 require_admin();
 require_post();
 
-if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+if (!verify_csrf()) {
     http_response_code(403);
     exit('CSRF token mismatch.');
 }

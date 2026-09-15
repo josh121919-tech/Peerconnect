@@ -52,7 +52,7 @@ function cal_is_booked(mysqli $con, int $mentor_id, string $date, string $start,
 
 // ── Delete ────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    if (!verify_csrf()) {
         http_response_code(403);
         exit('CSRF token mismatch.');
     }
@@ -89,7 +89,7 @@ function cal_booking_count(mysqli $con, int $mentor_id, string $date, string $st
 // ── Edit ──────────────────────────────────────────────────────────────
 // One row, so this takes a single start/end rather than the create form's list.
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['edit_id'])) {
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    if (!verify_csrf()) {
         http_response_code(403);
         exit('CSRF token mismatch.');
     }
@@ -162,7 +162,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['edit_id'])) {
 
 // ── Create ────────────────────────────────────────────────────────────
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subject']) && empty($_POST['edit_id'])) {
-    if (!isset($_POST['csrf_token']) || !hash_equals($_SESSION['csrf_token'] ?? '', $_POST['csrf_token'])) {
+    if (!verify_csrf()) {
         $error = "Security token mismatch. Please refresh and try again.";
     } elseif (empty($_POST['date']) || empty($_POST['subject']) || empty($_POST['topics']) || empty($_POST['session_type'])) {
         // `about` is genuinely optional — the column is nullable and nothing

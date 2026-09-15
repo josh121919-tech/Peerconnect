@@ -60,9 +60,7 @@ try {
     $data = json_decode(file_get_contents("php://input"), true);
 
     // SECURITY: CSRF validation for JSON endpoint (token sent in request body)
-    $csrfSubmitted = $data['csrf_token'] ?? '';
-    $csrfExpected  = $_SESSION['csrf_token'] ?? '';
-    if ($csrfExpected === '' || !hash_equals($csrfExpected, $csrfSubmitted)) {
+    if (!verify_csrf_token($data['csrf_token'] ?? null)) {
         http_response_code(403);
         echo json_encode(["error" => "Security token mismatch. Please refresh and try again."]);
         exit;
