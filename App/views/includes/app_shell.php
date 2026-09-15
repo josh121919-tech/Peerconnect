@@ -52,7 +52,7 @@ if (!function_exists('pc_nav_link')) {
     {
         $active = $activePage === $key ? ' active' : '';
 ?>
-        <a href="<?= htmlspecialchars($href) ?>" class="sb-link<?= $active ?>"<?= $barSlot ? ' data-bar="' . $barSlot . '"' : '' ?>>
+        <a href="<?= htmlspecialchars($href) ?>" class="sb-link<?= $active ?>" <?= $barSlot ? ' data-bar="' . $barSlot . '"' : '' ?>>
             <?php pc_icon($icon); ?>
             <span class="menu-label"><?= htmlspecialchars($label) ?></span>
         </a>
@@ -88,7 +88,7 @@ if ($isAdmin) {
     // rest overflow into "More" — see array_slice below): Dashboard, Find
     // Mentor, Sessions, Messages, then the rest.
     $navItems = [
-        [url('mentee-dashboard'), 'dashboard', 'Dashboard', 'home'],
+        [url('mentee-dashboard'), 'dashboard', 'Home', 'home'],
         [url('mentee-find'), 'find_mentor', 'Find Mentor', 'explore'],
         [url('mentee-sessions'), 'sessions', 'Sessions', 'sessions'],
         [url('messages'), 'messages', 'Messages', 'messages'],
@@ -178,7 +178,8 @@ if ($leftover) {
     <div class="topbar-actions">
         <?php // The only sidebar toggle in the app. It used to be a button
         //     inside each page's header, which meant it did not exist on the
-        //     small screens that need it most. ?>
+        //     small screens that need it most. 
+        ?>
         <button class="icon-btn" type="button" id="pcNavBtn" onclick="pcToggleNav()"
             aria-label="Open menu" aria-haspopup="true" aria-expanded="false" aria-controls="pcDrawer">
             <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
