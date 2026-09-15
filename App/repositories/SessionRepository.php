@@ -333,4 +333,234 @@ class SessionRepository extends Repository
             SELECT DISTINCT mentor_id FROM session_requests WHERE mentee_id = ?
         ", 'i', [$menteeId]), 'mentor_id'));
     }
+
+    // ── A mentor's requests ─────────────────────────────────────────────────
+
+    /**
+     * The mentor accepts one of their pending requests. Returns 1 when it was
+     * accepted, 0 when it is not pending, not theirs, or does not exist.
+     */
+    public static function approveByMentor(mysqli $con, int $sessionId, int $mentorId): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status='approved'
+            WHERE request_id=? AND mentor_id=? AND status='pending'
+        ", 'ii', [$sessionId, $mentorId]);
+    }
+
+    /**
+     * The mentor declines one of their pending requests. With $reason it is
+     * saved for the mentee; without one the reason column is left untouched.
+     * Returns 1 when it was declined, 0 when it is not pending, not theirs, or
+     * does not exist.
+     */
+    public static function rejectByMentor(mysqli $con, int $sessionId, int $mentorId, ?string $reason = null): int
+    {
+        if ($reason === null) {
+            return self::execute($con, "
+                UPDATE session_requests SET status='rejected'
+                WHERE request_id=? AND mentor_id=? AND status='pending'
+            ", 'ii', [$sessionId, $mentorId]);
+        }
+        return self::execute($con, "
+            UPDATE session_requests SET status='rejected', rejection_reason=?
+            WHERE request_id=? AND mentor_id=? AND status='pending'
+        ", 'sii', [$reason, $sessionId, $mentorId]);
+    }
+
+    /**
+     * Who to tell about a decision on one of the mentor's sessions: the
+     * mentee's id and the mentor's full name ('mentee_id', 'mentor_name'), or
+     * null when the session is not theirs.
+     */
+    public static function menteeAndMentorName(mysqli $con, int $sessionId, int $mentorId): ?array
+    {
+        return self::row($con, "
+            SELECT sr.mentee_id, CONCAT(u.firstname,' ',u.lastname) AS mentor_name
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentor_id
+            WHERE sr.request_id = ? AND sr.mentor_id = ?
+            LIMIT 1
+        ", 'ii', [$sessionId, $mentorId]);
+    }
+
+    /** One of the mentor's sessions ('mentee_id', 'subject'), or null when it does not exist or is not theirs. */
+    public static function findForMentor(mysqli $con, int $sessionId, int $mentorId): ?array
+    {
+        return self::row($con, "
+            SELECT mentee_id, subject FROM session_requests WHERE request_id = ? AND mentor_id = ?
+        ", 'ii', [$sessionId, $mentorId]);
+    }
+
+    /**
+     * The mentor cancels one of their sessions, e.g. removes a student from a
+     * group slot. Only a pending or approved session can be cancelled; one that
+     * has closed is left alone, so a finished session is never rewritten.
+     * Returns 1 when it was cancelled, else 0.
+     */
+    public static function cancelByMentor(mysqli $con, int $sessionId, int $mentorId): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status = 'cancelled'
+            WHERE request_id = ? AND mentor_id = ? AND status IN ('pending','approved')
+        ", 'ii', [$sessionId, $mentorId]);
+    }
+
+    /**
+     * The mentor Sessions page's counts: 'pending', 'upcoming', 'completed',
+     * 'declined', and 'mentees' — how many different mentees have an approved
+     * or completed session. Only sessions whose mentee account still exists
+     * are counted, so the numbers agree with the lists under them.
+     */
+    public static function statsForMentor(mysqli $con, int $mentorId): array
+    {
+        return self::row($con, "
+            SELECT
+                SUM(sr.status = 'pending')                                        AS pending,
+                SUM(" . self::upcomingCondition('sr') . ")          AS upcoming,
+                SUM(sr.status = 'completed')                                      AS completed,
+                SUM(sr.status = 'rejected')                                       AS declined,
+                COUNT(DISTINCT CASE WHEN sr.status IN ('approved','completed')
+                                    THEN sr.mentee_id END)                        AS mentees
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentee_id
+            WHERE sr.mentor_id = ?
+        ", 'i', [$mentorId]) ?? [];
+    }
+
+    /**
+     * The mentor's requests in one status, newest first, with everything a
+     * request card and its detail panel show: the mentee's name, photo, bio,
+     * course and year. Joined to users because session_requests has no foreign
+     * key — rows pointing at deleted accounts are still in the table, and an
+     * unjoined count once put a pending badge over an empty list.
+     */
+    public static function requestsForMentor(mysqli $con, int $mentorId, string $status): array
+    {
+        return self::typedRows($con, "
+            SELECT sr.request_id, sr.mentee_id, sr.subject, sr.message, sr.session_date,
+                   sr.status, sr.rejection_reason,
+                   u.firstname, u.lastname,
+                   p.profile_image, p.bio, p.course, p.year_level
+            FROM session_requests sr
+            JOIN users u   ON u.user_id = sr.mentee_id
+            LEFT JOIN profile p ON p.user_id = u.user_id
+            WHERE sr.mentor_id = ? AND sr.status = ?
+            ORDER BY sr.session_date DESC
+        ", 'is', [$mentorId, $status]);
+    }
+
+    // ── A mentor's session lists ────────────────────────────────────────────
+
+    /** How many of the mentor's sessions are in any of $statuses. */
+    public static function countForMentorInStatuses(mysqli $con, int $mentorId, array $statuses): int
+    {
+        if (!$statuses) {
+            return 0;
+        }
+        return (int)self::value($con, "
+            SELECT COUNT(*) FROM session_requests WHERE mentor_id = ? AND status IN (" . self::marks($statuses) . ")
+        ", 'i' . str_repeat('s', count($statuses)), array_merge([$mentorId], array_values($statuses)));
+    }
+
+    /**
+     * The mentor Upcoming tab: every approved one-to-one session, soonest
+     * first, with the mentee's name, email and course and the slot's type and
+     * length. A session with no matching slot counts as one-to-one. There is no
+     * date limit — an approved session stays listed after its start time until
+     * the missed-session job closes it, so its call can still be joined.
+     */
+    public static function approvedOneToOneForMentor(mysqli $con, int $mentorId): array
+    {
+        return self::rows($con, "
+            SELECT sr.*, u.firstname, u.lastname,
+                   u.email,
+                   p.course,
+                   a.session_type, a.duration
+            FROM session_requests sr
+            JOIN users u        ON sr.mentee_id = u.user_id
+            LEFT JOIN profile p ON p.user_id = u.user_id
+            " . self::slotJoin('sr', 'a') . "
+            WHERE sr.mentor_id = ?
+              AND sr.status    = 'approved'
+              AND (a.session_type = '1v1' OR a.session_type IS NULL)
+            GROUP BY sr.request_id
+            ORDER BY sr.session_date ASC
+        ", 'i', [$mentorId]);
+    }
+
+    /** One page of the mentor's completed sessions, newest first, with the mentee's name, email and course. */
+    public static function completedForMentor(mysqli $con, int $mentorId, int $limit, int $offset): array
+    {
+        return self::typedRows($con, "
+            SELECT sr.request_id, sr.mentee_id, sr.subject, sr.message, sr.session_date, sr.completed_at,
+                   u.firstname, u.lastname,
+                   u.email,
+                   p.course
+            FROM session_requests sr
+            JOIN users u        ON u.user_id = sr.mentee_id
+            LEFT JOIN profile p ON p.user_id = u.user_id
+            WHERE sr.mentor_id = ?
+              AND sr.status = 'completed'
+            GROUP BY sr.request_id
+            ORDER BY sr.session_date DESC
+            LIMIT ? OFFSET ?
+        ", 'iii', [$mentorId, $limit, $offset]);
+    }
+
+    /**
+     * One page of the mentor History tab — sessions that did not happen
+     * (declined, cancelled or missed) — newest first, with the mentee's name,
+     * email and course.
+     */
+    public static function historyForMentor(mysqli $con, int $mentorId, int $limit, int $offset): array
+    {
+        return self::typedRows($con, "
+            SELECT sr.*, u.firstname, u.lastname,
+                   u.email,
+                   p.course
+            FROM session_requests sr
+            JOIN users u        ON sr.mentee_id = u.user_id
+            LEFT JOIN profile p ON p.user_id = u.user_id
+            WHERE sr.mentor_id = ?
+              AND sr.status IN ('rejected','cancelled','missed')
+            GROUP BY sr.request_id
+            ORDER BY sr.session_date DESC
+            LIMIT ? OFFSET ?
+        ", 'iii', [$mentorId, $limit, $offset]);
+    }
+
+    // ── A group slot's reservations ─────────────────────────────────────────
+    // A reservation belongs to a slot by (mentor, subject, date, start time);
+    // session_requests has no availability_id. $date is 'Y-m-d', $startTime 'H:i:s'.
+
+    /** The lowest request id among the slot's approved reservations — the one the group call is opened with — or 0 when none is approved. */
+    public static function firstApprovedIdInSlot(mysqli $con, int $mentorId, string $subject, string $date, string $startTime): int
+    {
+        return (int)self::value($con, "
+            SELECT request_id FROM session_requests
+            WHERE mentor_id = ?
+              AND subject    = ?
+              AND DATE(session_date) = ?
+              AND TIME(session_date) = ?
+              AND status = 'approved'
+            ORDER BY request_id ASC LIMIT 1
+        ", 'isss', [$mentorId, $subject, $date, $startTime]);
+    }
+
+    /** The slot's pending and approved reservations with each mentee's name. */
+    public static function openReservationsInSlot(mysqli $con, int $mentorId, string $subject, string $date, string $startTime): array
+    {
+        return self::rows($con, "
+            SELECT u.firstname, u.lastname, sr.status, sr.session_date, sr.request_id
+            FROM session_requests sr
+            JOIN users u ON sr.mentee_id = u.user_id
+            WHERE sr.mentor_id = ?
+              AND sr.subject        = ?
+              AND DATE(sr.session_date) = ?
+              AND TIME(sr.session_date) = ?
+              AND sr.status IN ('pending','approved')
+            ORDER BY sr.session_date ASC
+        ", 'isss', [$mentorId, $subject, $date, $startTime]);
+    }
 }

@@ -38,11 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_request_id']))
     $mentor_id_remove = (int)$_SESSION['user_id'];
     $reqId = (int)$_POST['remove_request_id'];
 
-    $nq = $con->prepare("SELECT mentee_id, subject FROM session_requests WHERE request_id = ? AND mentor_id = ?");
-    $nq->bind_param("ii", $reqId, $mentor_id_remove);
-    $nq->execute();
-    $target = $nq->get_result()->fetch_assoc();
-    $nq->close();
+    $target = SessionRepository::findForMentor($con, $reqId, $mentor_id_remove);
 
     $removed = false;
     if ($target) {
@@ -50,20 +46,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_request_id']))
         // Without the state guard a mentor could "remove" someone from a
         // session that already completed, which rewrote a finished session as
         // cancelled and moved the mentor's own completion score.
-        $upd = $con->prepare("UPDATE session_requests SET status = 'cancelled' WHERE request_id = ? AND mentor_id = ? AND status IN ('pending','approved')");
-        $upd->bind_param("ii", $reqId, $mentor_id_remove);
-        $upd->execute();
-        $removed = $upd->affected_rows > 0;
-        $upd->close();
+        $removed = SessionRepository::cancelByMentor($con, $reqId, $mentor_id_remove) > 0;
 
         // Only tell the student if something actually changed. Notifying on a
         // refused removal would announce a cancellation that never happened.
         if ($removed) {
-            $mn = $con->prepare("SELECT firstname, lastname FROM users WHERE user_id = ?");
-            $mn->bind_param("i", $mentor_id_remove);
-            $mn->execute();
-            $mentorName = $mn->get_result()->fetch_assoc();
-            $mn->close();
+            $mentorName = UserRepository::names($con, $mentor_id_remove);
             if ($mentorName) {
                 NotificationService::sessionRejected(
                     $con,
@@ -91,30 +79,16 @@ $appTz_gs         = new DateTimeZone('Asia/Manila');
 $groupAlerts_gs   = [];
 $mentor_id_gs     = (int)$_SESSION['user_id'];
 
-$groups_gs = $con->query("
-    SELECT
-        a.availability_id, a.subject, a.topics, a.date, a.start_time, a.duration, a.capacity,
-        COUNT(sr.request_id) AS reserved_count
-    FROM availability a
-    LEFT JOIN session_requests sr
-        ON  sr.mentor_id   = a.mentor_id
-        AND sr.subject     = a.subject
-        AND DATE(sr.session_date) = DATE(a.date)
-        AND TIME(sr.session_date) = a.start_time
-        AND sr.status IN ('pending','approved')
-    WHERE a.mentor_id = $mentor_id_gs AND a.session_type = 'group'
-    GROUP BY a.availability_id
-    ORDER BY a.date, a.start_time
-");
+$groups_gs = AvailabilityRepository::groupSlotsForMentor($con, $mentor_id_gs);
 ?>
 
 <div>
     <?php mp_panel_head('gs', 'users', 'Group Sessions',
         'Slots where several mentees are booked together.', false, []); ?>
 
-    <?php if ($groups_gs && $groups_gs->num_rows > 0): ?>
+    <?php if ($groups_gs): ?>
         <div style="display:flex;flex-direction:column;gap:16px;">
-            <?php while ($g = $groups_gs->fetch_assoc()):
+            <?php foreach ($groups_gs as $g):
                 $subject_gs   = htmlspecialchars($g['subject']);
                 $availId_gs   = (int)$g['availability_id'];
                 $reserved_gs  = $g['reserved_count'];
@@ -130,34 +104,13 @@ $groups_gs = $con->query("
                 $minsToStart_gs  = (int)floor(($sessionStart_gs->getTimestamp() - $nowDt_gs->getTimestamp()) / 60);
 
                 // First approved request for join_check.php
-                $firstReqRow_gs = $con->query("
-                SELECT request_id FROM session_requests
-                WHERE mentor_id = $mentor_id_gs
-                  AND subject    = '{$g['subject']}'
-                  AND DATE(session_date) = '{$g['date']}'
-                  AND TIME(session_date) = '{$g['start_time']}'
-                  AND status = 'approved'
-                ORDER BY request_id ASC LIMIT 1
-            ");
-                $firstReqId_gs = ($firstReqRow_gs && $firstReqRow_gs->num_rows > 0)
-                    ? (int)$firstReqRow_gs->fetch_assoc()['request_id']
-                    : 0;
+                $firstReqId_gs = SessionRepository::firstApprovedIdInSlot($con, $mentor_id_gs, $g['subject'], $g['date'], $g['start_time']);
                 $joinUrl_gs = $firstReqId_gs > 0
                     ? url('video-join') . '?session_id=' . $firstReqId_gs . '&type=group'
                     : '#';
 
                 // Reserved students list
-                $students_gs = $con->query("
-                SELECT u.firstname, u.lastname, sr.status, sr.session_date, sr.request_id
-                FROM session_requests sr
-                JOIN users u ON sr.mentee_id = u.user_id
-                WHERE sr.mentor_id = $mentor_id_gs
-                  AND sr.subject        = '{$g['subject']}'
-                  AND DATE(sr.session_date) = '{$g['date']}'
-                  AND TIME(sr.session_date) = '{$g['start_time']}'
-                  AND sr.status IN ('pending','approved')
-                ORDER BY sr.session_date ASC
-            ");
+                $students_gs = SessionRepository::openReservationsInSlot($con, $mentor_id_gs, $g['subject'], $g['date'], $g['start_time']);
 
                 if ($minsToStart_gs >= 0 && $minsToStart_gs <= 10) {
                     $groupAlerts_gs[] = [
@@ -289,7 +242,7 @@ $groups_gs = $con->query("
                     <!-- Reserved students table -->
                     <div style="border-top:1px solid var(--gray-100);padding:20px;">
                         <div style="font-size:11px;color:var(--gray-400);text-transform:uppercase;letter-spacing:.06em;font-weight:600;margin-bottom:10px;">Reserved Students</div>
-                        <?php if ($students_gs && $students_gs->num_rows > 0): ?>
+                        <?php if ($students_gs): ?>
                             <div style="overflow-x:auto;">
                             <table class="tbl">
                                 <thead>
@@ -303,7 +256,7 @@ $groups_gs = $con->query("
                                 </thead>
                                 <tbody>
                                     <?php $i_gs = 1;
-                                    while ($st = $students_gs->fetch_assoc()):
+                                    foreach ($students_gs as $st):
                                         $initials_st = strtoupper(substr($st['firstname'], 0, 1) . substr($st['lastname'], 0, 1));
                                     ?>
                                         <tr>
@@ -326,7 +279,7 @@ $groups_gs = $con->query("
                                                 <button type="button" onclick="removeGroupStudent(<?= (int)$st['request_id'] ?>, '<?= htmlspecialchars(addslashes($st['firstname'] . ' ' . $st['lastname'])) ?>')" style="background:none;border:none;color:var(--danger);cursor:pointer;font-size:12px;font-weight:600;">Remove</button>
                                             </td>
                                         </tr>
-                                    <?php endwhile; ?>
+                                    <?php endforeach; ?>
                                 </tbody>
                             </table>
                             </div>
@@ -339,7 +292,7 @@ $groups_gs = $con->query("
                     </div>
 
                 </div><!-- /card -->
-            <?php endwhile; ?>
+            <?php endforeach; ?>
         </div>
     <?php else: ?>
         <div class="card">

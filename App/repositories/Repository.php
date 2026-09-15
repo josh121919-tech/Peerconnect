@@ -75,4 +75,10 @@ abstract class Repository
         $row = self::row($con, $sql, $types, $args);
         return $row === null ? null : reset($row);
     }
+
+    /** One "?" per value, comma-separated, for an IN (...) list. Never call it with an empty list. */
+    protected static function marks(array $values): string
+    {
+        return implode(',', array_fill(0, count($values), '?'));
+    }
 }

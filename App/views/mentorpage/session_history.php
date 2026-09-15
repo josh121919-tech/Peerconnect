@@ -40,30 +40,10 @@ $perPage_hist = 20;
 $page_hist    = max(1, (int)($_GET['page'] ?? 1));
 $offset_hist  = ($page_hist - 1) * $perPage_hist;
 
-$totalStmt = $con->prepare("SELECT COUNT(*) AS c FROM session_requests WHERE mentor_id = ? AND status IN ('rejected','cancelled','missed')");
-$totalStmt->bind_param("i", $mentor_id_hs);
-$totalStmt->execute();
-$totalRows_hist = (int)$totalStmt->get_result()->fetch_assoc()['c'];
-$totalStmt->close();
+$totalRows_hist  = SessionRepository::countForMentorInStatuses($con, $mentor_id_hs, ['rejected', 'cancelled', 'missed']);
 $totalPages_hist = max(1, (int)ceil($totalRows_hist / $perPage_hist));
 
-$historyStmt = $con->prepare("
-    SELECT sr.*, u.firstname, u.lastname,
-           u.email,
-           p.course
-    FROM session_requests sr
-    JOIN users u        ON sr.mentee_id = u.user_id
-    LEFT JOIN profile p ON p.user_id = u.user_id
-    WHERE sr.mentor_id = ?
-      AND sr.status IN ('rejected','cancelled','missed')
-    GROUP BY sr.request_id
-    ORDER BY sr.session_date DESC
-    LIMIT ? OFFSET ?
-");
-$historyStmt->bind_param("iii", $mentor_id_hs, $perPage_hist, $offset_hist);
-$historyStmt->execute();
-$rows_hs = $historyStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$historyStmt->close();
+$rows_hs = SessionRepository::historyForMentor($con, $mentor_id_hs, $perPage_hist, $offset_hist);
 ?>
 <div>
     <?php mp_panel_open('hs', 'clock', 'Session History', 'Bookings that were declined, cancelled or missed.'); ?>

@@ -11,6 +11,43 @@ class UserRepository extends Repository
         return self::value($con, "SELECT firstname FROM users WHERE user_id = ?", 'i', [$userId]);
     }
 
+    /** The account's 'firstname' and 'lastname', or null when there is no such account. */
+    public static function names(mysqli $con, int $userId): ?array
+    {
+        return self::row($con, "SELECT firstname, lastname FROM users WHERE user_id = ?", 'i', [$userId]);
+    }
+
+    /** The email address of each of $userIds that exists ('user_id', 'email'). */
+    public static function emailsFor(mysqli $con, array $userIds): array
+    {
+        if (!$userIds) {
+            return [];
+        }
+        $ids = array_map('intval', array_values($userIds));
+        return self::rows($con, "
+            SELECT u.user_id, u.email
+            FROM users u
+            WHERE u.user_id IN (" . self::marks($ids) . ")
+        ", str_repeat('i', count($ids)), $ids);
+    }
+
+    /**
+     * The questionnaire tags of each of $userIds ('user_id', 'tag_type', 'tag'):
+     * what they want to learn, then their skills, then their interests, each
+     * alphabetically. These are the rows mentor matching runs on.
+     */
+    public static function tagsFor(mysqli $con, array $userIds): array
+    {
+        if (!$userIds) {
+            return [];
+        }
+        $ids = array_map('intval', array_values($userIds));
+        return self::rows($con, "
+            SELECT user_id, tag_type, tag FROM user_tags
+            WHERE user_id IN (" . self::marks($ids) . ") ORDER BY FIELD(tag_type,'learn','skill','interest'), tag
+        ", str_repeat('i', count($ids)), $ids);
+    }
+
     /**
      * Settings → Data Privacy → "Personalized recommendations". On unless the
      * member has switched it off; a member with no privacy row has the default.

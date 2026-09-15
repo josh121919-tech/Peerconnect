@@ -37,7 +37,6 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'mentor') {
     exit;
 }
 
-// Cast: this lands in interpolated SQL below.
 $mentor_id  = (int)$_SESSION['user_id'];
 $self_url   = url('mentor-requests');
 
@@ -57,33 +56,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
             header("Location: " . $self_url);
             exit;
         }
-        $stmt = $con->prepare("UPDATE session_requests SET status='rejected', rejection_reason=? WHERE request_id=? AND mentor_id=? AND status='pending'");
-        $stmt->bind_param("sii", $reason, $id, $mentor_id);
-        $stmt->execute();
+        $changedOne = SessionRepository::rejectByMentor($con, $id, $mentor_id, $reason) > 0;
     } elseif ($action === 'approve') {
-        $stmt = $con->prepare("UPDATE session_requests SET status='approved' WHERE request_id=? AND mentor_id=? AND status='pending'");
-        $stmt->bind_param("ii", $id, $mentor_id);
-        $stmt->execute();
+        $changedOne = SessionRepository::approveByMentor($con, $id, $mentor_id) > 0;
     } else {
-        $stmt = null;
+        $changedOne = false;
     }
 
-    if ($stmt && $stmt->affected_rows > 0) {
+    if ($changedOne) {
         // Put the session into (or take it out of) any connected Google
         // Calendar. Never fatal — see GoogleCalendarService.
         GoogleCalendarService::pushSession($con, $id);
 
-        $nq = $con->prepare("
-            SELECT sr.mentee_id, CONCAT(u.firstname,' ',u.lastname) as mentor_name
-            FROM session_requests sr
-            JOIN users u ON u.user_id = sr.mentor_id
-            WHERE sr.request_id = ? AND sr.mentor_id = ?
-            LIMIT 1
-        ");
-        $nq->bind_param("ii", $id, $mentor_id);
-        $nq->execute();
-        $nr = $nq->get_result()->fetch_assoc();
-        $nq->close();
+        $nr = SessionRepository::menteeAndMentorName($con, $id, $mentor_id);
 
         if ($nr) {
             $link = url('mentee-sessions');
@@ -94,8 +79,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
             }
         }
     }
-    $changedOne = $stmt && $stmt->affected_rows > 0;
-    if ($stmt) $stmt->close();
 
     if ($changedOne && $action === 'approve') {
         pc_flash('success', 'The session is confirmed and the mentee has been told.', 'Request accepted');
@@ -118,14 +101,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk'], $_POST['ids']
     $action = $_POST['bulk'];
     $done   = 0;
     if (in_array($action, ['approve', 'reject'], true)) {
-        $newStatus = $action === 'approve' ? 'approved' : 'rejected';
         foreach ($ids as $id) {
             $id = (int)$id;
-            $stmt = $con->prepare("UPDATE session_requests SET status=? WHERE request_id=? AND mentor_id=? AND status='pending'");
-            $stmt->bind_param("sii", $newStatus, $id, $mentor_id);
-            $stmt->execute();
-            $changed = $stmt->affected_rows > 0;
-            $stmt->close();
+            $changed = ($action === 'approve'
+                ? SessionRepository::approveByMentor($con, $id, $mentor_id)
+                : SessionRepository::rejectByMentor($con, $id, $mentor_id)) > 0;
             if ($changed) {
                 $done++;
                 GoogleCalendarService::pushSession($con, $id);
@@ -146,18 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk'], $_POST['ids']
 // ── Stats ─────────────────────────────────────────────────────────────
 // All four are plain counts of rows that exist. No trend lines: without a
 // created_at there is no honest "vs last week" to put under them.
-$statRow = $con->query("
-    SELECT
-        SUM(sr.status = 'pending')                                        AS pending,
-        SUM(sr.status = 'approved' AND sr.session_date >= NOW())          AS upcoming,
-        SUM(sr.status = 'completed')                                      AS completed,
-        SUM(sr.status = 'rejected')                                       AS declined,
-        COUNT(DISTINCT CASE WHEN sr.status IN ('approved','completed')
-                            THEN sr.mentee_id END)                        AS mentees
-    FROM session_requests sr
-    JOIN users u ON u.user_id = sr.mentee_id
-    WHERE sr.mentor_id = {$mentor_id}
-")->fetch_assoc() ?: [];
+$statRow = SessionRepository::statsForMentor($con, $mentor_id);
 
 $stat_pending   = (int)($statRow['pending']   ?? 0);
 $stat_upcoming  = (int)($statRow['upcoming']  ?? 0);
@@ -168,34 +137,9 @@ $stat_mentees   = (int)($statRow['mentees']   ?? 0);
 // Kept for the tab badge and the partials included further down.
 $cnt = $stat_pending;
 
-/**
- * Requests for one status, with everything a card and the detail panel need.
- * Joined to users because session_requests has no foreign key — rows pointing
- * at deleted accounts are still in the table, and an unjoined count once put a
- * pending badge over an empty list.
- */
-function sr_load(mysqli $con, int $mentor_id, string $status): array
-{
-    $q = $con->prepare("
-        SELECT sr.request_id, sr.mentee_id, sr.subject, sr.message, sr.session_date,
-               sr.status, sr.rejection_reason,
-               u.firstname, u.lastname,
-               p.profile_image, p.bio, p.course, p.year_level
-        FROM session_requests sr
-        JOIN users u   ON u.user_id = sr.mentee_id
-        LEFT JOIN profile p ON p.user_id = u.user_id
-        WHERE sr.mentor_id = ? AND sr.status = ?
-        ORDER BY sr.session_date DESC
-    ");
-    $q->bind_param("is", $mentor_id, $status);
-    $q->execute();
-    $rows = $q->get_result()->fetch_all(MYSQLI_ASSOC);
-    $q->close();
-    return $rows;
-}
-
-$pending_rows  = sr_load($con, $mentor_id, 'pending');
-$declined_rows = sr_load($con, $mentor_id, 'rejected');
+// Requests for one status, with everything a card and the detail panel need.
+$pending_rows  = SessionRepository::requestsForMentor($con, $mentor_id, 'pending');
+$declined_rows = SessionRepository::requestsForMentor($con, $mentor_id, 'rejected');
 
 // ── "Interested in" chips ─────────────────────────────────────────────
 // The mentee's own questionnaire answers — the same rows matching runs on.
@@ -204,43 +148,20 @@ $mentee_ids = array_unique(array_map(
     fn($r) => (int)$r['mentee_id'],
     array_merge($pending_rows, $declined_rows)
 ));
-if ($mentee_ids) {
-    $in = implode(',', array_map('intval', $mentee_ids));
-    $tr = $con->query("
-        SELECT user_id, tag_type, tag FROM user_tags
-        WHERE user_id IN ($in) ORDER BY FIELD(tag_type,'learn','skill','interest'), tag
-    ");
-    while ($t = $tr->fetch_assoc()) {
-        $tags_by_user[(int)$t['user_id']][$t['tag_type']][] = $t['tag'];
-    }
+foreach (UserRepository::tagsFor($con, $mentee_ids) as $t) {
+    $tags_by_user[(int)$t['user_id']][$t['tag_type']][] = $t['tag'];
 }
 
 // ── Goals, for the detail panel ───────────────────────────────────────
 $goals_by_user = [];
-if ($mentee_ids) {
-    $in = implode(',', array_map('intval', $mentee_ids));
-    $gr = $con->query("
-        SELECT mentee_id, title, status FROM goals
-        WHERE mentee_id IN ($in) AND mentor_id = {$mentor_id}
-        ORDER BY created_at DESC
-    ");
-    while ($g = $gr->fetch_assoc()) {
-        $goals_by_user[(int)$g['mentee_id']][] = ['title' => $g['title'], 'status' => $g['status']];
-    }
+foreach (GoalRepository::forMenteesWithMentor($con, $mentee_ids, $mentor_id) as $g) {
+    $goals_by_user[(int)$g['mentee_id']][] = ['title' => $g['title'], 'status' => $g['status']];
 }
 
 // Addresses for the Declined cards.
 $declined_email = [];
-if ($mentee_ids) {
-    $in = implode(',', array_map('intval', $mentee_ids));
-    $er = $con->query("
-        SELECT u.user_id, u.email
-        FROM users u
-        WHERE u.user_id IN ($in)
-    ");
-    while ($x = $er->fetch_assoc()) {
-        $declined_email[(int)$x['user_id']] = (string)($x['email'] ?? '');
-    }
+foreach (UserRepository::emailsFor($con, $mentee_ids) as $x) {
+    $declined_email[(int)$x['user_id']] = (string)($x['email'] ?? '');
 }
 
 /** Distinct subjects across the listed requests — the filter chips. */

@@ -39,26 +39,7 @@ $mentor_id_us    = (int)$_SESSION['user_id'];
 $appTz_us        = new DateTimeZone('Asia/Manila');
 $mentorAlerts_us = [];
 
-$upcoming_us = $con->query("
-    SELECT sr.*, u.firstname, u.lastname,
-           u.email,
-           p.course,
-           a.session_type, a.duration
-    FROM session_requests sr
-    JOIN users u        ON sr.mentee_id = u.user_id
-    LEFT JOIN profile p ON p.user_id = u.user_id
-    LEFT JOIN availability a
-           ON a.mentor_id   = sr.mentor_id
-          AND a.subject      = sr.subject
-          AND DATE(a.date)   = DATE(sr.session_date)
-          AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE sr.mentor_id = $mentor_id_us
-      AND sr.status    = 'approved'
-      AND (a.session_type = '1v1' OR a.session_type IS NULL)
-    GROUP BY sr.request_id
-    ORDER BY sr.session_date ASC
-");
-$rows_us = $upcoming_us ? $upcoming_us->fetch_all(MYSQLI_ASSOC) : [];
+$rows_us = SessionRepository::approvedOneToOneForMentor($con, $mentor_id_us);
 ?>
 
 <div>

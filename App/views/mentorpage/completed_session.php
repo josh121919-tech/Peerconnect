@@ -34,31 +34,10 @@ $perPage_cs = 20;
 $page_cs    = max(1, (int)($_GET['page'] ?? 1));
 $offset_cs  = ($page_cs - 1) * $perPage_cs;
 
-$countStmt_cs = $con->prepare("SELECT COUNT(*) AS c FROM session_requests WHERE mentor_id = ? AND status = 'completed'");
-$countStmt_cs->bind_param("i", $mentor_id_cs);
-$countStmt_cs->execute();
-$totalRows_cs = (int)$countStmt_cs->get_result()->fetch_assoc()['c'];
-$countStmt_cs->close();
+$totalRows_cs  = SessionRepository::countForMentorInStatuses($con, $mentor_id_cs, ['completed']);
 $totalPages_cs = max(1, (int)ceil($totalRows_cs / $perPage_cs));
 
-$result_cs = $con->prepare("
-    SELECT sr.request_id, sr.mentee_id, sr.subject, sr.message, sr.session_date, sr.completed_at,
-           u.firstname, u.lastname,
-           u.email,
-           p.course
-    FROM session_requests sr
-    JOIN users u        ON u.user_id = sr.mentee_id
-    LEFT JOIN profile p ON p.user_id = u.user_id
-    WHERE sr.mentor_id = ?
-      AND sr.status = 'completed'
-    GROUP BY sr.request_id
-    ORDER BY sr.session_date DESC
-    LIMIT ? OFFSET ?
-");
-$result_cs->bind_param("iii", $mentor_id_cs, $perPage_cs, $offset_cs);
-$result_cs->execute();
-$sessions_cs = $result_cs->get_result()->fetch_all(MYSQLI_ASSOC);
-$result_cs->close();
+$sessions_cs = SessionRepository::completedForMentor($con, $mentor_id_cs, $perPage_cs, $offset_cs);
 ?>
 
 <div>
