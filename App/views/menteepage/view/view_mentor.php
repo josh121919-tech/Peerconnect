@@ -2310,7 +2310,9 @@ $active_page = 'find_mentor';
                     availability_id: selectedGroupSession.availability_id,
                     date: selectedGroupSession.session_date,
                     time: selectedGroupSession.start_time,
-                    note,
+                    // save_booking.php reads the note as "message", like the
+                    // other two booking forms; sent as "note" it was dropped.
+                    message: note.trim(),
                     csrf_token: window.__PC_CSRF__ || ''
                 })
             }).then(r => r.json()).then(res => {

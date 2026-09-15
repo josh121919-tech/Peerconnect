@@ -660,11 +660,11 @@ CREATE TABLE `session_requests` (
   `missed_by` enum('none','mentor','mentee','both') DEFAULT 'none',
   `completed_at` datetime DEFAULT NULL,
   PRIMARY KEY (`request_id`),
-  UNIQUE KEY `uniq_booking` (`mentor_id`,`mentee_id`,`session_date`),
   KEY `idx_mentor_status` (`mentor_id`,`status`),
   KEY `idx_mentee_status` (`mentee_id`,`status`),
   KEY `idx_session_date` (`session_date`),
   KEY `idx_sr_date_status` (`session_date`,`status`),
+  KEY `idx_booking` (`mentor_id`,`mentee_id`,`session_date`),
   CONSTRAINT `fk_sr_mentee` FOREIGN KEY (`mentee_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE,
   CONSTRAINT `fk_sr_mentor` FOREIGN KEY (`mentor_id`) REFERENCES `users` (`user_id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

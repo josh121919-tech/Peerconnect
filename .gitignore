@@ -27,6 +27,7 @@ public/uploads/*
 !phase4_drop.sql
 !drop_emails_table.sql
 !restrict_app_db_user.sql
+!allow_rebooking.sql
 !App/views/Messages/schema.sql
 
 # ─── Dependencies ────────────────────────────────────────────────────────
