@@ -6,7 +6,6 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 include __DIR__ . "/../db.php";
 require_once __DIR__ . '/../../services/NotificationService.php';
-require_once __DIR__ . '/../../services/AvailabilityService.php';
 require_once __DIR__ . '/../../services/MentorScoreService.php';
 
 $role = $_SESSION['role'] ?? '';
@@ -183,7 +182,8 @@ $del->execute();
 $del->close();
 
 // A reviewed session is a finished session (mentee side keeps the original
-// behaviour: it closes the request and frees the slot if both sides are done).
+// behaviour: it closes the request). The slot is kept: it holds the session's
+// length, and a past slot is never offered for booking again.
 if ($is_mentee) {
     // NOW() stamps completed_at as well — it was left NULL on every genuine
     // completion, so only sessions the cron marked missed ever had one.
@@ -196,7 +196,6 @@ if ($is_mentee) {
     $upd->bind_param("ii", $session_id, $mentee_id);
     $upd->execute();
     $upd->close();
-    AvailabilityService::removeIfFullyCompleted($con, $session_id);
 }
 
 // A new rating changes the mentor's composite score, which is what the

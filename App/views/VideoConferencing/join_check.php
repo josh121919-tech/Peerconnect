@@ -29,20 +29,9 @@ if (!$session_id) {
     exit;
 }
 
-// Fetch the anchor session row (works for both 1v1 and group)
-$stmt = $con->prepare("
-    SELECT sr.*,
-           mentor.firstname AS mentor_fname, mentor.lastname AS mentor_lname,
-           mentee.firstname AS mentee_fname, mentee.lastname AS mentee_lname
-    FROM session_requests sr
-    JOIN users mentor ON sr.mentor_id  = mentor.user_id
-    JOIN users mentee ON sr.mentee_id  = mentee.user_id
-    WHERE sr.request_id = ?
-      AND (sr.mentor_id = ? OR sr.mentee_id = ?)
-");
-$stmt->bind_param("iii", $session_id, $user_id, $user_id);
-$stmt->execute();
-$session = $stmt->get_result()->fetch_assoc();
+// Fetch the anchor session row (works for both 1v1 and group), with the
+// length the call room uses, so the lobby and the room agree on when it ends.
+$session = SessionRepository::forParticipantWithLength($con, $session_id, $user_id, false);
 
 if (!$session) {
     header("Location: " . $sessions_url);
@@ -57,8 +46,20 @@ $session_date = $sessionDt->getTimestamp();
 $nowDt        = new DateTime('now', $appTz);
 $now          = $nowDt->getTimestamp();
 $minutes_until = ($session_date - $now) / 60;
+$session_end  = $session_date + (int)$session['duration'] * 60;
+// room.php turns people away once the session's time is over and sends them
+// back here, so the lobby must not offer a Join that can only bounce.
+$has_ended    = $status === 'approved' && $now > $session_end;
 
-$can_join = ($status === 'approved') && ($minutes_until <= 15);
+$can_join = ($status === 'approved') && ($minutes_until <= 15) && !$has_ended;
+
+// What to say about a session that can no longer be joined, by what became of it.
+$closed_text = [
+    'completed' => 'This session has been completed.',
+    'missed'    => 'This session was missed, so it can no longer be joined.',
+    'cancelled' => 'This session was cancelled.',
+    'rejected'  => 'The mentor declined this request.',
+][$status] ?? null;
 $back_url = $role === 'mentor'
     ? url('mentor-requests')
     : url('mentee-sessions');
@@ -66,29 +67,7 @@ $back_url = $role === 'mentor'
 // ── For group sessions: fetch all students in this slot ──────────────────────
 $group_students = [];
 if ($is_group) {
-    $gs = $con->prepare("
-        SELECT u.firstname, u.lastname, sr.status, sr.request_id
-        FROM session_requests sr
-        JOIN users u ON sr.mentee_id = u.user_id
-        WHERE sr.mentor_id = ?
-          AND sr.subject   = ?
-          AND DATE(sr.session_date) = DATE(?)
-          AND TIME(sr.session_date) = TIME(?)
-          AND sr.status IN ('pending', 'approved')
-        ORDER BY u.firstname ASC
-    ");
-    $gs->bind_param(
-        "isss",
-        $session['mentor_id'],
-        $session['subject'],
-        $session['session_date'],
-        $session['session_date']
-    );
-    $gs->execute();
-    $gsResult = $gs->get_result();
-    while ($row = $gsResult->fetch_assoc()) {
-        $group_students[] = $row;
-    }
+    $group_students = SessionRepository::openReservationsInSlotByName($con, (int)$session['mentor_id'], (string)$session['subject'], (string)$session['session_date']);
 }
 
 // For 1v1: show the other person's name as before
@@ -233,9 +212,17 @@ $other_person = $role === 'mentor'
                 </div>
 
                 <!-- Status / action banner -->
-                <?php if ($status !== 'approved'): ?>
+                <?php if ($closed_text !== null): ?>
+                    <div class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-600">
+                        <?= htmlspecialchars($closed_text) ?>
+                    </div>
+                <?php elseif ($status !== 'approved'): ?>
                     <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4 mb-4 text-sm text-yellow-700">
                         This session is not yet approved. You can only join once the mentor approves the request.
+                    </div>
+                <?php elseif ($has_ended): ?>
+                    <div class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-600">
+                        This session's time is over, so the room is closed.
                     </div>
                 <?php elseif ($minutes_until > 15): ?>
                     <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
@@ -273,7 +260,7 @@ $other_person = $role === 'mentor'
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
                             </svg>
-                            Not Available Yet
+                            <?= ($closed_text !== null || $has_ended) ? "No Longer Available\n" : "Not Available Yet\n" ?>
                         </button>
                     <?php endif; ?>
 

@@ -25,26 +25,7 @@ if (!$session_id) {
 }
 
 // ── Fetch session ────────────────────────────────────────────
-$stmt = $con->prepare("
-    SELECT sr.*,
-           mentor.firstname AS mentor_fname, mentor.lastname AS mentor_lname,
-           mentee.firstname AS mentee_fname, mentee.lastname AS mentee_lname,
-           COALESCE(a.duration, 30) AS duration
-    FROM session_requests sr
-    JOIN users mentor ON sr.mentor_id = mentor.user_id
-    JOIN users mentee ON sr.mentee_id = mentee.user_id
-    LEFT JOIN availability a
-        ON  a.mentor_id   = sr.mentor_id
-        AND a.subject     = sr.subject
-        AND DATE(a.date)  = DATE(sr.session_date)
-        AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE sr.request_id = ?
-      AND (sr.mentor_id = ? OR sr.mentee_id = ?)
-      AND sr.status = 'approved'
-");
-$stmt->bind_param("iii", $session_id, $user_id, $user_id);
-$stmt->execute();
-$session = $stmt->get_result()->fetch_assoc();
+$session = SessionRepository::forParticipantWithLength($con, $session_id, $user_id, true);
 
 if (!$session) {
     header("Location: " . $sessions_url);
@@ -77,10 +58,7 @@ if ($minutesUntilStart > 15 || time() > $sessionEndTs) {
 // It records opening the call page — the call itself runs in an embedded
 // frame the server cannot see, so a dropped camera or microphone is invisible.
 $attendRole = ((int)$session['mentor_id'] === $user_id) ? 'mentor' : 'mentee';
-$attend = $con->prepare("INSERT IGNORE INTO session_attendance (session_id, user_id, role, joined_at) VALUES (?, ?, ?, NOW())");
-$attend->bind_param("iis", $session_id, $user_id, $attendRole);
-$attend->execute();
-$attend->close();
+SessionRepository::recordAttendance($con, $session_id, $user_id, $attendRole);
 
 // ── Room name (private, deterministic) ────────────────────────
 // Derived from the mentor+subject+slot, NOT request_id, so every

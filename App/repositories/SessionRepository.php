@@ -447,6 +447,124 @@ class SessionRepository extends Repository
         ", 'i', [$mentorId]) ?? ['total_sessions' => '0', 'mentees' => '0'];
     }
 
+    // ── Video calls and calendar export ─────────────────────────────────────
+    // "Participant" means the session's mentor or its mentee; anyone else gets null.
+
+    /**
+     * One session for the lobby or the call room, with every session column,
+     * 'mentor_fname', 'mentor_lname', 'mentee_fname', 'mentee_lname' and
+     * 'duration': its slot's length, or 30 minutes when it has no slot (the
+     * length the call room has always used). With $approvedOnly, null unless
+     * the session is approved.
+     */
+    public static function forParticipantWithLength(mysqli $con, int $sessionId, int $userId, bool $approvedOnly): ?array
+    {
+        return self::typedRow($con, "
+            SELECT sr.*,
+                   mentor.firstname AS mentor_fname, mentor.lastname AS mentor_lname,
+                   mentee.firstname AS mentee_fname, mentee.lastname AS mentee_lname,
+                   COALESCE(a.duration, 30) AS duration
+            FROM session_requests sr
+            JOIN users mentor ON sr.mentor_id = mentor.user_id
+            JOIN users mentee ON sr.mentee_id = mentee.user_id
+            LEFT JOIN availability a
+                ON  a.mentor_id   = sr.mentor_id
+                AND a.subject     = sr.subject
+                AND DATE(a.date)  = DATE(sr.session_date)
+                AND TIME(a.start_time) = TIME(sr.session_date)
+            WHERE sr.request_id = ?
+              AND (sr.mentor_id = ? OR sr.mentee_id = ?)" . ($approvedOnly ? "
+              AND sr.status = 'approved'" : ""), 'iii', [$sessionId, $userId, $userId]);
+    }
+
+    /**
+     * The pending and approved reservations of the slot a session belongs to
+     * (same mentor, subject, date and start as $sessionDate), by first name:
+     * 'firstname', 'lastname', 'status', 'request_id'.
+     */
+    public static function openReservationsInSlotByName(mysqli $con, int $mentorId, string $subject, string $sessionDate): array
+    {
+        return self::typedRows($con, "
+            SELECT u.firstname, u.lastname, sr.status, sr.request_id
+            FROM session_requests sr
+            JOIN users u ON sr.mentee_id = u.user_id
+            WHERE sr.mentor_id = ?
+              AND sr.subject   = ?
+              AND DATE(sr.session_date) = DATE(?)
+              AND TIME(sr.session_date) = TIME(?)
+              AND sr.status IN ('pending', 'approved')
+            ORDER BY u.firstname ASC
+        ", 'isss', [$mentorId, $subject, $sessionDate, $sessionDate]);
+    }
+
+    /** Records that $userId opened the call for $sessionId. Only the first visit is kept, so re-opening keeps the original join time. */
+    public static function recordAttendance(mysqli $con, int $sessionId, int $userId, string $role): void
+    {
+        self::execute($con, "INSERT IGNORE INTO session_attendance (session_id, user_id, role, joined_at) VALUES (?, ?, ?, NOW())",
+            'iis', [$sessionId, $userId, $role]);
+    }
+
+    /** An approved session of this participant, for ending its call: ids, 'session_date' and both names. Null otherwise. */
+    public static function approvedForParticipant(mysqli $con, int $sessionId, int $userId): ?array
+    {
+        return self::typedRow($con, "
+            SELECT sr.request_id, sr.mentor_id, sr.mentee_id, sr.session_date,
+                   mentor.firstname AS mentor_fname, mentor.lastname AS mentor_lname,
+                   mentee.firstname AS mentee_fname, mentee.lastname AS mentee_lname
+            FROM session_requests sr
+            JOIN users mentor ON sr.mentor_id = mentor.user_id
+            JOIN users mentee ON sr.mentee_id = mentee.user_id
+            WHERE sr.request_id = ?
+              AND (sr.mentor_id = ? OR sr.mentee_id = ?)
+              AND sr.status = 'approved'
+        ", 'iii', [$sessionId, $userId, $userId]);
+    }
+
+    /** The mentor marks one of their sessions completed now. Returns 1 when the row changed. */
+    public static function completeByMentor(mysqli $con, int $sessionId, int $mentorId): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status = 'completed', completed_at = NOW()
+            WHERE request_id = ? AND mentor_id = ?
+        ", 'ii', [$sessionId, $mentorId]);
+    }
+
+    /**
+     * Approved sessions for a calendar file: one ($sessionId) or all of the
+     * participant's, soonest first, each with both names and 'duration' — its
+     * slot's length, or 60 minutes when it has no slot.
+     */
+    public static function approvedForExport(mysqli $con, int $userId, ?int $sessionId = null): array
+    {
+        $select = "
+            SELECT sr.request_id, sr.subject, sr.session_date, sr.mentor_id, sr.mentee_id,
+                   mentor.firstname AS mentor_fname, mentor.lastname AS mentor_lname,
+                   mentee.firstname AS mentee_fname, mentee.lastname AS mentee_lname,
+                   COALESCE(a.duration, 60) AS duration
+            FROM session_requests sr
+            JOIN users mentor ON sr.mentor_id = mentor.user_id
+            JOIN users mentee ON sr.mentee_id = mentee.user_id
+            LEFT JOIN availability a
+                ON  a.mentor_id  = sr.mentor_id
+                AND a.subject    = sr.subject
+                AND DATE(a.date) = DATE(sr.session_date)
+                AND TIME(a.start_time) = TIME(sr.session_date)
+        ";
+        if ($sessionId) {
+            return self::typedRows($con, $select . "
+                WHERE sr.request_id = ?
+                  AND (sr.mentor_id = ? OR sr.mentee_id = ?)
+                  AND sr.status = 'approved'
+                LIMIT 1
+            ", 'iii', [$sessionId, $userId, $userId]);
+        }
+        return self::typedRows($con, $select . "
+            WHERE (sr.mentor_id = ? OR sr.mentee_id = ?)
+              AND sr.status = 'approved'
+            ORDER BY sr.session_date ASC
+        ", 'ii', [$userId, $userId]);
+    }
+
     /** Every mentor the mentee has ever sent a request to, whatever became of it. */
     public static function mentorIdsForMentee(mysqli $con, int $menteeId): array
     {

@@ -20,43 +20,10 @@ if (empty($_SESSION['user_id'])) {
 $user_id    = (int)$_SESSION['user_id'];
 $session_id = (int)($_GET['session_id'] ?? 0);
 
-$select = "
-    SELECT sr.request_id, sr.subject, sr.session_date, sr.mentor_id, sr.mentee_id,
-           mentor.firstname AS mentor_fname, mentor.lastname AS mentor_lname,
-           mentee.firstname AS mentee_fname, mentee.lastname AS mentee_lname,
-           -- 60 is the fallback used by the calendar, the missed-session cron
-           -- and the feedback gate; keep the exported end time agreeing with
-           -- the end time those show.
-           COALESCE(a.duration, 60) AS duration
-    FROM session_requests sr
-    JOIN users mentor ON sr.mentor_id = mentor.user_id
-    JOIN users mentee ON sr.mentee_id = mentee.user_id
-    LEFT JOIN availability a
-        ON  a.mentor_id  = sr.mentor_id
-        AND a.subject    = sr.subject
-        AND DATE(a.date) = DATE(sr.session_date)
-        AND TIME(a.start_time) = TIME(sr.session_date)
-";
-
-if ($session_id) {
-    $stmt = $con->prepare($select . "
-        WHERE sr.request_id = ?
-          AND (sr.mentor_id = ? OR sr.mentee_id = ?)
-          AND sr.status = 'approved'
-        LIMIT 1
-    ");
-    $stmt->bind_param("iii", $session_id, $user_id, $user_id);
-} else {
-    $stmt = $con->prepare($select . "
-        WHERE (sr.mentor_id = ? OR sr.mentee_id = ?)
-          AND sr.status = 'approved'
-        ORDER BY sr.session_date ASC
-    ");
-    $stmt->bind_param("ii", $user_id, $user_id);
-}
-$stmt->execute();
-$sessions = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+// The end time uses the slot's length, or 60 minutes without one — the
+// fallback the calendar, the missed-session job and the feedback gate use, so
+// the exported end agrees with the end those show.
+$sessions = SessionRepository::approvedForExport($con, $user_id, $session_id ?: null);
 
 if (!$sessions) {
     http_response_code(404);
