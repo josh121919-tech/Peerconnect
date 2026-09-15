@@ -43,7 +43,7 @@ if (!$session_id) {
 
 // Verify the user belongs to this session
 $stmt = $con->prepare("
-    SELECT sr.request_id, sr.mentor_id, sr.mentee_id,
+    SELECT sr.request_id, sr.mentor_id, sr.mentee_id, sr.session_date,
            mentor.firstname AS mentor_fname, mentor.lastname AS mentor_lname,
            mentee.firstname AS mentee_fname, mentee.lastname AS mentee_lname
     FROM session_requests sr
@@ -59,6 +59,16 @@ $row = $stmt->get_result()->fetch_assoc();
 
 if (!$row) {
     echo json_encode(['ok' => false, 'error' => 'session not found or already ended']);
+    exit;
+}
+
+// A call can only be ended once it could have been joined: the room opens 15
+// minutes before the start (room.php checks the same way). Without this, a
+// mentor could post here directly and mark any approved session completed days
+// before it happened, and a mentee could send "left the session" at any time.
+$minutesUntilStart = ((new DateTime($row['session_date'], new DateTimeZone('Asia/Manila')))->getTimestamp() - time()) / 60;
+if ($minutesUntilStart > 15) {
+    echo json_encode(['ok' => false, 'error' => 'session has not started']);
     exit;
 }
 

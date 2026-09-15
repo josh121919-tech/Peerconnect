@@ -23,37 +23,16 @@ $is_self      = $has_shell && (int)$_SESSION['user_id'] === $mentor_id;
 // pr.bio is the same column the mentor edits under Settings > Account and
 // sees on their own profile page; without it this page always claimed the
 // mentor had written nothing.
-$mentor = $con->query("
-    SELECT u.*, p.club, p.expertise, p.course, p.year_level, pr.profile_image, pr.bio
-    FROM users u
-    LEFT JOIN user_verifications p ON u.user_id = p.user_id
-    LEFT JOIN profile pr ON u.user_id = pr.user_id
-    WHERE u.user_id = $mentor_id
-")->fetch_assoc();
+$mentor = UserRepository::mentorProfile($con, $mentor_id);
 
-$stats = $con->query("
-    SELECT
-        COUNT(*) AS total_sessions,
-        SUM(TIMESTAMPDIFF(MINUTE, session_date, DATE_ADD(session_date, INTERVAL 30 MINUTE))) AS total_minutes
-    FROM session_requests
-    WHERE mentor_id = $mentor_id AND status = 'completed'
-")->fetch_assoc();
+// Completed sessions, and how many different mentees they were with. There is
+// no minutes figure: a session's length lives on its slot, and the slot is
+// deleted once the session is completed, so a total could only be guessed.
+$stats = SessionRepository::completedSummaryForMentor($con, $mentor_id);
 
-$reviews_result = $con->query("
-    SELECT f.*, u.firstname, u.lastname
-    FROM feedback f
-    JOIN users u ON f.mentee_id = u.user_id
-    WHERE f.mentor_id = $mentor_id
-");
-$reviews = [];
-while ($review = $reviews_result->fetch_assoc()) $reviews[] = $review;
+$reviews = FeedbackRepository::reviewsForMentor($con, $mentor_id);
 
-$avg = $con->query("
-    SELECT AVG(rating) AS avg_rating, COUNT(*) AS total_reviews,
-           AVG(communication) AS avg_comm, AVG(knowledge) AS avg_know,
-           AVG(efficiency) AS avg_eff, AVG(skill) AS avg_skill
-    FROM feedback WHERE mentor_id = $mentor_id
-")->fetch_assoc();
+$avg = FeedbackRepository::averagesForMentor($con, $mentor_id);
 
 /*
  * Expertise. `user_tags` (the questionnaire answers) is the live source — it
@@ -62,29 +41,15 @@ $avg = $con->query("
  * The legacy free-text `user_verifications.expertise` is kept as a fallback so
  * an older account that only has that still shows something.
  */
-$skills = [];
-$tq = $con->prepare("SELECT tag FROM user_tags WHERE user_id = ? AND tag_type IN ('skill','learn') ORDER BY tag_type, tag");
-$tq->bind_param("i", $mentor_id);
-$tq->execute();
-foreach ($tq->get_result()->fetch_all(MYSQLI_ASSOC) as $t) {
-    $skills[] = $t['tag'];
-}
-$tq->close();
+$skills = UserRepository::skillTags($con, $mentor_id);
 if (!$skills) {
     $skills = array_values(array_filter(array_map('trim', explode(',', $mentor['expertise'] ?? ''))));
 }
 
 $mentor_bio = trim((string)($mentor['bio'] ?? ''));
 
-$avail = $con->query("
-    SELECT subject, start_time, duration, session_type
-    FROM availability
-    WHERE mentor_id = $mentor_id
-      AND CONCAT(date, ' ', start_time) > NOW()
-    ORDER BY CASE WHEN session_type = '1v1' THEN 1 ELSE 2 END, date, start_time
-");
 $sessions_by_type = ['1v1' => [], 'group' => []];
-while ($row = $avail->fetch_assoc()) {
+foreach (AvailabilityRepository::upcomingForProfile($con, $mentor_id) as $row) {
     $sessions_by_type[$row['session_type'] === 'group' ? 'group' : '1v1'][] = $row;
 }
 
@@ -106,30 +71,10 @@ $route_save_booking_url = url('save-booking');
 $route_save_report_url = url('save-report');
 
 // Fetch mentor's earned badges
-$badges_q = $con->prepare("
-    SELECT b.name, b.description, b.criteria_type, b.criteria_value, ub.awarded_at, ub.awarded_by
-    FROM user_badges ub
-    JOIN badges b ON b.badge_id = ub.badge_id
-    WHERE ub.user_id = ? AND b.is_active = 1
-    ORDER BY ub.awarded_at DESC
-");
-$badges_q->bind_param("i", $mentor_id);
-$badges_q->execute();
-$mentor_earned_badges = $badges_q->get_result()->fetch_all(MYSQLI_ASSOC);
-$badges_q->close();
+$mentor_earned_badges = AchievementRepository::activeBadgesFor($con, $mentor_id);
 
 // Fetch mentor's certificates
-$certs_q = $con->prepare("
-    SELECT uc.achievement, uc.awarded_at, uc.generated_path, ct.name as template_name
-    FROM user_certificates uc
-    LEFT JOIN certificate_templates ct ON ct.template_id = uc.template_id
-    WHERE uc.user_id = ?
-    ORDER BY uc.awarded_at DESC
-");
-$certs_q->bind_param("i", $mentor_id);
-$certs_q->execute();
-$mentor_certs = $certs_q->get_result()->fetch_all(MYSQLI_ASSOC);
-$certs_q->close();
+$mentor_certs = AchievementRepository::certificatesFor($con, $mentor_id);
 
 // ── Derived, all from real rows above ─────────────────────────────────────
 $mentor_name  = trim(($mentor['firstname'] ?? '') . ' ' . ($mentor['lastname'] ?? ''));
@@ -1296,11 +1241,11 @@ $active_page = 'find_mentor';
                 </div>
                 <div class="vm-stat">
                     <span class="vm-stat-icon" style="background:#EFEBFC;color:var(--purple);">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" /></svg>
+                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM20 19c0-1.8-1.2-3.3-2.8-3.8M17 4.4a3 3 0 0 1 0 5.2" /></svg>
                     </span>
                     <div>
-                        <div class="vm-stat-val"><?= (int)($stats['total_minutes'] ?? 0) ?></div>
-                        <div class="vm-stat-lbl">Minutes</div>
+                        <div class="vm-stat-val"><?= (int)($stats['mentees'] ?? 0) ?></div>
+                        <div class="vm-stat-lbl">Mentees</div>
                     </div>
                 </div>
                 <div class="vm-stat">
@@ -1716,7 +1661,7 @@ $active_page = 'find_mentor';
                             Session Analytics
                         </div>
                         <div class="vm-widget-row"><span>Total Sessions</span><b><?= (int)($stats['total_sessions'] ?? 0) ?></b></div>
-                        <div class="vm-widget-row"><span>Total Minutes</span><b><?= (int)($stats['total_minutes'] ?? 0) ?></b></div>
+                        <div class="vm-widget-row"><span>Mentees</span><b><?= (int)($stats['mentees'] ?? 0) ?></b></div>
                         <div class="vm-widget-row">
                             <span>Avg Rating</span>
                             <b><?= $avg['total_reviews'] ? '⭐ ' . number_format((float)$avg['avg_rating'], 1) : '—' ?></b>

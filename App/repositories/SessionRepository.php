@@ -326,6 +326,127 @@ class SessionRepository extends Repository
         ", 'ii', [$menteeId, $limit]);
     }
 
+    // ── Booking ─────────────────────────────────────────────────────────────
+    // $datetime is a session's start, 'Y-m-d H:i:s'. A live request is one that
+    // is pending or approved.
+
+    /** True when the mentee already has a live request with this mentor starting at $datetime. */
+    public static function menteeHasLiveRequestAt(mysqli $con, int $mentorId, int $menteeId, string $datetime): bool
+    {
+        return self::value($con, "
+            SELECT 1 FROM session_requests
+            WHERE mentor_id = ?
+            AND mentee_id = ?
+            AND session_date = ?
+            AND status IN ('pending','approved')
+        ", 'iis', [$mentorId, $menteeId, $datetime]) !== null;
+    }
+
+    /**
+     * The mentee's bookings dated within the last seven days or later, for the
+     * weekly booking cap: pending, approved and completed ones count.
+     */
+    public static function countForWeeklyCap(mysqli $con, int $menteeId): int
+    {
+        return (int)self::value($con, "
+            SELECT COUNT(*) c FROM session_requests
+            WHERE mentee_id = ? AND status IN ('pending','approved','completed')
+              AND session_date >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+        ", 'i', [$menteeId]);
+    }
+
+    /** True when $datetime is now or earlier, by the database's clock (the same one NOW() uses everywhere else). */
+    public static function hasStarted(mysqli $con, string $datetime): bool
+    {
+        return (int)self::value($con, "SELECT ? <= NOW() AS is_past", 's', [$datetime]) === 1;
+    }
+
+    /**
+     * The first of the mentee's live sessions on $date that overlaps a session
+     * from $datetime lasting $minutes — 'session_date', 'subject', 'dur' and
+     * 'mentor_name' — or null. An existing session lasts as long as its slot,
+     * or 60 minutes when it has none.
+     */
+    public static function firstClashForMentee(mysqli $con, int $menteeId, string $date, string $datetime, int $minutes): ?array
+    {
+        return self::typedRow($con, "
+            SELECT sr.session_date,
+                   sr.subject,
+                   COALESCE(a.duration, 60) AS dur,
+                   CONCAT(u.firstname, ' ', u.lastname) AS mentor_name
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentor_id
+            LEFT JOIN availability a
+                   ON  a.mentor_id        = sr.mentor_id
+                   AND LOWER(a.subject)   = LOWER(sr.subject)
+                   AND a.date             = DATE(sr.session_date)
+                   AND a.start_time       = TIME(sr.session_date)
+            WHERE sr.mentee_id = ?
+              AND sr.status IN ('pending','approved')
+              AND DATE(sr.session_date) = ?
+              AND sr.session_date < DATE_ADD(?, INTERVAL ? MINUTE)
+              AND DATE_ADD(sr.session_date, INTERVAL COALESCE(a.duration, 60) MINUTE) > ?
+            ORDER BY sr.session_date
+            LIMIT 1
+        ", 'issis', [$menteeId, $date, $datetime, $minutes, $datetime]);
+    }
+
+    /** True when the mentee already has a live reservation with this mentor, subject (letter case ignored) and start. */
+    public static function menteeHasLiveReservation(mysqli $con, int $menteeId, int $mentorId, string $subject, string $datetime): bool
+    {
+        return self::value($con, "
+            SELECT 1
+            FROM session_requests
+            WHERE mentee_id = ?
+              AND mentor_id = ?
+              AND LOWER(subject) = LOWER(?)
+              AND session_date = ?
+              AND status IN ('pending', 'approved')
+            LIMIT 1
+        ", 'iiss', [$menteeId, $mentorId, $subject, $datetime]) !== null;
+    }
+
+    /** How many live requests the mentor has starting at $datetime, whatever their subject — the seats taken. */
+    public static function countLiveForMentorAt(mysqli $con, int $mentorId, string $datetime): int
+    {
+        return (int)self::value($con, "
+            SELECT COUNT(*) as total
+            FROM session_requests
+            WHERE mentor_id = ?
+            AND session_date = ?
+            AND status IN ('pending','approved')
+        ", 'is', [$mentorId, $datetime]);
+    }
+
+    /**
+     * Saves a new pending request. Throws mysqli_sql_exception on failure,
+     * including code 1062 on a database that still has the old
+     * one-request-per-mentor-mentee-time key.
+     */
+    public static function createPendingRequest(mysqli $con, int $mentorId, int $menteeId, string $subject, string $datetime, string $message): int
+    {
+        return self::execute($con, "
+            INSERT INTO session_requests (
+                mentor_id, mentee_id, subject, session_date, message, status
+            ) VALUES (
+                ?, ?, ?, ?, ?, 'pending'
+            )
+        ", 'iisss', [$mentorId, $menteeId, $subject, $datetime, $message]);
+    }
+
+    /**
+     * The mentor profile's session figures: 'total_sessions' (completed) and
+     * 'mentees' (different mentees those sessions were with).
+     */
+    public static function completedSummaryForMentor(mysqli $con, int $mentorId): array
+    {
+        return self::row($con, "
+            SELECT COUNT(*) AS total_sessions, COUNT(DISTINCT mentee_id) AS mentees
+            FROM session_requests
+            WHERE mentor_id = ? AND status = 'completed'
+        ", 'i', [$mentorId]) ?? ['total_sessions' => '0', 'mentees' => '0'];
+    }
+
     /** Every mentor the mentee has ever sent a request to, whatever became of it. */
     public static function mentorIdsForMentee(mysqli $con, int $menteeId): array
     {

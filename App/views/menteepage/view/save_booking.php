@@ -27,11 +27,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'mentee') {
 $bookingLocks = [];
 function booking_lock(mysqli $con, string $name, array &$held): bool
 {
-    $st = $con->prepare("SELECT GET_LOCK(?, 5)");
-    $st->bind_param("s", $name);
-    $st->execute();
-    $got = (int)($st->get_result()->fetch_row()[0] ?? 0) === 1;
-    $st->close();
+    $got = Repository::acquireLock($con, $name, 5);
     if ($got) {
         $held[] = $name;
     }
@@ -41,10 +37,7 @@ function booking_unlock(mysqli $con, array &$held): void
 {
     foreach ($held as $name) {
         try {
-            $st = $con->prepare("SELECT RELEASE_LOCK(?)");
-            $st->bind_param("s", $name);
-            $st->execute();
-            $st->close();
+            Repository::releaseLock($con, $name);
         } catch (Throwable $e) {
             // The connection closing releases it regardless.
         }
@@ -108,21 +101,12 @@ try {
     // =====================================
     // 🔥 1. GET SLOT INFO (type, capacity, length)
     // =====================================
-    // The slot's own date and start time are used from here on, so every check
-    // and the saved booking use exactly the time the mentor published.
-    $slotStmt = $con->prepare("
-        SELECT date, start_time, session_type, capacity, duration
-        FROM availability
-        WHERE mentor_id = ?
-        AND date = ?
-        AND start_time = ?
-        AND LOWER(subject) = LOWER(?)
-        AND session_type = ?
-    ");
-    $slotStmt->bind_param("issss", $mentor_id, $date, $time, $subject, $session_type);
-    $slotStmt->execute();
-    $slot = $slotStmt->get_result()->fetch_assoc();
-    $slotStmt->close();
+    // The slot's own date, start time and subject are used from here on, so
+    // every check and the saved booking use exactly what the mentor published.
+    // The slot is matched ignoring letter case and trailing spaces, and the
+    // subject a booking is saved with is what puts group members in the same
+    // video room — so it must be the slot's spelling, not the request's.
+    $slot = AvailabilityRepository::findForBooking($con, $mentor_id, $date, $time, $subject, $session_type);
 
     if (!$slot) {
         echo json_encode(["error" => "Slot not found"]);
@@ -130,6 +114,7 @@ try {
     }
 
     $datetime = $slot['date'] . " " . $slot['start_time'];
+    $subject  = $slot['subject'];
 
     if (!booking_lock($con, 'pc_booking_slot_' . md5($mentor_id . '|' . $datetime), $bookingLocks)) {
         echo json_encode(["error" => "Booking is busy right now. Please try again in a moment."]);
@@ -142,19 +127,7 @@ try {
     // Only a live request counts. A cancelled or declined one does not stop
     // the mentee asking for the same time again: that is a new request, and the
     // mentor still decides on it.
-    $checkStmt = $con->prepare("
-        SELECT 1 FROM session_requests
-        WHERE mentor_id = ?
-        AND mentee_id = ?
-        AND session_date = ?
-        AND status IN ('pending','approved')
-    ");
-    $checkStmt->bind_param("iis", $mentor_id, $mentee_id, $datetime);
-    $checkStmt->execute();
-    $check = $checkStmt->get_result()->num_rows;
-    $checkStmt->close();
-
-    if ($check > 0) {
+    if (SessionRepository::menteeHasLiveRequestAt($con, $mentor_id, $mentee_id, $datetime)) {
         echo json_encode(["error" => "You already booked this session."]);
         exit;
     }
@@ -166,15 +139,7 @@ try {
      */
     $weekCap = pc_setting_int($con, 'booking_limit_week', 0);
     if ($weekCap > 0) {
-        $wk = $con->prepare("
-            SELECT COUNT(*) c FROM session_requests
-            WHERE mentee_id = ? AND status IN ('pending','approved','completed')
-              AND session_date >= DATE_SUB(NOW(), INTERVAL 7 DAY)
-        ");
-        $wk->bind_param("i", $mentee_id);
-        $wk->execute();
-        $thisWeek = (int)($wk->get_result()->fetch_assoc()['c'] ?? 0);
-        $wk->close();
+        $thisWeek = SessionRepository::countForWeeklyCap($con, $mentee_id);
 
         if ($thisWeek >= $weekCap) {
             echo json_encode(["error" =>
@@ -191,13 +156,7 @@ try {
     // endpoint never checked, so a booking could land on a date that had already
     // gone by. The comparison runs in SQL, on the same clock as NOW() everywhere
     // else in the app.
-    $pastStmt = $con->prepare("SELECT ? <= NOW() AS is_past");
-    $pastStmt->bind_param("s", $datetime);
-    $pastStmt->execute();
-    $isPast = (int)($pastStmt->get_result()->fetch_assoc()['is_past'] ?? 0);
-    $pastStmt->close();
-
-    if ($isPast) {
+    if (SessionRepository::hasStarted($con, $datetime)) {
         echo json_encode(["error" => "That time has already passed. Please pick a later slot."]);
         exit;
     }
@@ -217,31 +176,7 @@ try {
     // slot too; either one defaults to 60 minutes when there is no length (the
     // same default feedback/save.php uses).
     $newDur = (int)($slot['duration'] ?? 0) > 0 ? (int)$slot['duration'] : 60;
-    $clashStmt = $con->prepare("
-        SELECT sr.session_date,
-               sr.subject,
-               COALESCE(a.duration, 60) AS dur,
-               CONCAT(u.firstname, ' ', u.lastname) AS mentor_name
-        FROM session_requests sr
-        JOIN users u ON u.user_id = sr.mentor_id
-        LEFT JOIN availability a
-               ON  a.mentor_id        = sr.mentor_id
-               AND LOWER(a.subject)   = LOWER(sr.subject)
-               AND a.date             = DATE(sr.session_date)
-               AND a.start_time       = TIME(sr.session_date)
-        WHERE sr.mentee_id = ?
-          AND sr.status IN ('pending','approved')
-          AND DATE(sr.session_date) = ?
-          AND sr.session_date < DATE_ADD(?, INTERVAL ? MINUTE)
-          AND DATE_ADD(sr.session_date, INTERVAL COALESCE(a.duration, 60) MINUTE) > ?
-        ORDER BY sr.session_date
-        LIMIT 1
-    ");
-    $slotDate = $slot['date'];
-    $clashStmt->bind_param("issis", $mentee_id, $slotDate, $datetime, $newDur, $datetime);
-    $clashStmt->execute();
-    $clash = $clashStmt->get_result()->fetch_assoc();
-    $clashStmt->close();
+    $clash = SessionRepository::firstClashForMentee($con, $mentee_id, $slot['date'], $datetime, $newDur);
 
     if ($clash) {
         $clashWhen = (new DateTime($clash['session_date'], new DateTimeZone('Asia/Manila')))->format('g:i A');
@@ -255,22 +190,7 @@ try {
     // 🔥 3. PREVENT DUPLICATE GROUP RESERVATION (same date+subject)
     // =====================================
     if ($session_type === 'group') {
-        $groupStmt = $con->prepare("
-            SELECT 1
-            FROM session_requests
-            WHERE mentee_id = ?
-              AND mentor_id = ?
-              AND LOWER(subject) = LOWER(?)
-              AND session_date = ?
-              AND status IN ('pending', 'approved')
-            LIMIT 1
-        ");
-        $groupStmt->bind_param("iiss", $mentee_id, $mentor_id, $subject, $datetime);
-        $groupStmt->execute();
-        $groupCheck = $groupStmt->get_result()->num_rows;
-        $groupStmt->close();
-
-        if ($groupCheck > 0) {
+        if (SessionRepository::menteeHasLiveReservation($con, $mentee_id, $mentor_id, $subject, $datetime)) {
             echo json_encode(['error' => 'You already have a reservation for this session.']);
             exit;
         }
@@ -279,17 +199,7 @@ try {
     // =====================================
     // 🔥 4. COUNT CURRENT BOOKINGS
     // =====================================
-    $countStmt = $con->prepare("
-        SELECT COUNT(*) as total
-        FROM session_requests
-        WHERE mentor_id = ?
-        AND session_date = ?
-        AND status IN ('pending','approved')
-    ");
-    $countStmt->bind_param("is", $mentor_id, $datetime);
-    $countStmt->execute();
-    $count = $countStmt->get_result()->fetch_assoc()['total'];
-    $countStmt->close();
+    $count = SessionRepository::countLiveForMentorAt($con, $mentor_id, $datetime);
 
     // =====================================
     // 🔥 5. CHECK CAPACITY
@@ -303,16 +213,7 @@ try {
     // 🔥 6. INSERT BOOKING
     // =====================================
     try {
-        $insertStmt = $con->prepare("
-            INSERT INTO session_requests (
-                mentor_id, mentee_id, subject, session_date, message, status
-            ) VALUES (
-                ?, ?, ?, ?, ?, 'pending'
-            )
-        ");
-        $insertStmt->bind_param("iisss", $mentor_id, $mentee_id, $subject, $datetime, $message);
-        $insertStmt->execute();
-        $insertStmt->close();
+        SessionRepository::createPendingRequest($con, $mentor_id, $mentee_id, $subject, $datetime, $message);
     } catch (mysqli_sql_exception $e) {
         // 1062: a database that still has the old one-row-per-mentor-mentee-time
         // key (see allow_rebooking.sql) refuses a second request for a time the
@@ -334,11 +235,7 @@ try {
     // Every other transition in this flow notifies (approve, reject, cancel,
     // missed). The request that starts it did not, so a mentor only discovered
     // new bookings by opening the requests page.
-    $whoStmt = $con->prepare("SELECT CONCAT(firstname,' ',lastname) AS name FROM users WHERE user_id = ?");
-    $whoStmt->bind_param("i", $mentee_id);
-    $whoStmt->execute();
-    $menteeName = $whoStmt->get_result()->fetch_assoc()['name'] ?? 'A mentee';
-    $whoStmt->close();
+    $menteeName = UserRepository::fullName($con, $mentee_id) ?? 'A mentee';
 
     $when = (new DateTime($datetime, new DateTimeZone('Asia/Manila')))->format('M j, g:i A');
     NotificationService::send(

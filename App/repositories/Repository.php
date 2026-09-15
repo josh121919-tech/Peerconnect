@@ -69,6 +69,12 @@ abstract class Repository
         return self::rows($con, $sql, $types, $args)[0] ?? null;
     }
 
+    /** The first row with native types, or null when there is none. */
+    protected static function typedRow(mysqli $con, string $sql, string $types = '', array $args = []): ?array
+    {
+        return self::typedRows($con, $sql, $types, $args)[0] ?? null;
+    }
+
     /** The first column of the first row, or null when there is no row. */
     protected static function value(mysqli $con, string $sql, string $types = '', array $args = []): ?string
     {
@@ -80,5 +86,22 @@ abstract class Repository
     protected static function marks(array $values): string
     {
         return implode(',', array_fill(0, count($values), '?'));
+    }
+
+    /**
+     * Takes the named database lock $name, waiting up to $waitSeconds for
+     * whoever holds it. False when it could not be had in time. A request that
+     * takes the same name waits its turn, which is how two saves that must not
+     * interleave (two bookings of one slot, say) are kept apart.
+     */
+    public static function acquireLock(mysqli $con, string $name, int $waitSeconds = 5): bool
+    {
+        return self::value($con, "SELECT GET_LOCK(?, ?)", 'si', [$name, $waitSeconds]) === '1';
+    }
+
+    /** Lets go of a lock taken with acquireLock(). Closing the connection lets go of it too. */
+    public static function releaseLock(mysqli $con, string $name): void
+    {
+        self::value($con, "SELECT RELEASE_LOCK(?)", 's', [$name]);
     }
 }

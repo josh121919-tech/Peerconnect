@@ -105,11 +105,146 @@ class AvailabilityRepository extends Repository
      */
     public static function lockMentor(mysqli $con, int $mentorId): bool
     {
-        return self::value($con, "SELECT GET_LOCK(?, 5)", 's', ['pc_availability_mentor_' . $mentorId]) === '1';
+        return self::acquireLock($con, 'pc_availability_mentor_' . $mentorId, 5);
     }
 
     public static function unlockMentor(mysqli $con, int $mentorId): void
     {
-        self::value($con, "SELECT RELEASE_LOCK(?)", 's', ['pc_availability_mentor_' . $mentorId]);
+        self::releaseLock($con, 'pc_availability_mentor_' . $mentorId);
+    }
+
+    // ── Booking (mentee side) ───────────────────────────────────────────────
+    // Only times that have not started yet are ever offered.
+
+    /**
+     * The slot a booking asks for: the mentor's slot on $date at $startTime
+     * ('H:i:s') with that subject (letter case and trailing spaces ignored) and
+     * session type, with its own 'date', 'start_time', 'subject', 'session_type',
+     * 'capacity' and 'duration'. Null when there is none.
+     */
+    public static function findForBooking(mysqli $con, int $mentorId, string $date, string $startTime, string $subject, string $sessionType): ?array
+    {
+        return self::typedRow($con, "
+            SELECT date, start_time, subject, session_type, capacity, duration
+            FROM availability
+            WHERE mentor_id = ?
+            AND date = ?
+            AND start_time = ?
+            AND LOWER(subject) = LOWER(?)
+            AND session_type = ?
+        ", 'issss', [$mentorId, $date, $startTime, $subject, $sessionType]);
+    }
+
+    /** The mentor's future slots of one subject and type, soonest first: 'date', 'about', 'topics', 'start_time', 'duration'. */
+    public static function upcomingForSubjectAndType(mysqli $con, int $mentorId, string $subject, string $sessionType): array
+    {
+        return self::typedRows($con, "
+            SELECT date, about, topics, start_time, duration
+            FROM availability
+            WHERE mentor_id      = ?
+              AND subject        = ?
+              AND session_type   = ?
+              AND CONCAT(date, ' ', start_time) > NOW()
+            ORDER BY date, start_time
+        ", 'iss', [$mentorId, $subject, $sessionType]);
+    }
+
+    /**
+     * The start times still bookable on one day for a subject and type: a 1v1
+     * slot with no pending or approved request at that time, or a group slot
+     * with a seat left. Seats are counted over every request at that time,
+     * whatever its subject.
+     */
+    public static function openStartTimesOn(mysqli $con, int $mentorId, string $date, string $subject, string $sessionType): array
+    {
+        return array_column(self::typedRows($con, "
+            SELECT
+                a.start_time,
+                a.capacity,
+                COUNT(s.request_id) AS reserved_count
+            FROM availability a
+            LEFT JOIN session_requests s
+                ON s.mentor_id = a.mentor_id
+                AND DATE(s.session_date) = a.date
+                AND TIME(s.session_date) = a.start_time
+                AND s.status IN ('pending','approved')
+            WHERE a.mentor_id = ?
+              AND a.date = ?
+              AND LOWER(a.subject) = LOWER(?)
+              AND a.session_type = ?
+              AND CONCAT(a.date, ' ', a.start_time) > NOW()
+            GROUP BY a.availability_id, a.start_time, a.capacity
+            HAVING (
+                (? = '1v1' AND reserved_count = 0)
+                OR
+                (? = 'group' AND reserved_count < a.capacity)
+            )
+        ", 'isssss', [$mentorId, $date, $subject, $sessionType, $sessionType, $sessionType]), 'start_time');
+    }
+
+    /**
+     * The mentor's future group slots of one subject, soonest first, each with
+     * 'session_date', 'start_time' as '09:00 AM', 'duration', 'capacity' and
+     * 'reserved_count' (pending and approved reservations of that subject).
+     */
+    public static function upcomingGroupSlotsForSubject(mysqli $con, int $mentorId, string $subject): array
+    {
+        return self::typedRows($con, "
+            SELECT
+                a.availability_id,
+                a.subject,
+                a.capacity,
+                DATE(a.date)                              AS session_date,
+                TIME_FORMAT(a.start_time, '%h:%i %p')    AS start_time,
+                a.duration,
+                COUNT(sr.request_id)                      AS reserved_count
+            FROM availability a
+            LEFT JOIN session_requests sr
+                ON  sr.mentor_id    = a.mentor_id
+                AND sr.subject      = a.subject
+                AND DATE(sr.session_date) = DATE(a.date)
+                AND TIME(sr.session_date) = a.start_time
+                AND sr.status IN ('pending', 'approved')
+            WHERE a.mentor_id    = ?
+              AND a.subject      = ?
+              AND a.session_type = 'group'
+              AND CONCAT(a.date, ' ', a.start_time) > NOW()
+            GROUP BY a.availability_id
+            ORDER BY a.date, a.start_time
+        ", 'is', [$mentorId, $subject]);
+    }
+
+    /**
+     * Up to $limit of the mentor's future slots, soonest first, for the Request
+     * Mentorship modal, each with 'taken': pending and approved requests at that
+     * time, whatever their subject.
+     */
+    public static function upcomingWithSeatsTaken(mysqli $con, int $mentorId, int $limit): array
+    {
+        return self::typedRows($con, "
+            SELECT a.date, a.start_time, a.duration, a.session_type, a.subject,
+                   a.capacity, a.topics,
+                   (SELECT COUNT(*) FROM session_requests sr
+                     WHERE sr.mentor_id = a.mentor_id
+                       AND sr.session_date = CONCAT(a.date, ' ', a.start_time)
+                       AND sr.status IN ('pending','approved')) AS taken
+            FROM availability a
+            WHERE a.mentor_id = ?
+              AND CONCAT(a.date, ' ', a.start_time) > NOW()
+            ORDER BY a.date ASC, a.start_time ASC
+            LIMIT ?
+        ", 'ii', [$mentorId, $limit]);
+    }
+
+    /** The mentor's future slots for their profile page, 1v1 first then group, each by date and time: 'subject', 'start_time', 'duration', 'session_type'. */
+    public static function upcomingForProfile(mysqli $con, int $mentorId): array
+    {
+        return self::rows($con, "
+            SELECT subject, start_time, duration, session_type
+            FROM availability
+            WHERE mentor_id = ?
+              AND CONCAT(date, ' ', start_time) > NOW()
+            ORDER BY CASE WHEN session_type = '1v1' THEN 1 ELSE 2 END, date, start_time
+        ", 'i', [$mentorId]);
     }
 }

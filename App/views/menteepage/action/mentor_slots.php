@@ -25,25 +25,8 @@ if ($mentor_id <= 0 || !UserRepository::isBookableMentor($con, $mentor_id)) {
 
 // Slots still in the future, with however many seats are already taken so a
 // full 1v1 slot (or a full group) never shows up as bookable.
-$stmt = $con->prepare("
-    SELECT a.date, a.start_time, a.duration, a.session_type, a.subject,
-           a.capacity, a.topics,
-           (SELECT COUNT(*) FROM session_requests sr
-             WHERE sr.mentor_id = a.mentor_id
-               AND sr.session_date = CONCAT(a.date, ' ', a.start_time)
-               AND sr.status IN ('pending','approved')) AS taken
-    FROM availability a
-    WHERE a.mentor_id = ?
-      AND CONCAT(a.date, ' ', a.start_time) > NOW()
-    ORDER BY a.date ASC, a.start_time ASC
-    LIMIT 40
-");
-$stmt->bind_param("i", $mentor_id);
-$stmt->execute();
-$res = $stmt->get_result();
-
 $slots = [];
-while ($r = $res->fetch_assoc()) {
+foreach (AvailabilityRepository::upcomingWithSeatsTaken($con, $mentor_id, 40) as $r) {
     $capacity = max(1, (int)$r['capacity']);
     $taken    = (int)$r['taken'];
     if ($taken >= $capacity) {
@@ -64,6 +47,5 @@ while ($r = $res->fetch_assoc()) {
         'seats_left'   => $capacity - $taken,
     ];
 }
-$stmt->close();
 
 echo json_encode(['slots' => $slots]);
