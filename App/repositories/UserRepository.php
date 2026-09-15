@@ -11,6 +11,25 @@ class UserRepository extends Repository
         return self::value($con, "SELECT firstname FROM users WHERE user_id = ?", 'i', [$userId]);
     }
 
+    /**
+     * A mentor mentees can find and book: a mentor account that is active (not
+     * blocked or restricted) and verified. Find a Mentor lists exactly these,
+     * and every booking endpoint accepts only these. For use inside a query on
+     * users aliased $alias.
+     */
+    public static function bookableMentorCondition(string $alias = 'u'): string
+    {
+        return "$alias.role = 'mentor' AND $alias.status = 'active' AND $alias.verified = 1";
+    }
+
+    /** Whether mentees may book this account right now (see bookableMentorCondition()). */
+    public static function isBookableMentor(mysqli $con, int $userId): bool
+    {
+        return self::value($con, "
+            SELECT 1 FROM users u WHERE u.user_id = ? AND " . self::bookableMentorCondition('u'),
+            'i', [$userId]) !== null;
+    }
+
     /** The account's 'firstname' and 'lastname', or null when there is no such account. */
     public static function names(mysqli $con, int $userId): ?array
     {

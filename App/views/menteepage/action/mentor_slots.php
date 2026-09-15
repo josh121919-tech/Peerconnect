@@ -16,7 +16,9 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'mentee') {
 }
 
 $mentor_id = (int)($_GET['mentor_id'] ?? 0);
-if ($mentor_id <= 0) {
+// A mentor who can't be booked (blocked, restricted, unverified) offers no
+// slots, the same answer save_booking.php would give on submit.
+if ($mentor_id <= 0 || !UserRepository::isBookableMentor($con, $mentor_id)) {
     echo json_encode(['slots' => []]);
     exit;
 }

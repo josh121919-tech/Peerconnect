@@ -88,6 +88,15 @@ while ($row = $avail->fetch_assoc()) {
     $sessions_by_type[$row['session_type'] === 'group' ? 'group' : '1v1'][] = $row;
 }
 
+// A mentor Find a Mentor would not list (blocked, restricted, unverified)
+// cannot be booked, so their slots are not offered here either. The page says
+// they aren't taking bookings and does not say why.
+$is_bookable = UserRepository::isBookableMentor($con, $mentor_id);
+$not_bookable_text = "This mentor isn't taking bookings right now.";
+if (!$is_bookable) {
+    $sessions_by_type = ['1v1' => [], 'group' => []];
+}
+
 $find_mentor_url = url('mentee-find');
 $messages_url = url('messages');
 $route_availability_url = url('get-availability');
@@ -1227,9 +1236,11 @@ $active_page = 'find_mentor';
                     <?php endif; ?>
                     <span class="vm-status">
                         <span class="vm-status-dot" style="background:<?= $is_available ? 'var(--success)' : 'var(--gray-300)' ?>;"></span>
-                        <?= $is_available
-                            ? $open_slot_count . ' open session slot' . ($open_slot_count === 1 ? '' : 's')
-                            : 'No open session slots right now' ?>
+                        <?= !$is_bookable
+                            ? 'Not taking bookings right now'
+                            : ($is_available
+                                ? $open_slot_count . ' open session slot' . ($open_slot_count === 1 ? '' : 's')
+                                : 'No open session slots right now') ?>
                     </span>
                 </div>
 
@@ -1445,7 +1456,7 @@ $active_page = 'find_mentor';
                                         </p>
                                         <button type="button" class="vm-widget-link" onclick="switchTopTab('available')">View available sessions →</button>
                                     <?php else: ?>
-                                        <p class="vm-row-body">No available sessions at the moment.</p>
+                                        <p class="vm-row-body"><?= $is_bookable ? 'No available sessions at the moment.' : htmlspecialchars($not_bookable_text) ?></p>
                                     <?php endif; ?>
                                 </div>
                                 <?php if ($open_slot_count === 0): ?>
@@ -1572,13 +1583,13 @@ $active_page = 'find_mentor';
                                                 <p style="font-size:12px;color:var(--gray-400);margin-top:2px;"><?= date("h:i A", strtotime($session['start_time'])) ?> &bull; <?= (int)$session['duration'] ?> mins</p>
                                                 <span class="sess-tag sess-tag-1v1">1v1</span>
                                             </div>
-                                            <button onclick="openBookingModal(<?= $mentor_id ?>, '<?= htmlspecialchars($session['subject'], ENT_QUOTES) ?>', '1v1')" class="btn btn-blue" style="font-size:12px;padding:7px 16px;">Book</button>
+                                            <button onclick="openBookingModal(<?= $mentor_id ?>, <?= pc_js_arg($session['subject']) ?>, '1v1')" class="btn btn-blue" style="font-size:12px;padding:7px 16px;">Book</button>
                                         </div>
                                     <?php endforeach;
                                 else: ?>
                                     <div class="empty-state" style="padding:30px 0;">
                                         <div class="empty-icon">📅</div>
-                                        <p>No 1v1 sessions available</p>
+                                        <p><?= $is_bookable ? 'No 1v1 sessions available' : htmlspecialchars($not_bookable_text) ?></p>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -1592,13 +1603,13 @@ $active_page = 'find_mentor';
                                                 <p style="font-size:12px;color:var(--gray-400);margin-top:2px;"><?= date("h:i A", strtotime($session['start_time'])) ?> &bull; <?= (int)$session['duration'] ?> mins</p>
                                                 <span class="sess-tag sess-tag-group">Group</span>
                                             </div>
-                                            <button onclick="openGroupReserveModal(<?= $mentor_id ?>, '<?= htmlspecialchars($session['subject'], ENT_QUOTES) ?>')" class="btn btn-blue" style="font-size:12px;padding:7px 16px;">Reserve Slot</button>
+                                            <button onclick="openGroupReserveModal(<?= $mentor_id ?>, <?= pc_js_arg($session['subject']) ?>)" class="btn btn-blue" style="font-size:12px;padding:7px 16px;">Reserve Slot</button>
                                         </div>
                                     <?php endforeach;
                                 else: ?>
                                     <div class="empty-state" style="padding:30px 0;">
                                         <div class="empty-icon">👥</div>
-                                        <p>No group sessions available</p>
+                                        <p><?= $is_bookable ? 'No group sessions available' : htmlspecialchars($not_bookable_text) ?></p>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -2062,22 +2073,38 @@ $active_page = 'find_mentor';
             <p id="monthLabel" style="font-size:13px;font-weight:600;color:var(--gray-700);">${monthName}</p>
             <button type="button" onclick="nextMonth()" style="width:28px;height:28px;border-radius:8px;border:1px solid var(--border);background:var(--surface);cursor:pointer;color:var(--gray-400);font-size:14px;display:flex;align-items:center;justify-content:center;">&#8250;</button>
         </div>`;
+            // The cells are built as elements, not HTML strings. The slot's
+            // description and topics are mentor-written text: passed through an
+            // inline onclick, an apostrophe ("I'll ...") ended the string early
+            // and the date could not be picked. (innerHTML += would also rebuild
+            // every cell and drop the click listeners attached below.)
+            const cell = (text, style) => {
+                const el = document.createElement('div');
+                if (style) el.style.cssText = style;
+                el.textContent = text;
+                container.appendChild(el);
+                return el;
+            };
             ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].forEach(d => {
-                container.innerHTML += `<div style="color:var(--gray-300);font-size:10px;padding:4px 2px;text-align:center;font-weight:700;">${d}</div>`;
+                cell(d, 'color:var(--gray-300);font-size:10px;padding:4px 2px;text-align:center;font-weight:700;');
             });
             const totalDays = new Date(currentYear, currentMonth + 1, 0).getDate();
             const firstDay = new Date(currentYear, currentMonth, 1).getDay();
-            for (let i = 0; i < firstDay; i++) container.innerHTML += `<div></div>`;
+            for (let i = 0; i < firstDay; i++) cell('', '');
             for (let i = 1; i <= totalDays; i++) {
                 const fullDate = `${currentYear}-${String(currentMonth+1).padStart(2,'0')}-${String(i).padStart(2,'0')}`;
                 const found = data.find(d => d.date === fullDate);
                 if (found) {
                     const isSelected = selectedDate === fullDate;
                     const bg = isSelected ? 'var(--navy)' : 'var(--accent)';
-                    container.innerHTML += `<div onclick="selectDate('${fullDate}','${escapeHtml(found.about)}','${escapeHtml(found.topics)}','${found.duration}')"
-                    style="padding:5px 2px;border-radius:8px;cursor:pointer;font-size:11px;text-align:center;background:${bg};color:#fff;transition:opacity .15s;" onmouseover="this.style.opacity='.85'" onmouseout="this.style.opacity='1'">${i}</div>`;
+                    const day = cell(String(i), `padding:5px 2px;border-radius:8px;cursor:pointer;font-size:11px;text-align:center;background:${bg};color:#fff;transition:opacity .15s;`);
+                    day.addEventListener('mouseover', () => { day.style.opacity = '.85'; });
+                    day.addEventListener('mouseout', () => { day.style.opacity = '1'; });
+                    day.addEventListener('click', () => {
+                        selectDate(fullDate, String(found.about ?? ''), String(found.topics ?? ''), String(found.duration));
+                    });
                 } else {
-                    container.innerHTML += `<div style="padding:5px 2px;font-size:11px;text-align:center;color:var(--gray-200);">${i}</div>`;
+                    cell(String(i), 'padding:5px 2px;font-size:11px;text-align:center;color:var(--gray-200);');
                 }
             }
         }
@@ -2103,12 +2130,17 @@ $active_page = 'find_mentor';
         function selectDate(date, about, topics, duration) {
             selectedDate = date;
             document.getElementById('aboutText').innerText = about;
-            let html = '';
+            // Topics are mentor-written: shown as text, never parsed as HTML.
+            const topicsBox = document.getElementById('topics');
+            topicsBox.innerHTML = '';
             topics.split(',').forEach(t => {
                 const tt = t.trim();
-                if (tt) html += `<span style="padding:4px 10px;background:var(--info-bg);color:var(--info);border-radius:6px;font-size:11px;">${tt}</span>`;
+                if (!tt) return;
+                const chip = document.createElement('span');
+                chip.style.cssText = 'padding:4px 10px;background:var(--info-bg);color:var(--info);border-radius:6px;font-size:11px;';
+                chip.textContent = tt;
+                topicsBox.appendChild(chip);
             });
-            document.getElementById('topics').innerHTML = html;
             const mins = parseInt(duration, 10) || 0;
             document.getElementById('sessionDuration').innerText = mins >= 60 ? `${mins/60} hr` : `${mins} mins`;
             renderCalendar(availableDates);
@@ -2235,10 +2267,6 @@ $active_page = 'find_mentor';
             }
         }
 
-        function escapeHtml(v) {
-            return String(v ?? '').replace(/&/g, '&amp;').replace(/'/g, "&#39;").replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        }
-
         setInterval(() => {
             if (step === 2 && selectedDate) loadTimeSlots();
         }, 5000);
@@ -2261,23 +2289,33 @@ $active_page = 'find_mentor';
                         container.innerHTML = '<p style="color:var(--gray-400);font-size:13px;text-align:center;">No group sessions available.</p>';
                         return;
                     }
+                    // Built as elements: the subject is mentor-written text and
+                    // was inserted as HTML. The Reserve click is attached directly
+                    // rather than written into an onclick string.
+                    const node = (tag, style, text) => {
+                        const n = document.createElement(tag);
+                        if (style) n.style.cssText = style;
+                        if (text !== undefined) n.textContent = text;
+                        return n;
+                    };
                     data.forEach(session => {
                         const spotsLeft = session.capacity - session.reserved_count,
                             isFull = spotsLeft <= 0;
-                        container.innerHTML += `
-                    <div style="border:1.5px solid var(--border);border-radius:var(--radius);padding:14px 16px;display:flex;justify-content:space-between;align-items:center;${isFull?'opacity:.55':''}">
-                        <div>
-                            <p style="font-size:13px;font-weight:600;color:var(--gray-800);">${session.subject}</p>
-                            <p style="font-size:12px;color:var(--gray-400);margin-top:2px;">${session.session_date} &bull; ${session.start_time}</p>
-                            <p style="font-size:11px;color:var(--gray-300);">Capacity: ${session.capacity} seats</p>
-                            <p style="font-size:12px;font-weight:600;margin-top:4px;color:${spotsLeft<=3?'var(--danger)':'var(--success)'};">
-                                ${isFull ? '🔴 Full' : `🟢 ${spotsLeft} of ${session.capacity} seats left`}
-                            </p>
-                        </div>
-                        <button onclick="selectGroupSession(${JSON.stringify(session).replace(/"/g,'&quot;')})"
-                            class="btn btn-blue" style="font-size:12px;padding:7px 16px;"
-                            ${isFull ? 'disabled style="opacity:.5;cursor:not-allowed;"' : ''}>Reserve</button>
-                    </div>`;
+                        const row = node('div', 'border:1.5px solid var(--border);border-radius:var(--radius);padding:14px 16px;display:flex;justify-content:space-between;align-items:center;' + (isFull ? 'opacity:.55' : ''));
+                        const info = node('div');
+                        info.append(
+                            node('p', 'font-size:13px;font-weight:600;color:var(--gray-800);', String(session.subject)),
+                            node('p', 'font-size:12px;color:var(--gray-400);margin-top:2px;', `${session.session_date} • ${session.start_time}`),
+                            node('p', 'font-size:11px;color:var(--gray-300);', `Capacity: ${session.capacity} seats`),
+                            node('p', `font-size:12px;font-weight:600;margin-top:4px;color:${spotsLeft<=3?'var(--danger)':'var(--success)'};`,
+                                isFull ? '🔴 Full' : `🟢 ${spotsLeft} of ${session.capacity} seats left`)
+                        );
+                        const reserve = node('button', 'font-size:12px;padding:7px 16px;', 'Reserve');
+                        reserve.className = 'btn btn-blue';
+                        reserve.disabled = isFull;
+                        reserve.addEventListener('click', () => selectGroupSession(session));
+                        row.append(info, reserve);
+                        container.appendChild(row);
                     });
                 });
         }

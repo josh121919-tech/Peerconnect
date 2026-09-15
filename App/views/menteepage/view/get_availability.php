@@ -5,7 +5,8 @@ $mentor_id    = (int) ($_GET['mentor_id']    ?? 0);
 $subject      = $_GET['subject']             ?? '';
 $session_type = $_GET['session_type']        ?? '';
 
-if ($mentor_id <= 0 || $subject === '' || $session_type === '') {
+// A mentor who can't be booked (blocked, restricted, unverified) has no dates to offer.
+if ($mentor_id <= 0 || $subject === '' || $session_type === '' || !UserRepository::isBookableMentor($con, $mentor_id)) {
     echo json_encode([]);
     exit;
 }

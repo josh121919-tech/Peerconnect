@@ -74,6 +74,15 @@ try {
 
     $mentor_id = (int)$field('mentor_id');
     $mentee_id = (int)$_SESSION['user_id'];
+
+    // Only a mentor Find a Mentor would list: blocked, restricted and
+    // unverified mentors were hidden there but still bookable from a profile
+    // link. Why they can't be booked is not the mentee's business.
+    if (!UserRepository::isBookableMentor($con, $mentor_id)) {
+        echo json_encode(["error" => "This mentor isn't taking bookings right now."]);
+        exit;
+    }
+
     $subject = $field('subject');
     $session_type = $field('session_type');
     $date = $field('date');

@@ -255,9 +255,9 @@ $active_page = 'request';
                                     <td><span class="badge badge-<?= $status ?>"><?= ucfirst($status) ?></span></td>
                                     <td>
                                         <?php if ($status === 'pending'): ?>
-                                            <button onclick="openCancelModal(<?= $r['request_id'] ?>, '<?= htmlspecialchars($r['mentor_name'], ENT_QUOTES) ?>')" class="btn btn-red" style="font-size:12px;padding:5px 12px;">Cancel</button>
+                                            <button onclick="openCancelModal(<?= $r['request_id'] ?>, <?= pc_js_arg($r['mentor_name']) ?>)" class="btn btn-red" style="font-size:12px;padding:5px 12px;">Cancel</button>
                                         <?php elseif ($status === 'approved'): ?>
-                                            <button onclick="openSession('<?= htmlspecialchars($r['mentor_name'], ENT_QUOTES) ?>','<?= htmlspecialchars($r['subject'] ?? '', ENT_QUOTES) ?>','<?= date('F j, Y', $session_start) ?>','<?= date('g:i A', $session_start) ?> – <?= date('g:i A', $session_end) ?>','<?= $durationMins ?> min','<?= htmlspecialchars($r['session_type'] ?? 'N/A', ENT_QUOTES) ?>',<?= $canJoin ? 'true' : 'false' ?>,'<?= htmlspecialchars($r['meet_link'] ?? '', ENT_QUOTES) ?>','<?= $status ?>')" class="btn btn-ghost" style="font-size:12px;padding:5px 12px;">View</button>
+                                            <button onclick="openSession(<?= pc_js_arg($r['mentor_name']) ?>,<?= pc_js_arg($r['subject'] ?? '') ?>,'<?= date('F j, Y', $session_start) ?>','<?= date('g:i A', $session_start) ?> – <?= date('g:i A', $session_end) ?>','<?= $durationMins ?> min',<?= pc_js_arg($r['session_type'] ?? 'N/A') ?>,<?= $canJoin ? 'true' : 'false' ?>,<?= pc_js_arg($r['meet_link'] ?? '') ?>,'<?= $status ?>')" class="btn btn-ghost" style="font-size:12px;padding:5px 12px;">View</button>
                                         <?php elseif ($status === 'rejected'): ?>
                                             <button onclick="removeRequest(<?= $r['request_id'] ?>)" class="btn btn-red" style="font-size:12px;padding:5px 12px;">Remove</button>
                                         <?php else: ?>

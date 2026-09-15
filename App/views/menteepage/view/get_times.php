@@ -13,6 +13,12 @@ if ($mentor_id === '' || $date === '' || $subject === '' || $session_type === ''
 
 $mentor_id = (int)$mentor_id;
 
+// A mentor who can't be booked (blocked, restricted, unverified) has no times to offer.
+if (!UserRepository::isBookableMentor($con, $mentor_id)) {
+    echo json_encode([]);
+    exit;
+}
+
 $stmt = $con->prepare("
     SELECT
         a.start_time,

@@ -42,9 +42,9 @@ $subject_stems = [
 
 // Build parameterized query (SECURITY: no string interpolation of user input)
 $whereClauses = [
-    "u.role = 'mentor'",
-    "u.status = 'active'",
-    "u.verified = 1",
+    // Active, verified mentors — the same rule the booking endpoints apply, so
+    // nobody listed here is refused on booking and nobody hidden can be booked.
+    UserRepository::bookableMentorCondition('u'),
     // Settings → Account → Profile Visibility. A mentor set to "private" is
     // not listed here; mentees they already work with keep their sessions.
     "COALESCE((SELECT pf.visibility FROM profile pf WHERE pf.user_id = u.user_id), 'everyone') <> 'private'",

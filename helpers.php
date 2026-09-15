@@ -699,6 +699,26 @@ if (!function_exists('pc_back_url')) {
     }
 }
 
+if (!function_exists('pc_js_arg')) {
+    /**
+     * A PHP value written as a JavaScript argument inside an HTML attribute:
+     *
+     *   onclick="openBookingModal(12, <?= pc_js_arg($subject) ?>)"
+     *
+     * htmlspecialchars() inside '...' is not enough there. The browser turns
+     * &#039; back into ' before the handler runs, so a subject such as
+     * "Writer's Workshop" ended the string early and the button did nothing —
+     * and text written to look like code would have run. JSON makes a quoted,
+     * escaped JavaScript value; escaping that for HTML keeps it intact in the
+     * attribute, whatever the text contains. Write it without surrounding quotes.
+     */
+    function pc_js_arg($value): string
+    {
+        $json = json_encode($value, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+        return htmlspecialchars($json === false ? 'null' : $json, ENT_QUOTES, 'UTF-8');
+    }
+}
+
 if (!function_exists('pc_backup_dir')) {
     /**
      * Where scripts/backup.php writes, where scripts/maintenance.php logs, and
