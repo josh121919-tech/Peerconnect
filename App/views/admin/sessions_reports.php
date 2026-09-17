@@ -44,24 +44,17 @@ switch ($range) {
     default:      $from = date('Y-m-d', strtotime('-29 days')); $to = date('Y-m-d');
 }
 
-$w = $from ? "WHERE DATE(sr.session_date) BETWEEN '$from' AND '$to'" : '';
-$andW = $from ? "AND DATE(sr.session_date) BETWEEN '$from' AND '$to'" : '';
 $rangeLabel = $from ? date('M j, Y', strtotime($from)) . ' – ' . date('M j, Y', strtotime($to)) : 'All time';
 
-$one = function (string $sql) use ($con) {
-    $r = $con->query($sql);
-    return $r ? $r->fetch_row()[0] : null;
-};
-
 /* ── Headline figures ─────────────────────────────────────────────────── */
-$total     = (int)$one("SELECT COUNT(*) FROM session_requests sr $w");
-$completed = (int)$one("SELECT COUNT(*) FROM session_requests sr " . ($w ? "$w AND" : 'WHERE') . " sr.status='completed'");
-$cancelled = (int)$one("SELECT COUNT(*) FROM session_requests sr " . ($w ? "$w AND" : 'WHERE') . " sr.status IN ('cancelled','rejected')");
-$missed    = (int)$one("SELECT COUNT(*) FROM session_requests sr " . ($w ? "$w AND" : 'WHERE') . " sr.status='missed'");
-$upcoming  = (int)$one("SELECT COUNT(*) FROM session_requests sr " . ($w ? "$w AND" : 'WHERE') . " sr.status='approved' AND sr.session_date > NOW()");
-$pending   = (int)$one("SELECT COUNT(*) FROM session_requests sr " . ($w ? "$w AND" : 'WHERE') . " sr.status='approved' AND sr.session_date <= NOW()");
-$notClosed = $pending;
-$pending   = (int)$one("SELECT COUNT(*) FROM session_requests sr " . ($w ? "$w AND" : 'WHERE') . " sr.status='pending'");
+$figures   = AdminSessionRepository::rangeFigures($con, $from, $to);
+$total     = $figures['total'];
+$completed = $figures['completed'];
+$cancelled = $figures['cancelled'];
+$missed    = $figures['missed'];
+$upcoming  = $figures['upcoming'];
+$notClosed = $figures['not_closed'];
+$pending   = $figures['pending'];
 
 $concluded  = $completed + $cancelled + $missed;
 $completion = $concluded > 0 ? round($completed / $concluded * 100, 1) : null;
@@ -69,32 +62,16 @@ $completion = $concluded > 0 ? round($completed / $concluded * 100, 1) : null;
 // Average length comes from the availability slot each session was booked
 // against; sessions whose slot has since been deleted are left out rather
 // than counted as the fallback hour, which would drag the average.
-$avgMin = $one("
-    SELECT AVG(a.duration) FROM session_requests sr
-    JOIN availability a ON a.mentor_id = sr.mentor_id AND a.subject = sr.subject
-      AND DATE(a.date) = DATE(sr.session_date) AND TIME(a.start_time) = TIME(sr.session_date)
-    " . ($w ? "$w AND" : 'WHERE') . " a.duration > 0
-");
-$avgMin = $avgMin !== null ? (int)round((float)$avgMin) : null;
-$avgFrom = (int)$one("
-    SELECT COUNT(*) FROM session_requests sr
-    JOIN availability a ON a.mentor_id = sr.mentor_id AND a.subject = sr.subject
-      AND DATE(a.date) = DATE(sr.session_date) AND TIME(a.start_time) = TIME(sr.session_date)
-    " . ($w ? "$w AND" : 'WHERE') . " a.duration > 0
-");
+$length  = AdminSessionRepository::averageMinutes($con, $from, $to);
+$avgMin  = $length['minutes'] !== null ? (int)round($length['minutes']) : null;
+$avgFrom = $length['sessions'];
 
 /* Ratings across both directions, for sessions in range. */
-$fw = $from ? "WHERE DATE(f.created_at) BETWEEN '$from' AND '$to'" : '';
-$avgRating = $one("SELECT AVG(f.rating) FROM feedback f $fw");
-$ratingN   = (int)$one("SELECT COUNT(*) FROM feedback f $fw");
-$avgRating = $ratingN > 0 ? round((float)$avgRating, 1) : null;
+$rated     = FeedbackRepository::ratingSummaryBetween($con, $from, $to);
+$ratingN   = $rated['reviews'];
+$avgRating = $ratingN > 0 ? round((float)$rated['average'], 1) : null;
 
-$dist = array_fill(1, 5, 0);
-$dq = $con->query("SELECT ROUND(f.rating) r, COUNT(*) c FROM feedback f $fw GROUP BY ROUND(f.rating)");
-while ($x = $dq->fetch_assoc()) {
-    $k = max(1, min(5, (int)$x['r']));
-    $dist[$k] += (int)$x['c'];
-}
+$dist = FeedbackRepository::ratingDistributionBetween($con, $from, $to);
 
 /* ── Sessions over time ───────────────────────────────────────────────── */
 $days = [];
@@ -108,13 +85,7 @@ if ($from) {
 }
 $first = array_key_first($days);
 $last  = array_key_last($days);
-$tq = $con->query("
-    SELECT DATE(sr.session_date) d, sr.status, COUNT(*) c
-    FROM session_requests sr
-    WHERE DATE(sr.session_date) BETWEEN '$first' AND '$last'
-    GROUP BY d, sr.status
-");
-while ($x = $tq->fetch_assoc()) {
+foreach (AdminSessionRepository::dailyStatusCounts($con, $first, $last) as $x) {
     if (!isset($days[$x['d']])) continue;
     $bucket = in_array($x['status'], ['completed'], true) ? 'completed'
         : (in_array($x['status'], ['cancelled', 'rejected', 'missed'], true) ? 'cancelled' : 'upcoming');
@@ -122,38 +93,23 @@ while ($x = $tq->fetch_assoc()) {
 }
 
 /* ── Subjects ─────────────────────────────────────────────────────────── */
-$subjects = $con->query("
-    SELECT sr.subject, COUNT(*) c FROM session_requests sr
-    " . ($w ? "$w AND" : 'WHERE') . " sr.subject <> ''
-    GROUP BY sr.subject ORDER BY c DESC LIMIT 6
-")->fetch_all(MYSQLI_ASSOC);
+$subjects = AdminSessionRepository::subjectTotals($con, $from, $to, 6);
 $subjectTotal = array_sum(array_column($subjects, 'c'));
 
 /* ── Attendance ───────────────────────────────────────────────────────── */
 // Attendance is only meaningful over sessions that reached their time and
 // were then closed one way or the other.
 $attTotal   = $completed + $missed;
-$mentorMiss = (int)$one("SELECT COUNT(*) FROM session_requests sr " . ($w ? "$w AND" : 'WHERE') . " sr.status='missed' AND sr.missed_by IN ('mentor','both')");
-$menteeMiss = (int)$one("SELECT COUNT(*) FROM session_requests sr " . ($w ? "$w AND" : 'WHERE') . " sr.status='missed' AND sr.missed_by IN ('mentee','both')");
+$mentorMiss = $figures['mentor_missed'];
+$menteeMiss = $figures['mentee_missed'];
 $mentorRate = $attTotal > 0 ? round(($attTotal - $mentorMiss) / $attTotal * 100) : null;
 $menteeRate = $attTotal > 0 ? round(($attTotal - $menteeMiss) / $attTotal * 100) : null;
 
 /* ── Top mentors ──────────────────────────────────────────────────────── */
-$topMentors = $con->query("
-    SELECT u.user_id, CONCAT_WS(' ', u.firstname, u.lastname) nm, p.profile_image,
-           COUNT(*) sessions,
-           (SELECT AVG(f.rating) FROM feedback f WHERE f.mentor_id = u.user_id) rating
-    FROM session_requests sr
-    JOIN users u ON u.user_id = sr.mentor_id
-    LEFT JOIN profile p ON p.user_id = u.user_id
-    " . ($w ? "$w AND" : 'WHERE') . " sr.status = 'completed'
-    GROUP BY u.user_id, nm, p.profile_image
-    ORDER BY sessions DESC, rating DESC
-    LIMIT 5
-")->fetch_all(MYSQLI_ASSOC);
+$topMentors = AdminSessionRepository::topMentors($con, $from, $to, 5);
 
 /* ── Recent sessions ──────────────────────────────────────────────────── */
-$recent = $con->query(ad_session_select() . " $w ORDER BY sr.session_date DESC LIMIT 5")->fetch_all(MYSQLI_ASSOC);
+$recent = AdminSessionRepository::recent($con, $from, $to, 5);
 
 /* ── Distribution, for the donut ──────────────────────────────────────── */
 /*

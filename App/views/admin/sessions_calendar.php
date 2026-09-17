@@ -65,23 +65,11 @@ if ($mode === 'day') {
 }
 
 /* ── Load the window ──────────────────────────────────────────────────── */
-$clauses = ['DATE(sr.session_date) BETWEEN ? AND ?'];
-$types   = 'ss';
-$args    = [$rangeStart, $rangeEnd];
-
-if ($fType !== '')    { $clauses[] = 'a.session_type = ?'; $types .= 's'; $args[] = $fType; }
-if ($fSubject !== '') { $clauses[] = 'sr.subject = ?';     $types .= 's'; $args[] = $fSubject; }
-if ($fMentor > 0)     { $clauses[] = 'sr.mentor_id = ?';   $types .= 'i'; $args[] = $fMentor; }
-if ($fStatus !== '') {
-    $sql = ad_state_sql($fStatus);
-    if ($sql !== '') $clauses[] = $sql;
-}
-
-$ls = $con->prepare(ad_session_select() . ' WHERE ' . implode(' AND ', $clauses) . ' ORDER BY sr.session_date ASC');
-$ls->bind_param($types, ...$args);
-$ls->execute();
-$all = $ls->get_result()->fetch_all(MYSQLI_ASSOC);
-$ls->close();
+$all = AdminSessionRepository::inRange($con, $rangeStart, $rangeEnd, [
+    'type'    => $fType,
+    'subject' => $fSubject,
+    'mentor'  => $fMentor,
+], $fStatus);
 
 /* Bucket by day, and work out the hour band the grid needs to cover. */
 $byDay = [];
@@ -104,15 +92,8 @@ $hours = range($minH, $maxH);
 $dayList = $byDay[$selected] ?? [];
 
 /* ── Filter options ───────────────────────────────────────────────────── */
-$subjects = [];
-$sq = $con->query("SELECT DISTINCT subject FROM session_requests WHERE subject <> '' ORDER BY subject");
-while ($r = $sq->fetch_row()) $subjects[] = $r[0];
-
-$mentors = $con->query("
-    SELECT DISTINCT u.user_id, CONCAT_WS(' ', u.firstname, u.lastname) nm
-    FROM session_requests sr JOIN users u ON u.user_id = sr.mentor_id
-    ORDER BY nm
-")->fetch_all(MYSQLI_ASSOC);
+$subjects = AdminSessionRepository::subjects($con);
+$mentors  = AdminSessionRepository::mentorsWithSessions($con);
 
 /** Keep mode and filters when moving around. */
 function cal_url(array $over = []): string
@@ -403,7 +384,7 @@ include __DIR__ . '/includes/sessions_ui.php';
                 [$l, $fg, $bg] = $STATES[$st];
                 $id = (int)$s['request_id'];
                 $isGroup = ($s['session_type'] ?? '') === 'group';
-                $seats = $isGroup ? ad_group_size($con, $s) : 1;
+                $seats = $isGroup ? AdminSessionRepository::groupSize($con, $s) : 1;
             ?>
                 <div class="cv-item" style="color:<?= $fg ?>;">
                     <div class="cv-item-hd">

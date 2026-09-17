@@ -29,37 +29,19 @@ $subject = trim((string)($_GET['subject'] ?? ''));
 $from    = trim((string)($_GET['from'] ?? ''));
 $to      = trim((string)($_GET['to'] ?? ''));
 
-$clauses = [];
-$types   = '';
-$args    = [];
+$rows = AdminSessionRepository::allMatching($con, [
+    'q'       => $q,
+    'subject' => $subject,
+    'type'    => $type,
+    'from'    => ($from !== '' && strtotime($from)) ? date('Y-m-d', strtotime($from)) : '',
+    'to'      => ($to !== '' && strtotime($to)) ? date('Y-m-d', strtotime($to)) : '',
+], $view);
 
-if ($q !== '') {
-    $idHit = 0;
-    if (preg_match('/(\d{1,10})\s*$/', $q, $m)) $idHit = (int)ltrim($m[1], '0');
-    $clauses[] = "(CONCAT_WS(' ', mo.firstname, mo.lastname, me.firstname, me.lastname, sr.subject) LIKE ? OR sr.request_id = ?)";
-    $types .= 'si';
-    $args[] = '%' . $q . '%';
-    $args[] = $idHit;
-}
-if ($subject !== '') { $clauses[] = 'sr.subject = ?';    $types .= 's'; $args[] = $subject; }
-if ($type !== '')    { $clauses[] = 'a.session_type = ?'; $types .= 's'; $args[] = $type; }
-if ($from !== '' && strtotime($from)) { $clauses[] = 'DATE(sr.session_date) >= ?'; $types .= 's'; $args[] = date('Y-m-d', strtotime($from)); }
-if ($to !== '' && strtotime($to))     { $clauses[] = 'DATE(sr.session_date) <= ?'; $types .= 's'; $args[] = date('Y-m-d', strtotime($to)); }
-
-$stateSql = ad_state_sql($view);
-if ($stateSql !== '') $clauses[] = $stateSql;
-$where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
-
-$sql = ad_session_select() . " $where ORDER BY sr.session_date DESC";
-if ($types !== '') {
-    $st = $con->prepare($sql);
-    $st->bind_param($types, ...$args);
-    $st->execute();
-    $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
-    $st->close();
-} else {
-    $rows = $con->query($sql)->fetch_all(MYSQLI_ASSOC);
-}
+// Ratings for these sessions specifically, not the people's averages — one
+// query for the whole file rather than two for every line of it.
+$ids         = array_column($rows, 'request_id');
+$menteeRated = FeedbackRepository::ratingsBySession($con, $ids);
+$mentorRated = FeedbackRepository::menteeReviewRatingsBySession($con, $ids);
 
 $labels = ad_session_states();
 $name = 'peerconnect-sessions-' . date('Y-m-d') . ($view !== 'all' ? '-' . $view : '') . '.csv';
@@ -88,19 +70,6 @@ foreach ($rows as $s) {
     $start = strtotime($s['session_date']);
     $state = ad_session_state($s);
 
-    // Ratings for this session specifically, not the person's average.
-    $f = $con->prepare("SELECT rating FROM feedback WHERE session_id = ? ORDER BY feedback_id DESC LIMIT 1");
-    $f->bind_param('i', $id);
-    $f->execute();
-    $fr = $f->get_result()->fetch_row();
-    $f->close();
-
-    $r = $con->prepare("SELECT rating FROM mentee_reviews WHERE session_id = ? ORDER BY review_id DESC LIMIT 1");
-    $r->bind_param('i', $id);
-    $r->execute();
-    $rr = $r->get_result()->fetch_row();
-    $r->close();
-
     fputcsv($out, [
         ad_session_ref($id, $s['session_date']),
         $id,
@@ -120,8 +89,8 @@ foreach ($rows as $s) {
         ($s['missed_by'] && $s['missed_by'] !== 'none') ? $s['missed_by'] : '',
         $s['completed_at'] ? date('Y-m-d H:i', strtotime($s['completed_at'])) : '',
         $s['rejection_reason'],
-        $fr ? $fr[0] : '',
-        $rr ? $rr[0] : '',
+        $menteeRated[$id] ?? '',
+        $mentorRated[$id] ?? '',
     ]);
 }
 

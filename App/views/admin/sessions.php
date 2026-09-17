@@ -42,65 +42,26 @@ $open    = (int)($_GET['open'] ?? 0);
 $perPage = 8;
 $page    = max(1, (int)($_GET['page'] ?? 1));
 
-/* ── The where clause every query below shares ────────────────────────── */
-$clauses = [];
-$types   = '';
-$args    = [];
-
-if ($q !== '') {
-    // The reference numbers are PC-YYYY-0000; accept the digits from one, or
-    // a bare id, so pasting a reference from an export finds the session.
-    $idHit = 0;
-    if (preg_match('/(\d{1,10})\s*$/', $q, $m)) $idHit = (int)ltrim($m[1], '0');
-
-    $clauses[] = "(CONCAT_WS(' ', mo.firstname, mo.lastname, me.firstname, me.lastname, sr.subject) LIKE ? OR sr.request_id = ?)";
-    $types .= 'si';
-    $args[] = '%' . $q . '%';
-    $args[] = $idHit;
-}
-if ($subject !== '') {
-    $clauses[] = 'sr.subject = ?';
-    $types .= 's';
-    $args[] = $subject;
-}
-if ($type !== '') {
-    $clauses[] = 'a.session_type = ?';
-    $types .= 's';
-    $args[] = $type;
-}
-if ($from !== '' && strtotime($from)) {
-    $clauses[] = 'DATE(sr.session_date) >= ?';
-    $types .= 's';
-    $args[] = date('Y-m-d', strtotime($from));
-}
-if ($to !== '' && strtotime($to)) {
-    $clauses[] = 'DATE(sr.session_date) <= ?';
-    $types .= 's';
-    $args[] = date('Y-m-d', strtotime($to));
-}
-
-$stateSql = ad_state_sql($view);
-$all      = $clauses;
-if ($stateSql !== '') $all[] = $stateSql;
-$where    = $all ? 'WHERE ' . implode(' AND ', $all) : '';
+/* ── The filters every query below shares ─────────────────────────────── */
+$filters = [
+    'q'       => $q,
+    'subject' => $subject,
+    'type'    => $type,
+    'from'    => ($from !== '' && strtotime($from)) ? date('Y-m-d', strtotime($from)) : '',
+    'to'      => ($to !== '' && strtotime($to)) ? date('Y-m-d', strtotime($to)) : '',
+];
 
 /* ── Tab counts, under the same filters ───────────────────────────────── */
-$filterOnly = $clauses ? implode(' AND ', $clauses) : '';
-$counts = ad_session_counts($con, $filterOnly, $args);
+$counts = AdminSessionRepository::tabCounts($con, $filters);
 
 /* ── Headline figures ─────────────────────────────────────────────────── */
-$one = function (string $sql) use ($con): int {
-    $r = $con->query($sql);
-    return $r ? (int)$r->fetch_row()[0] : 0;
-};
-$thisMonth = "DATE_FORMAT(sr.session_date, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m')";
-$lastMonth = "DATE_FORMAT(sr.session_date, '%Y-%m') = DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m')";
+$figures = AdminSessionRepository::headlineFigures($con);
 
-$totalAll   = $one("SELECT COUNT(*) FROM session_requests sr");
-$doneAll    = $one("SELECT COUNT(*) FROM session_requests sr WHERE sr.status = 'completed'");
-$cancelAll  = $one("SELECT COUNT(*) FROM session_requests sr WHERE sr.status IN ('cancelled','rejected')");
-$upcomingAll = $one("SELECT COUNT(*) FROM session_requests sr WHERE sr.status = 'approved' AND sr.session_date > NOW()");
-$todayCount = $one("SELECT COUNT(*) FROM session_requests sr WHERE DATE(sr.session_date) = CURDATE() AND sr.status IN ('approved','completed')");
+$totalAll    = $figures['total'];
+$doneAll     = $figures['completed'];
+$cancelAll   = $figures['cancelled'];
+$upcomingAll = $figures['upcoming'];
+$todayCount  = $figures['today'];
 
 // "vs last month" here means sessions SCHEDULED in each month — the only
 // month-over-month comparison the columns support.
@@ -110,54 +71,25 @@ function ad_trend(int $now, int $prev): ?array
     $pct = (int)round((($now - $prev) / $prev) * 100);
     return $pct === 0 ? null : ['up' => $pct > 0, 'label' => ($pct > 0 ? '+' : '') . $pct . '% vs last month'];
 }
-$trTotal = ad_trend($one("SELECT COUNT(*) FROM session_requests sr WHERE $thisMonth"),
-                    $one("SELECT COUNT(*) FROM session_requests sr WHERE $lastMonth"));
-$trDone  = ad_trend($one("SELECT COUNT(*) FROM session_requests sr WHERE sr.status='completed' AND $thisMonth"),
-                    $one("SELECT COUNT(*) FROM session_requests sr WHERE sr.status='completed' AND $lastMonth"));
-$trCanc  = ad_trend($one("SELECT COUNT(*) FROM session_requests sr WHERE sr.status IN ('cancelled','rejected') AND $thisMonth"),
-                    $one("SELECT COUNT(*) FROM session_requests sr WHERE sr.status IN ('cancelled','rejected') AND $lastMonth"));
+$trTotal = ad_trend($figures['month_total'], $figures['prev_total']);
+$trDone  = ad_trend($figures['month_completed'], $figures['prev_completed']);
+$trCanc  = ad_trend($figures['month_cancelled'], $figures['prev_cancelled']);
 
 // A completion rate over sessions that have actually concluded — counting
 // sessions still in the future as "not completed" would understate it.
-$concluded  = $doneAll + $cancelAll + $one("SELECT COUNT(*) FROM session_requests sr WHERE sr.status='missed'");
+$concluded  = $doneAll + $cancelAll + $figures['missed'];
 $completion = $concluded > 0 ? round($doneAll / $concluded * 100, 1) : null;
 
 /* ── The list ─────────────────────────────────────────────────────────── */
-$countSql = "
-    SELECT COUNT(*) c
-    FROM session_requests sr
-    JOIN users mo ON mo.user_id = sr.mentor_id
-    JOIN users me ON me.user_id = sr.mentee_id
-    LEFT JOIN availability a ON a.mentor_id = sr.mentor_id AND a.subject = sr.subject
-        AND DATE(a.date) = DATE(sr.session_date) AND TIME(a.start_time) = TIME(sr.session_date)
-    $where
-";
-$cs = $con->prepare($countSql);
-if ($types !== '') $cs->bind_param($types, ...$args);
-$cs->execute();
-$total = (int)$cs->get_result()->fetch_assoc()['c'];
-$cs->close();
-
+$total      = AdminSessionRepository::countMatching($con, $filters, $view);
 $totalPages = max(1, (int)ceil($total / $perPage));
 $page       = min($page, $totalPages);
 $offset     = ($page - 1) * $perPage;
 
-$order = [
-    'newest'  => 'sr.session_date DESC',
-    'oldest'  => 'sr.session_date ASC',
-    'subject' => 'sr.subject ASC, sr.session_date DESC',
-][$sort];
-
-$ls = $con->prepare(ad_session_select() . " $where ORDER BY $order LIMIT ? OFFSET ?");
-$ls->bind_param($types . 'ii', ...array_merge($args, [$perPage, $offset]));
-$ls->execute();
-$rows = $ls->get_result()->fetch_all(MYSQLI_ASSOC);
-$ls->close();
+$rows = AdminSessionRepository::page($con, $filters, $view, $sort, $perPage, $offset);
 
 /* ── Subjects, for the filter ─────────────────────────────────────────── */
-$subjects = [];
-$sq = $con->query("SELECT DISTINCT subject FROM session_requests WHERE subject <> '' ORDER BY subject");
-while ($r = $sq->fetch_row()) $subjects[] = $r[0];
+$subjects = AdminSessionRepository::subjects($con);
 
 /* ── The session in the side panel ────────────────────────────────────── */
 $detail = null;
@@ -165,34 +97,15 @@ $detailFeedback = [];
 $detailReview = null;
 $detailGroup = 1;
 if ($open > 0) {
-    $ds = $con->prepare(ad_session_select() . " WHERE sr.request_id = ? LIMIT 1");
-    $ds->bind_param('i', $open);
-    $ds->execute();
-    $detail = $ds->get_result()->fetch_assoc() ?: null;
-    $ds->close();
+    $detail = AdminSessionRepository::find($con, $open);
 
     if ($detail) {
-        $detailGroup = ad_group_size($con, $detail);
+        $detailGroup = AdminSessionRepository::groupSize($con, $detail);
 
-        // What the mentee said about the mentor, for this session.
-        $fs = $con->prepare("
-            SELECT rating, comment, communication, knowledge, efficiency, skill, created_at
-            FROM feedback WHERE session_id = ? ORDER BY feedback_id DESC LIMIT 1
-        ");
-        $fs->bind_param('i', $open);
-        $fs->execute();
-        $detailFeedback = $fs->get_result()->fetch_assoc() ?: [];
-        $fs->close();
-
-        // And what the mentor said about the mentee.
-        $rs = $con->prepare("
-            SELECT rating, comment, preparedness, participation, communication, receptiveness, created_at
-            FROM mentee_reviews WHERE session_id = ? ORDER BY review_id DESC LIMIT 1
-        ");
-        $rs->bind_param('i', $open);
-        $rs->execute();
-        $detailReview = $rs->get_result()->fetch_assoc() ?: null;
-        $rs->close();
+        // What the mentee said about the mentor, and what the mentor said
+        // about the mentee, for this session.
+        $detailFeedback = FeedbackRepository::forSession($con, $open);
+        $detailReview   = FeedbackRepository::menteeReviewForSession($con, $open);
     }
 }
 
@@ -334,7 +247,7 @@ include __DIR__ . '/includes/sessions_ui.php';
                     [$sl, $sfg, $sbg] = $STATES[$state];
                     $mins = ad_session_minutes($s);
                     $isGroup = ($s['session_type'] ?? '') === 'group';
-                    $seats = $isGroup ? ad_group_size($con, $s) : 1;
+                    $seats = $isGroup ? AdminSessionRepository::groupSize($con, $s) : 1;
                     $id = (int)$s['request_id'];
                 ?>
                     <div class="ss-row<?= $open === $id ? ' on' : '' ?>">

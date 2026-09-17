@@ -150,7 +150,7 @@ return [
     'admin-signup'            => 'App/views/admin/signup.php',
 
     // Admin sessions — the list, the calendar and the reports are three views
-    // of one set of rows (see admin/includes/session_data.php).
+    // of one set of rows (see App/repositories/AdminSessionRepository.php).
     'admin-sessions'          => 'App/views/admin/sessions.php',
     'admin-sessions-calendar' => 'App/views/admin/sessions_calendar.php',
     'admin-sessions-reports'  => 'App/views/admin/sessions_reports.php',
