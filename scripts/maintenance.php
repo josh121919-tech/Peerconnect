@@ -3,14 +3,16 @@
  * scripts/maintenance.php — the every-30-minutes job.
  *
  *     php scripts/maintenance.php             run it now
- *     php scripts/maintenance.php --dry-run   list what would be marked missed; write nothing
+ *     php scripts/maintenance.php --dry-run   list what would be closed or removed; write nothing
  *
  * Windows Task Scheduler runs it every 30 minutes — see scripts/README.md.
  *
  * 1. Missed sessions. Runs App/views/cron/detect_missed_sessions.php, the same
  *    code as the button on Platform analytics. An approved session that ended
- *    more than PC_MISSED_GRACE_HOURS ago and was never closed is marked missed,
- *    and both people are notified, by email too when it is switched on.
+ *    more than PC_MISSED_GRACE_HOURS ago and was never closed is marked
+ *    completed or missed, and a request the mentor never answered is removed
+ *    once its start time has passed. Both people are notified, by email too
+ *    when it is switched on.
  *
  * 2. Mentor scores. MentorScoreService::refreshAll. Nothing refreshed them on
  *    a schedule before, so the leaderboard recalculated every mentor's score

@@ -6,7 +6,7 @@ Scheduler runs them; both can also be run by hand from the project root.
 | Job | Schedule | What it does |
 |---|---|---|
 | `scripts/backup.php` | Every day at 02:00 | Dumps the whole database with `mysqldump`, and archives `public/uploads` once a week |
-| `scripts/maintenance.php` | Every 30 minutes | Closes sessions that ended over an hour ago (completed, or missed by whoever did not join), then refreshes every mentor's score |
+| `scripts/maintenance.php` | Every 30 minutes | Closes sessions that ended over an hour ago (completed, or missed by whoever did not join), removes requests the mentor never answered once their time has passed, then refreshes every mentor's score |
 
 Everything they write goes to **`C:\PeerConnectBackups`** (set `BACKUP_DIR` in
 `.env` to change it):
@@ -74,6 +74,16 @@ All Sessions shows a warning with a **Run the check now** button. Platform
 analytics has the same check as **Detect missed sessions**. Either runs the
 same rules as the task; neither fixes the task, so check it in Task
 Scheduler.
+
+## Unanswered requests
+
+A request the mentor has not accepted or declined by its start time can no
+longer take place as booked. From that moment the mentor pages show it
+without an Accept button, and accepting it is refused. The next run
+**deletes** it and tells both people: the mentee, with a link to the mentor's
+profile to book another time, and the mentor, that the request lapsed. A
+deleted request does not count towards anyone's score. `--dry-run` lists the
+requests it would remove.
 
 ## Setting up Task Scheduler
 

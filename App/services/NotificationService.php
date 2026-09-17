@@ -24,6 +24,7 @@ class NotificationService
         'session_approved'  => 'session_requests',
         'session_rejected'  => 'session_requests',
         'missed_session'    => 'session_requests',
+        'request_expired'   => 'session_requests',
         'session_reminder'  => 'session_reminders',
         'feedback_received' => 'feedback_received',
         'new_message'       => 'messages',
@@ -42,6 +43,7 @@ class NotificationService
         'session_approved'      => 'email_on_booking',
         'session_rejected'      => 'email_on_booking',
         'session_cancelled'     => 'email_on_booking',
+        'request_expired'       => 'email_on_booking',
         'session_reminder'      => 'email_on_reminder',
         'new_message'           => 'email_on_message',
         'assessment_submitted'  => 'email_on_assessment',
@@ -307,6 +309,29 @@ class NotificationService
         self::send($con, $user_id, 'missed_session',
             'Session missed',
             "{$absent_name} didn't join your {$subject} session on {$when}. It is recorded as missed by them, not by you.",
+            $link
+        );
+    }
+
+    /**
+     * To the mentee, when their request's start time passed before the mentor
+     * answered it, so the missed-session job removed it.
+     */
+    public static function requestExpired(mysqli $con, int $mentee_id, string $mentor_name, string $subject, string $when, string $link = ''): void
+    {
+        self::send($con, $mentee_id, 'request_expired',
+            'Request not answered in time',
+            "{$mentor_name} didn't answer your {$subject} request for {$when} before it was due, so it was removed. You can book another time.",
+            $link
+        );
+    }
+
+    /** And to the mentor, who left it unanswered. */
+    public static function requestExpiredForMentor(mysqli $con, int $mentor_id, string $mentee_name, string $subject, string $when, string $link = ''): void
+    {
+        self::send($con, $mentor_id, 'request_expired',
+            'Request expired',
+            "{$mentee_name}'s {$subject} request for {$when} wasn't answered before it was due, so it was removed. {$mentee_name} has been told.",
             $link
         );
     }

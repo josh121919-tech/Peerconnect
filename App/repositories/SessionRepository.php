@@ -576,14 +576,31 @@ class SessionRepository extends Repository
 
     /**
      * The mentor accepts one of their pending requests. Returns 1 when it was
-     * accepted, 0 when it is not pending, not theirs, or does not exist.
+     * accepted, 0 when it is not pending, not theirs, does not exist, or its
+     * start time has already passed.
+     *
+     * A request accepted after its start could never take place: nobody would
+     * be in the call, and the missed-session job would record it as missed by
+     * both, against the mentor. The job removes such requests instead.
      */
     public static function approveByMentor(mysqli $con, int $sessionId, int $mentorId): int
     {
         return self::execute($con, "
             UPDATE session_requests SET status='approved'
-            WHERE request_id=? AND mentor_id=? AND status='pending'
+            WHERE request_id=? AND mentor_id=? AND status='pending' AND session_date > NOW()
         ", 'ii', [$sessionId, $mentorId]);
+    }
+
+    /**
+     * True when $sessionId is one of the mentor's requests, still unanswered,
+     * whose start time has passed — the reason an accept was refused.
+     */
+    public static function isPastRequestForMentor(mysqli $con, int $sessionId, int $mentorId): bool
+    {
+        return self::value($con, "
+            SELECT COUNT(*) FROM session_requests
+            WHERE request_id = ? AND mentor_id = ? AND status = 'pending' AND session_date <= NOW()
+        ", 'ii', [$sessionId, $mentorId]) !== '0';
     }
 
     /**
@@ -1052,6 +1069,39 @@ class SessionRepository extends Repository
             UPDATE session_requests SET status = 'missed', missed_by = ?, completed_at = ?
             WHERE request_id = ? AND status = 'approved'
         ", 'ssi', [$missedBy, $now, $sessionId]);
+    }
+
+    /**
+     * Requests the mentor never answered whose start time is $now or earlier:
+     * 'request_id', 'mentor_id', 'mentee_id', 'subject', 'session_date',
+     * 'mentor_name', 'mentee_name', earliest first. They can no longer take
+     * place as booked, so the job removes them.
+     */
+    public static function unansweredRequests(mysqli $con, string $now): array
+    {
+        return self::typedRows($con, "
+            SELECT sr.request_id, sr.mentor_id, sr.mentee_id, sr.subject, sr.session_date,
+                   CONCAT(um.firstname,' ',um.lastname) AS mentor_name,
+                   CONCAT(ue.firstname,' ',ue.lastname) AS mentee_name
+            FROM session_requests sr
+            JOIN users um ON um.user_id = sr.mentor_id
+            JOIN users ue ON ue.user_id = sr.mentee_id
+            WHERE sr.status = 'pending' AND sr.session_date <= ?
+            ORDER BY sr.session_date, sr.request_id
+        ", 's', [$now]);
+    }
+
+    /**
+     * Deletes an unanswered request whose start time is $now or earlier.
+     * "AND status" guards against the mentor answering it in the meantime.
+     * Returns 1 when it was deleted, else 0.
+     */
+    public static function deleteUnansweredRequest(mysqli $con, int $sessionId, string $now): int
+    {
+        return self::execute($con, "
+            DELETE FROM session_requests
+            WHERE request_id = ? AND status = 'pending' AND session_date <= ?
+        ", 'is', [$sessionId, $now]);
     }
 
     /** Notes that the job closed $sessionId as missed by $missedBy. A second note for the same session is ignored. */

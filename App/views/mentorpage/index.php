@@ -53,6 +53,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
         if ($notifyMentee) {
             // Add to (or drop from) any connected Google Calendar. Never fatal.
             GoogleCalendarService::pushSession($con, $id);
+        } elseif ($action === 'approve' && SessionRepository::isPastRequestForMentor($con, $id, $mentor_id)) {
+            pc_flash('warning', 'Its start time has already passed, so it can no longer be accepted. It will be removed and the mentee told.');
         }
 
         // Notify mentee
@@ -128,6 +130,7 @@ function md_activity_icon(string $type): array
         'session_approved'     => ['check', 'si-teal'],
         'session_rejected'     => ['cal',   'si-orange'],
         'session_cancelled'    => ['cal',   'si-orange'],
+        'request_expired'      => ['cal',   'si-orange'],
         'session_completed'    => ['check', 'si-teal'],
         'feedback_received'    => ['star',  'si-orange'],
         'assessment_submitted' => ['doc',   'si-blue'],
@@ -209,6 +212,14 @@ $active_page = 'dashboard';
             color: var(--gray-600);
             margin-top: 6px;
             line-height: 1.5;
+        }
+
+        /* A request whose start time has passed without an answer. */
+        .md-req-lapsed {
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--warning, #B87A10);
+            line-height: 1.45;
         }
 
         .md-req-actions {
@@ -701,14 +712,20 @@ $active_page = 'dashboard';
                                 <?php if (!empty($r['message'])): ?>
                                     <div class="md-req-msg"><?= htmlspecialchars($r['message']) ?></div>
                                 <?php endif; ?>
+                                <?php $lapsed = strtotime($r['session_date']) <= time(); ?>
+                                <?php if ($lapsed): ?>
+                                    <div class="md-req-lapsed">Its time has passed, so it can't be accepted. It will be removed automatically and the mentee told.</div>
+                                <?php endif; ?>
                             </div>
                             <div class="md-req-actions">
+                                <?php if (!$lapsed): ?>
                                 <form method="post" action="<?= htmlspecialchars(url('mentor-dashboard')) ?>">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                                     <input type="hidden" name="id" value="<?= (int)$r['request_id'] ?>">
                                     <input type="hidden" name="action" value="approve">
                                     <button class="btn btn-primary btn-sm" type="submit">Approve</button>
                                 </form>
+                                <?php endif; ?>
                                 <form method="post" action="<?= htmlspecialchars(url('mentor-dashboard')) ?>">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                                     <input type="hidden" name="id" value="<?= (int)$r['request_id'] ?>">

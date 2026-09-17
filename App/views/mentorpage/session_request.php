@@ -84,6 +84,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
         pc_flash('success', 'The session is confirmed and the mentee has been told.', 'Request accepted');
     } elseif ($changedOne && $action === 'reject') {
         pc_flash('success', 'The mentee has been told, along with your reason.', 'Request declined');
+    } elseif ($action === 'approve' && SessionRepository::isPastRequestForMentor($con, $id, $mentor_id)) {
+        pc_flash('warning', 'Its start time has already passed, so it can no longer be accepted. It will be removed and the mentee told.');
     } elseif ($action === 'approve' || $action === 'reject') {
         pc_flash('warning', 'That request was already handled, so nothing changed.');
     }
@@ -187,6 +189,9 @@ function sr_detail(array $r, array $tags_by_user, array $goals_by_user): array
         'subject'  => (string)$r['subject'],
         'message'  => (string)$r['message'],
         'when'     => date('D, M j, Y · g:i a', strtotime($r['session_date'])),
+        // Past its start, a request can only be declined (or left to lapse).
+        'past'     => strtotime($r['session_date']) <= time(),
+        'ts'       => strtotime($r['session_date']),
         'status'   => (string)$r['status'],
         'reason'   => (string)($r['rejection_reason'] ?? ''),
         'learn'    => $tags['learn']    ?? [],
@@ -474,6 +479,17 @@ $active_page = 'sessions';
         .sr-actions .btn {
             flex: 1;
             justify-content: center;
+        }
+
+        /* A request whose start time has passed without an answer. */
+        .sr-lapsed {
+            margin: 0;
+            padding: 8px 10px;
+            border-radius: 8px;
+            background: var(--warning-bg, #FEF3E2);
+            color: var(--warning, #B87A10);
+            font-size: 12px;
+            line-height: 1.45;
         }
 
         .sr-count {
@@ -904,8 +920,13 @@ $active_page = 'sessions';
 
                                     <div class="sr-actions">
                                         <button type="button" class="btn btn-outline btn-sm" onclick="openRejectModal(<?= (int)$r['request_id'] ?>)">Decline</button>
-                                        <button type="button" class="btn btn-primary btn-sm" onclick="confirmAccept(<?= (int)$r['request_id'] ?>)">Accept</button>
+                                        <?php if (strtotime($r['session_date']) > time()): ?>
+                                            <button type="button" class="btn btn-primary btn-sm" onclick="confirmAccept(<?= (int)$r['request_id'] ?>)">Accept</button>
+                                        <?php endif; ?>
                                     </div>
+                                    <?php if (strtotime($r['session_date']) <= time()): ?>
+                                        <p class="sr-lapsed">Its time has passed, so it can't be accepted. It will be removed automatically and the mentee told.</p>
+                                    <?php endif; ?>
                                     <button type="button" class="btn btn-ghost btn-sm" style="justify-content:center;" onclick="openPanel(<?= (int)$r['request_id'] ?>)">View details</button>
                                 </div>
                             </article>
@@ -1210,6 +1231,7 @@ $active_page = 'sessions';
             document.getElementById('pnSkill').innerHTML = chipHtml(d.skill);
 
             document.getElementById('pnAccept').onclick = () => confirmAccept(id);
+            document.getElementById('pnAccept').style.display = d.past ? 'none' : '';
             document.getElementById('pnDecline').onclick = () => {
                 closePanel();
                 openRejectModal(id);
@@ -1235,6 +1257,10 @@ $active_page = 'sessions';
         function confirmAccept(id) {
             const d = SR_DETAILS[id];
             if (!d) return;
+            if (d.ts * 1000 <= Date.now()) {
+                location.reload();
+                return;
+            }
             document.getElementById('confirmText').textContent =
                 'You are about to accept ' + d.name + ' for ' + (d.subject || 'a session') + ' on ' + d.when + '.';
             document.getElementById('confirmGo').onclick = () => doAccept(id);

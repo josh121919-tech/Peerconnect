@@ -13,6 +13,11 @@ define('RUNNING_AS_CRON', PHP_SAPI === 'cli');
  *   only the mentee missed by the mentor, the same the other way round
  *   nobody          missed by both; both are told
  *
+ * It also removes requests the mentor never answered once their start time
+ * has passed: they can no longer take place as booked, and a mentor can no
+ * longer accept them. The mentee is told so they can book another time, and
+ * the mentor that the request lapsed.
+ *
  * This is the only thing that closes a session nobody closed: admins cannot
  * mark sessions completed or missed by hand. The mentor ending the call and
  * the mentee leaving feedback complete a session before it gets here.
@@ -62,6 +67,9 @@ $dryRun = RUNNING_AS_CRON && in_array('--dry-run', $argv ?? [], true);
 // join and the session's length are worked out is described on the query.
 $rows = SessionRepository::dueForMissedCheck($con, $now, PC_MISSED_GRACE_HOURS);
 
+// Requests nobody answered whose start time has come.
+$unanswered = SessionRepository::unansweredRequests($con, $now);
+
 // Guarded: this file is included by scripts/maintenance.php as well as run
 // directly, and a second include must not redeclare them.
 if (!function_exists('msd_outcome')) {
@@ -84,8 +92,11 @@ if (!function_exists('msd_outcome')) {
 
 if ($dryRun) {
     $plan = array_map(fn($r) => msd_describe((int)$r['request_id'], msd_outcome($r)), $rows);
+    $lapsed = array_map(fn($r) => '#' . (int)$r['request_id'], $unanswered);
     echo "[" . date('Y-m-d H:i:s') . "] Dry run, nothing written. " . count($rows) . " session(s) to close"
-        . ($plan ? ': ' . implode(', ', $plan) : '') . ".\n";
+        . ($plan ? ': ' . implode(', ', $plan) : '') . "."
+        . ($lapsed ? ' ' . count($lapsed) . ' unanswered request(s) to remove: ' . implode(', ', $lapsed) . '.' : '')
+        . "\n";
     return;
 }
 
@@ -145,10 +156,28 @@ foreach ($rows as $row) {
     $summary[] = msd_describe($sid, $outcome);
 }
 
+$removed = [];   // unanswered requests deleted
+foreach ($unanswered as $req) {
+    $rid = (int)$req['request_id'];
+    // Zero when the mentor answered it between the SELECT above and now.
+    if (SessionRepository::deleteUnansweredRequest($con, $rid, $now) < 1) {
+        continue;
+    }
+    $subject = $req['subject'] !== '' && $req['subject'] !== null ? $req['subject'] : 'mentoring';
+    $when    = date('M j, g:i A', strtotime($req['session_date']));
+    NotificationService::requestExpired($con, (int)$req['mentee_id'], $req['mentor_name'], $subject, $when,
+        url('mentee-view-mentor') . '?id=' . (int)$req['mentor_id']);
+    NotificationService::requestExpiredForMentor($con, (int)$req['mentor_id'], $req['mentee_name'], $subject, $when,
+        url('mentor-requests'));
+    $removed[] = '#' . $rid;
+}
+
 if (RUNNING_AS_CRON) {
     // Session ids only: this line goes into a log file, and names do not need to.
     echo "[" . date('Y-m-d H:i:s') . "] Closed " . ($processed + $completed) . " session(s)"
-        . ($summary ? ': ' . implode(', ', $summary) : '') . ".\n";
+        . ($summary ? ': ' . implode(', ', $summary) : '') . "."
+        . ($removed ? ' Removed ' . count($removed) . ' unanswered request(s): ' . implode(', ', $removed) . '.' : '')
+        . "\n";
     // Run on its own, stop here. Included by scripts/maintenance.php, hand
     // control back so the score refresh after it still runs.
     if (realpath((string)($_SERVER['SCRIPT_FILENAME'] ?? '')) === __FILE__) {
@@ -170,13 +199,17 @@ if ($processed > 0) {
 if ($completed > 0) {
     $parts[] = 'closed ' . $completed . ' as completed because both people joined';
 }
+if ($removed) {
+    $parts[] = 'removed ' . count($removed) . ' unanswered request' . (count($removed) === 1 ? '' : 's') . ' whose time had passed';
+}
 // Only the button is an admin action; the scheduled run above is not logged here.
-pc_admin_log('ran the missed-session check: ' . ($summary ? implode(', ', $summary) : 'nothing to close'));
+$logged = array_merge($summary, array_map(fn($r) => $r . ' removed (not answered in time)', $removed));
+pc_admin_log('ran the missed-session check: ' . ($logged ? implode(', ', $logged) : 'nothing to close'));
 pc_flash(
     $parts ? 'success' : 'info',
     $parts
-        ? ucfirst(implode(' and ', $parts)) . '. Everyone involved has been notified.'
-        : 'Nothing needed closing — no approved session is more than ' . $graceLabel . ' past its end.',
+        ? ucfirst(implode(', ', array_slice($parts, 0, -1)) . (count($parts) > 1 ? ' and ' : '') . end($parts)) . '. Everyone involved has been notified.'
+        : 'Nothing needed closing — no approved session is more than ' . $graceLabel . ' past its end, and no unanswered request has reached its time.',
     'Missed session check'
 );
 
