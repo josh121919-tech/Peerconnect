@@ -5,8 +5,15 @@
  *
  * Every mentoring session on the platform, with the detail panel an admin
  * needs to settle one: who was in it, when, how it ended, what they said
- * about each other afterwards, and the three things an admin can actually do
- * about it.
+ * about each other afterwards, and the one thing an admin can do about it:
+ * call it off.
+ *
+ * An admin cannot close a session as completed or missed. The mentor ending
+ * the call or the mentee leaving feedback completes it; otherwise the
+ * missed-session job closes it an hour after it ends, from who joined the
+ * call. The page says so on each open session, and warns when sessions have
+ * gone unclosed for longer than that job allows, which means it is not
+ * running.
  *
  * Figures are live counts of rows that exist. The reference design showed a
  * "12.5% from last month" style trend on each tile; session_requests has no
@@ -62,6 +69,12 @@ $doneAll     = $figures['completed'];
 $cancelAll   = $figures['cancelled'];
 $upcomingAll = $figures['upcoming'];
 $todayCount  = $figures['today'];
+
+// The missed-session job closes a session PC_MISSED_GRACE_HOURS after it ends
+// and runs every 30 minutes. One still open 90 minutes past that — three runs
+// later — means the job has stopped.
+$staleAfter = PC_MISSED_GRACE_HOURS * 60 + 90;
+$unclosed   = AdminSessionRepository::countUnclosedOlderThan($con, $staleAfter);
 
 // "vs last month" here means sessions SCHEDULED in each month — the only
 // month-over-month comparison the columns support.
@@ -150,6 +163,26 @@ include __DIR__ . '/includes/sessions_ui.php';
                 </a>
             </div>
         </div>
+
+        <?php if ($unclosed > 0): ?>
+            <div class="ss-stale" role="alert">
+                <div class="ss-stale-txt">
+                    <b><?= $unclosed ?> session<?= $unclosed === 1 ? ' has' : 's have' ?> not been closed</b>
+                    <span>
+                        <?= $unclosed === 1 ? 'It' : 'They' ?> ended more than <?= ad_duration_label($staleAfter) ?> ago.
+                        Sessions are closed automatically every 30 minutes by the PeerConnect Maintenance
+                        task in Windows Task Scheduler, so it may have stopped running.
+                        <a href="<?= ss_url(['tab' => 'overdue', 'page' => null, 'open' => null]) ?>">Show them</a>
+                    </span>
+                </div>
+                <form method="post" action="<?= url('cron-missed-sessions') ?>"
+                      onsubmit="return confirm('Close every approved session that ended more than <?= (int)PC_MISSED_GRACE_HOURS ?> hour<?= PC_MISSED_GRACE_HOURS === 1 ? '' : 's' ?> ago?\n\nIf both people joined the call it is marked completed. Otherwise it is recorded as missed by whoever did not join, and both people are told. This is the same check the task runs.');">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
+                    <input type="hidden" name="back" value="<?= htmlspecialchars($backHere) ?>">
+                    <button type="submit" class="ss-act warn"><?= ss_icon('clock') ?>Run the check now</button>
+                </form>
+            </div>
+        <?php endif; ?>
 
         <!-- ══════════ Figures ══════════ -->
         <div class="ss-stats">
@@ -421,28 +454,29 @@ include __DIR__ . '/includes/sessions_ui.php';
 
                 <h3 class="ss-h3">Admin actions</h3>
                 <?php
-                $canClose  = in_array($detail['status'], ['approved', 'missed'], true) && strtotime($detail['session_date']) <= time();
-                $canMiss   = $detail['status'] === 'approved' && strtotime($detail['session_date']) <= time();
                 // Only an open session — pending or accepted — can be called
                 // off. A missed one is already settled; cancelling it would
                 // erase who did not turn up.
                 $canCancel = in_array($detail['status'], ['pending', 'approved'], true);
+                $endTs     = strtotime($detail['session_date']) + $mins * 60;
                 ?>
+                <?php if ($detail['status'] === 'approved'): ?>
+                    <p class="ss-note">
+                        <b>How it closes</b>
+                        <?php if ($state === 'overdue'): ?>
+                            It ended<?= date('Y-m-d', $endTs) !== date('Y-m-d') ? ' on ' . date('M j', $endTs) : '' ?> at <?= date('g:i A', $endTs) ?> and has not been closed yet.
+                        <?php else: ?>
+                            It closes on its own once it ends.
+                        <?php endif; ?>
+                        The mentor ending the call or the mentee leaving feedback marks it completed;
+                        otherwise, about <?= (int)PC_MISSED_GRACE_HOURS ?> hour<?= PC_MISSED_GRACE_HOURS === 1 ? '' : 's' ?> after the end,
+                        it is marked completed if both people joined the call, or missed by whoever did not.
+                        <?php if ($endTs < time() - $staleAfter * 60): ?>
+                            That should have happened by now — see the warning on the list.
+                        <?php endif; ?>
+                    </p>
+                <?php endif; ?>
                 <div class="ss-acts">
-                    <?php if ($canClose): ?>
-                        <form method="post" action="<?= url('admin-action-session') ?>">
-                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
-                            <input type="hidden" name="request_id" value="<?= $did ?>">
-                            <input type="hidden" name="back" value="<?= htmlspecialchars($backHere) ?>">
-                            <input type="hidden" name="action" value="complete">
-                            <button type="submit" class="ss-act ok"><?= ss_icon('check') ?>Mark completed</button>
-                        </form>
-                    <?php endif; ?>
-
-                    <?php if ($canMiss): ?>
-                        <button type="button" class="ss-act warn" onclick="ssOpen('ssMiss')"><?= ss_icon('x') ?>Record as missed</button>
-                    <?php endif; ?>
-
                     <?php if ($canCancel): ?>
                         <button type="button" class="ss-act danger" onclick="ssOpen('ssCancel')"><?= ss_icon('x') ?>Cancel session</button>
                     <?php endif; ?>
@@ -450,7 +484,7 @@ include __DIR__ . '/includes/sessions_ui.php';
                     <a class="ss-act" href="<?= url('messages') ?>?chat=<?= (int)$detail['mentor_id'] ?>"><?= ss_icon('chat') ?>Message mentor</a>
                     <a class="ss-act" href="<?= url('messages') ?>?chat=<?= (int)$detail['mentee_id'] ?>"><?= ss_icon('chat') ?>Message mentee</a>
                 </div>
-                <?php if (!$canClose && !$canCancel): ?>
+                <?php if (!$canCancel): ?>
                     <p class="ss-none">This session is closed, so there is nothing left to change.</p>
                 <?php endif; ?>
             </div>
@@ -473,29 +507,6 @@ include __DIR__ . '/includes/sessions_ui.php';
                 <div class="ss-modal-foot">
                     <button type="button" class="ss-cancel" onclick="ssClose()">Keep it</button>
                     <button type="submit" class="ss-act danger solid">Cancel session</button>
-                </div>
-            </form>
-        </div>
-        <?php endif; ?>
-
-        <?php if ($canMiss): ?>
-        <div class="ss-overlay" id="ssMiss">
-            <form class="ss-modal" method="post" action="<?= url('admin-action-session') ?>">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
-                <input type="hidden" name="request_id" value="<?= $did ?>">
-                <input type="hidden" name="back" value="<?= htmlspecialchars($backHere) ?>">
-                <input type="hidden" name="action" value="missed">
-                <h3>Record as missed</h3>
-                <p>Use this when the session never happened. It stays on both records.</p>
-                <label for="ssMissBy">Who did not attend</label>
-                <select id="ssMissBy" name="missed_by">
-                    <option value="both">Neither of them</option>
-                    <option value="mentor">The mentor</option>
-                    <option value="mentee">The mentee</option>
-                </select>
-                <div class="ss-modal-foot">
-                    <button type="button" class="ss-cancel" onclick="ssClose()">Back</button>
-                    <button type="submit" class="ss-act warn solid">Record as missed</button>
                 </div>
             </form>
         </div>

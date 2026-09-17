@@ -44,8 +44,8 @@ Both print what they did and exit with 0 on success, 1 on failure.
 
 Opening the video call for a session records who joined, in
 `session_attendance` (first visit only). **One hour after a session ends**, if
-nobody has closed it — the mentor ending the call, the mentee leaving
-feedback, or an admin — the detector decides from that record:
+nobody has closed it — the mentor ending the call, or the mentee leaving
+feedback — the detector decides from that record:
 
 | Who joined | Recorded as | Who is told |
 |---|---|---|
@@ -64,8 +64,16 @@ frame the server cannot see, so a camera or microphone that never connected
 still counts as joined.
 
 Change `PC_MISSED_GRACE_HOURS` in `Framework/bootstrap.php` to wait longer;
-the button on Platform analytics uses the same number. An admin can still
-close any session by hand from `Sessions`.
+the buttons below use the same number.
+
+**Nobody closes a session by hand.** Admins can cancel an open session, but
+not mark one completed or missed, so this task is the only thing that closes
+sessions the call and feedback did not. If it stops, sessions pile up as "Not
+closed": once any is still open more than 90 minutes past its hour of grace,
+All Sessions shows a warning with a **Run the check now** button. Platform
+analytics has the same check as **Detect missed sessions**. Either runs the
+same rules as the task; neither fixes the task, so check it in Task
+Scheduler.
 
 ## Setting up Task Scheduler
 

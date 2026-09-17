@@ -294,6 +294,24 @@ class AdminSessionRepository extends Repository
         return max(1, $n);
     }
 
+    /**
+     * How many accepted sessions ended more than $minutes ago and are still
+     * open. Nobody closes a session by hand: the missed-session job closes it
+     * an hour after it ends and runs every 30 minutes, so a session much
+     * older than that means the job is not running. Its end is worked out the
+     * way the job works it out (the slot's length, or an hour).
+     */
+    public static function countUnclosedOlderThan(mysqli $con, int $minutes): int
+    {
+        return (int)self::value($con, "
+            SELECT COUNT(*)
+            FROM session_requests sr
+            " . SessionRepository::slotJoin() . "
+            WHERE sr.status = 'approved'
+              AND " . self::endExpr() . " < NOW() - INTERVAL ? MINUTE
+        ", 'i', [$minutes]);
+    }
+
     // ── The figures on All Sessions ─────────────────────────────────────────
 
     /**

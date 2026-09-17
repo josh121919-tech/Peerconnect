@@ -191,6 +191,15 @@ function ss_person(?string $pic, string $name, string $role, $rating): string
     .ss-note b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--gray-400); margin-bottom: 3px; }
 
     .ss-h3 { margin: 18px 0 10px; font-size: 13.5px; font-weight: 700; color: var(--forest); }
+
+    /* Sessions the missed-session job should have closed by now. */
+    .ss-stale { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+                margin: -4px 0 16px; padding: 13px 15px; border: 1px solid #EBD9A6; border-radius: 12px; background: #FBF0D4; }
+    .ss-stale-txt { flex: 1 1 320px; min-width: 0; font-size: 13px; line-height: 1.55; color: #6B4F00; }
+    .ss-stale-txt b { display: block; font-size: 13.5px; color: #5A4200; margin-bottom: 2px; }
+    .ss-stale-txt a { color: #5A4200; font-weight: 600; }
+    .ss-stale form { margin: 0; }
+    .ss-stale .ss-act { background: #fff; width: auto; }
     .ss-none { margin: 0; font-size: 12.5px; color: var(--gray-400); }
 
     .ss-parts { display: flex; flex-direction: column; gap: 9px; }

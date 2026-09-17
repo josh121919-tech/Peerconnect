@@ -954,7 +954,7 @@ $active_page     = 'calendar';
                                 </span>
                                 <span>
                                     <span style="display:block;font-size:13px;font-weight:700;color:var(--forest);">Manage all sessions</span>
-                                    <span style="display:block;font-size:11.5px;color:var(--gray-500);">Reschedule, cancel or review history</span>
+                                    <span style="display:block;font-size:11.5px;color:var(--gray-500);">Join upcoming sessions or review your history</span>
                                 </span>
                                 <svg class="cal-qa-chev" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m9 6 6 6-6 6" /></svg>
                             </a>

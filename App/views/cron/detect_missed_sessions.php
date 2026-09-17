@@ -13,9 +13,15 @@ define('RUNNING_AS_CRON', PHP_SAPI === 'cli');
  *   only the mentee missed by the mentor, the same the other way round
  *   nobody          missed by both; both are told
  *
+ * This is the only thing that closes a session nobody closed: admins cannot
+ * mark sessions completed or missed by hand. The mentor ending the call and
+ * the mentee leaving feedback complete a session before it gets here.
+ *
  * Reached three ways: scripts/maintenance.php includes it every 30 minutes from
- * Task Scheduler, it can be run on its own from the command line, and the
- * button on Platform analytics posts to it.
+ * Task Scheduler, it can be run on its own from the command line, and two
+ * admin buttons post to it — "Detect missed sessions" on Platform analytics,
+ * and "Run the check now" on All Sessions, which appears when sessions have
+ * gone unclosed for long enough that the scheduled run has evidently stopped.
  *
  * From the command line, --dry-run lists what would be marked and writes
  * nothing:   php App/views/cron/detect_missed_sessions.php --dry-run
@@ -173,5 +179,14 @@ pc_flash(
         : 'Nothing needed closing — no approved session is more than ' . $graceLabel . ' past its end.',
     'Missed session check'
 );
-header('Location: ' . url('admin-analytics'));
+
+// Back to the page the button was on, if that is a page of this install —
+// the same rule the admin session actions apply — or else to Analytics.
+$back = is_string($_POST['back'] ?? null) ? $_POST['back'] : '';
+if ($back === '' || strpos($back, BASE_URL . '/') !== 0
+    || strpos($back, '//') === 0 || strpos($back, '\\') !== false
+    || preg_match('/[\x00-\x1F\x7F]/', $back)) {
+    $back = url('admin-analytics');
+}
+header('Location: ' . $back);
 exit;

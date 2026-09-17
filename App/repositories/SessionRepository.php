@@ -940,6 +940,10 @@ class SessionRepository extends Repository
     }
 
     // ── Admin actions ───────────────────────────────────────────────────────
+    //
+    // An admin can only cancel. Whether a session was completed or missed is
+    // never set by hand: the mentor ending the call, the mentee's feedback and
+    // the missed-session job below decide it.
 
     /**
      * One session with both people's names, for an admin action: 'request_id',
@@ -958,31 +962,6 @@ class SessionRepository extends Repository
             WHERE sr.request_id = ?
             LIMIT 1
         ", 'i', [$sessionId]);
-    }
-
-    /**
-     * An admin closes an accepted or missed session as completed, now.
-     * Returns 1 when it changed; 0 when it was not in either state by then.
-     */
-    public static function completeByAdmin(mysqli $con, int $sessionId): int
-    {
-        return self::execute($con, "
-            UPDATE session_requests SET status = 'completed', completed_at = NOW(), missed_by = 'none'
-            WHERE request_id = ? AND status IN ('approved','missed')
-        ", 'i', [$sessionId]);
-    }
-
-    /**
-     * An admin records an accepted session as missed by $missedBy ('mentor',
-     * 'mentee' or 'both'), closed now — the same record the missed-session job
-     * leaves. Returns 1 when it changed; 0 when it was no longer accepted.
-     */
-    public static function markMissedByAdmin(mysqli $con, int $sessionId, string $missedBy): int
-    {
-        return self::execute($con, "
-            UPDATE session_requests SET status = 'missed', missed_by = ?, completed_at = NOW()
-            WHERE request_id = ? AND status = 'approved'
-        ", 'si', [$missedBy, $sessionId]);
     }
 
     /**
