@@ -52,54 +52,9 @@ $now = date('Y-m-d H:i:s');
 $dryRun = RUNNING_AS_CRON && in_array('--dry-run', $argv ?? [], true);
 
 // Approved sessions that ended more than PC_MISSED_GRACE_HOURS ago and were
-// never closed, with whether each person opened the call.
-//
-// The mentor's join is matched on the slot, not the request: a group session
-// is one call with one request per mentee, and the mentor opens it from
-// whichever of those requests they clicked.
-// The availability join has to match the exact slot (subject + date + start
-// time), the way every other duration lookup in the app does. Matching on the
-// date alone returned one row per slot the mentor offered that day, so a
-// session was processed — and both parties notified — once per slot.
-$stmt = $con->prepare("
-    SELECT
-        sr.request_id, sr.mentor_id, sr.mentee_id, sr.session_date,
-        a.duration,
-        DATE_ADD(sr.session_date, INTERVAL COALESCE(a.duration, 60) MINUTE) AS session_end,
-        CONCAT(um.firstname,' ',um.lastname) AS mentor_name,
-        CONCAT(ue.firstname,' ',ue.lastname) AS mentee_name,
-        sr.subject,
-        EXISTS (
-            SELECT 1 FROM session_attendance att
-            JOIN session_requests s2 ON s2.request_id = att.session_id
-            WHERE att.user_id = sr.mentor_id
-              AND s2.mentor_id = sr.mentor_id
-              AND s2.subject = sr.subject
-              AND s2.session_date = sr.session_date
-        ) AS mentor_joined,
-        EXISTS (
-            SELECT 1 FROM session_attendance att
-            WHERE att.session_id = sr.request_id AND att.user_id = sr.mentee_id
-        ) AS mentee_joined
-    FROM session_requests sr
-    LEFT JOIN availability a
-        ON a.mentor_id = sr.mentor_id
-       AND a.subject   = sr.subject
-       AND a.date      = DATE(sr.session_date)
-       AND a.start_time = TIME(sr.session_date)
-    JOIN users um ON um.user_id = sr.mentor_id
-    JOIN users ue ON ue.user_id = sr.mentee_id
-    WHERE sr.status = 'approved'
-      AND DATE_ADD(sr.session_date, INTERVAL COALESCE(a.duration, 60) MINUTE) < DATE_SUB(?, INTERVAL ? HOUR)
-      AND NOT EXISTS (
-          SELECT 1 FROM missed_session_logs ml WHERE ml.session_id = sr.request_id
-      )
-");
-$graceHours = PC_MISSED_GRACE_HOURS;
-$stmt->bind_param("si", $now, $graceHours);
-$stmt->execute();
-$rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+// never closed, with whether each person opened the call. How the mentor's
+// join and the session's length are worked out is described on the query.
+$rows = SessionRepository::dueForMissedCheck($con, $now, PC_MISSED_GRACE_HOURS);
 
 // Guarded: this file is included by scripts/maintenance.php as well as run
 // directly, and a second include must not redeclare them.
@@ -145,12 +100,7 @@ foreach ($rows as $row) {
         // Both were in the call, so the session happened; nobody pressed End
         // or left feedback afterwards. "AND status" guards against feedback
         // arriving between the SELECT above and this write.
-        $upd = $con->prepare("UPDATE session_requests SET status='completed', completed_at=?, missed_by='none' WHERE request_id=? AND status='approved'");
-        $upd->bind_param("si", $now, $sid);
-        $upd->execute();
-        $changed = $upd->affected_rows;
-        $upd->close();
-        if ($changed < 1) {
+        if (SessionRepository::closeAsCompleted($con, $sid, $now) < 1) {
             continue;
         }
         NotificationService::sessionAutoCompleted($con, $eid, $row['mentor_name'], $subject, $when,
@@ -161,19 +111,11 @@ foreach ($rows as $row) {
         continue;
     }
 
-    $upd = $con->prepare("UPDATE session_requests SET status='missed', missed_by=?, completed_at=? WHERE request_id=? AND status='approved'");
-    $upd->bind_param("ssi", $outcome, $now, $sid);
-    $upd->execute();
-    $changed = $upd->affected_rows;
-    $upd->close();
-    if ($changed < 1) {
+    if (SessionRepository::closeAsMissed($con, $sid, $outcome, $now) < 1) {
         continue;
     }
 
-    $log = $con->prepare("INSERT IGNORE INTO missed_session_logs (session_id, missed_by, detected_at) VALUES (?, ?, NOW())");
-    $log->bind_param("is", $sid, $outcome);
-    $log->execute();
-    $log->close();
+    SessionRepository::logMissed($con, $sid, $outcome);
 
     // Whoever did not join hears that they missed it. When only one of them
     // did not, the other hears that it is not counted against them — which is

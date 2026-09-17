@@ -34,7 +34,7 @@ $presets = [
     'year'  => 'This year',
     'all'   => 'All time',
 ];
-$range = array_key_exists($_GET['range'] ?? '', $presets) ? $_GET['range'] : '30d';
+$range = array_key_exists(ad_query('range'), $presets) ? ad_query('range') : '30d';
 
 switch ($range) {
     case '90d':   $from = date('Y-m-d', strtotime('-89 days')); $to = date('Y-m-d'); break;

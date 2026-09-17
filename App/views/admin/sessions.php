@@ -5,7 +5,7 @@
  *
  * Every mentoring session on the platform, with the detail panel an admin
  * needs to settle one: who was in it, when, how it ended, what they said
- * about each other afterwards, and the four things an admin can actually do
+ * about each other afterwards, and the three things an admin can actually do
  * about it.
  *
  * Figures are live counts of rows that exist. The reference design showed a
@@ -31,11 +31,11 @@ $STATES = ad_session_states();
 $VIEWS = ['all', 'pending', 'upcoming', 'ongoing', 'overdue', 'completed', 'cancelled', 'declined', 'missed'];
 $view  = in_array($_GET['tab'] ?? '', $VIEWS, true) ? $_GET['tab'] : 'all';
 
-$q       = trim((string)($_GET['q'] ?? ''));
+$q       = trim(ad_query('q'));
 $type    = in_array($_GET['type'] ?? '', ['1v1', 'group'], true) ? $_GET['type'] : '';
-$subject = trim((string)($_GET['subject'] ?? ''));
-$from    = trim((string)($_GET['from'] ?? ''));
-$to      = trim((string)($_GET['to'] ?? ''));
+$subject = trim(ad_query('subject'));
+$from    = trim(ad_query('from'));
+$to      = trim(ad_query('to'));
 $sort    = in_array($_GET['sort'] ?? '', ['newest', 'oldest', 'subject'], true) ? $_GET['sort'] : 'newest';
 $open    = (int)($_GET['open'] ?? 0);
 
@@ -423,8 +423,10 @@ include __DIR__ . '/includes/sessions_ui.php';
                 <?php
                 $canClose  = in_array($detail['status'], ['approved', 'missed'], true) && strtotime($detail['session_date']) <= time();
                 $canMiss   = $detail['status'] === 'approved' && strtotime($detail['session_date']) <= time();
-                $canCancel = !in_array($detail['status'], ['cancelled', 'completed', 'rejected'], true);
-                $canMove   = $canCancel;
+                // Only an open session — pending or accepted — can be called
+                // off. A missed one is already settled; cancelling it would
+                // erase who did not turn up.
+                $canCancel = in_array($detail['status'], ['pending', 'approved'], true);
                 ?>
                 <div class="ss-acts">
                     <?php if ($canClose): ?>
@@ -435,10 +437,6 @@ include __DIR__ . '/includes/sessions_ui.php';
                             <input type="hidden" name="action" value="complete">
                             <button type="submit" class="ss-act ok"><?= ss_icon('check') ?>Mark completed</button>
                         </form>
-                    <?php endif; ?>
-
-                    <?php if ($canMove): ?>
-                        <button type="button" class="ss-act" onclick="ssOpen('ssMove')"><?= ss_icon('clock') ?>Reschedule</button>
                     <?php endif; ?>
 
                     <?php if ($canMiss): ?>
@@ -475,29 +473,6 @@ include __DIR__ . '/includes/sessions_ui.php';
                 <div class="ss-modal-foot">
                     <button type="button" class="ss-cancel" onclick="ssClose()">Keep it</button>
                     <button type="submit" class="ss-act danger solid">Cancel session</button>
-                </div>
-            </form>
-        </div>
-        <?php endif; ?>
-
-        <?php if ($canMove): ?>
-        <div class="ss-overlay" id="ssMove">
-            <form class="ss-modal" method="post" action="<?= url('admin-action-session') ?>">
-                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
-                <input type="hidden" name="request_id" value="<?= $did ?>">
-                <input type="hidden" name="back" value="<?= htmlspecialchars($backHere) ?>">
-                <input type="hidden" name="action" value="reschedule">
-                <h3>Move this session</h3>
-                <p>Currently <?= date('M j, Y', strtotime($detail['session_date'])) ?> at <?= date('g:i A', strtotime($detail['session_date'])) ?>. Both people are told about the change.</p>
-                <label for="ssMoveDate">New date</label>
-                <input id="ssMoveDate" type="date" name="date" required min="<?= date('Y-m-d') ?>" value="<?= date('Y-m-d', strtotime($detail['session_date'])) ?>">
-                <label for="ssMoveTime">New start time</label>
-                <input id="ssMoveTime" type="time" name="time" required value="<?= date('H:i', strtotime($detail['session_date'])) ?>">
-                <label for="ssMoveWhy">Reason (optional, included in the message)</label>
-                <input id="ssMoveWhy" type="text" name="reason" maxlength="200" placeholder="e.g. Mentor has a clashing class">
-                <div class="ss-modal-foot">
-                    <button type="button" class="ss-cancel" onclick="ssClose()">Back</button>
-                    <button type="submit" class="ss-act ok solid">Move session</button>
                 </div>
             </form>
         </div>

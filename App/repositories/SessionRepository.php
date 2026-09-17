@@ -9,9 +9,8 @@ class SessionRepository extends Repository
      * An upcoming session, as the member pages count it: approved and not yet
      * started. For use inside a query on session_requests aliased $alias.
      *
-     * NOT YET SETTLED: the admin pages (admin/includes/session_data.php,
-     * admin/sessions.php, admin/sessions_reports.php) use "session_date > NOW()"
-     * rather than ">=", and neither version counts a session that has started
+     * NOT YET SETTLED: the admin screens (AdminSessionRepository) use
+     * "session_date > NOW()" rather than ">=", and neither version counts a session that has started
      * but not ended, even though its call is still open. Kept exactly as each
      * page had it until that is decided.
      */
@@ -938,5 +937,149 @@ class SessionRepository extends Repository
               AND sr.status IN ('pending','approved')
             ORDER BY sr.session_date ASC
         ", 'isss', [$mentorId, $subject, $date, $startTime]);
+    }
+
+    // ── Admin actions ───────────────────────────────────────────────────────
+
+    /**
+     * One session with both people's names, for an admin action: 'request_id',
+     * 'subject', 'session_date', 'status', 'mentor_id', 'mentee_id',
+     * 'mentor_name', 'mentee_name'. Null when there is no such session.
+     */
+    public static function findWithNames(mysqli $con, int $sessionId): ?array
+    {
+        return self::typedRow($con, "
+            SELECT sr.request_id, sr.subject, sr.session_date, sr.status, sr.mentor_id, sr.mentee_id,
+                   CONCAT_WS(' ', mo.firstname, mo.lastname) AS mentor_name,
+                   CONCAT_WS(' ', me.firstname, me.lastname) AS mentee_name
+            FROM session_requests sr
+            JOIN users mo ON mo.user_id = sr.mentor_id
+            JOIN users me ON me.user_id = sr.mentee_id
+            WHERE sr.request_id = ?
+            LIMIT 1
+        ", 'i', [$sessionId]);
+    }
+
+    /**
+     * An admin closes an accepted or missed session as completed, now.
+     * Returns 1 when it changed; 0 when it was not in either state by then.
+     */
+    public static function completeByAdmin(mysqli $con, int $sessionId): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status = 'completed', completed_at = NOW(), missed_by = 'none'
+            WHERE request_id = ? AND status IN ('approved','missed')
+        ", 'i', [$sessionId]);
+    }
+
+    /**
+     * An admin records an accepted session as missed by $missedBy ('mentor',
+     * 'mentee' or 'both'), closed now — the same record the missed-session job
+     * leaves. Returns 1 when it changed; 0 when it was no longer accepted.
+     */
+    public static function markMissedByAdmin(mysqli $con, int $sessionId, string $missedBy): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status = 'missed', missed_by = ?, completed_at = NOW()
+            WHERE request_id = ? AND status = 'approved'
+        ", 'si', [$missedBy, $sessionId]);
+    }
+
+    /**
+     * An admin calls off a pending or accepted session, keeping $reason on it.
+     * Returns 1 when it changed; 0 when it was already closed.
+     */
+    public static function cancelByAdmin(mysqli $con, int $sessionId, string $reason): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status = 'cancelled', rejection_reason = ?
+            WHERE request_id = ? AND status IN ('pending','approved')
+        ", 'si', [$reason, $sessionId]);
+    }
+
+    // ── The missed-session job ──────────────────────────────────────────────
+
+    /**
+     * Approved sessions that ended more than $graceHours before $now and were
+     * never closed, with whether each person opened the call: 'request_id',
+     * 'mentor_id', 'mentee_id', 'session_date', 'duration', 'session_end',
+     * 'mentor_name', 'mentee_name', 'subject', 'mentor_joined',
+     * 'mentee_joined' (1 or 0).
+     *
+     * The mentor's join is matched on the slot, not the request: a group
+     * session is one call with one request per mentee, and the mentor opens it
+     * from whichever of those requests they clicked.
+     *
+     * The availability join matches the exact slot (subject, date and start
+     * time). Matching on the date alone returned one row per slot the mentor
+     * offered that day, so a session was processed — and both people told —
+     * once per slot. A session with no slot is taken to last 60 minutes.
+     */
+    public static function dueForMissedCheck(mysqli $con, string $now, int $graceHours): array
+    {
+        return self::typedRows($con, "
+            SELECT
+                sr.request_id, sr.mentor_id, sr.mentee_id, sr.session_date,
+                a.duration,
+                DATE_ADD(sr.session_date, INTERVAL COALESCE(a.duration, 60) MINUTE) AS session_end,
+                CONCAT(um.firstname,' ',um.lastname) AS mentor_name,
+                CONCAT(ue.firstname,' ',ue.lastname) AS mentee_name,
+                sr.subject,
+                EXISTS (
+                    SELECT 1 FROM session_attendance att
+                    JOIN session_requests s2 ON s2.request_id = att.session_id
+                    WHERE att.user_id = sr.mentor_id
+                      AND s2.mentor_id = sr.mentor_id
+                      AND s2.subject = sr.subject
+                      AND s2.session_date = sr.session_date
+                ) AS mentor_joined,
+                EXISTS (
+                    SELECT 1 FROM session_attendance att
+                    WHERE att.session_id = sr.request_id AND att.user_id = sr.mentee_id
+                ) AS mentee_joined
+            FROM session_requests sr
+            LEFT JOIN availability a
+                ON a.mentor_id = sr.mentor_id
+               AND a.subject   = sr.subject
+               AND a.date      = DATE(sr.session_date)
+               AND a.start_time = TIME(sr.session_date)
+            JOIN users um ON um.user_id = sr.mentor_id
+            JOIN users ue ON ue.user_id = sr.mentee_id
+            WHERE sr.status = 'approved'
+              AND DATE_ADD(sr.session_date, INTERVAL COALESCE(a.duration, 60) MINUTE) < DATE_SUB(?, INTERVAL ? HOUR)
+              AND NOT EXISTS (
+                  SELECT 1 FROM missed_session_logs ml WHERE ml.session_id = sr.request_id
+              )
+        ", 'si', [$now, $graceHours]);
+    }
+
+    /**
+     * Closes an accepted session as completed at $now because both people
+     * joined. "AND status" guards against feedback closing it in the meantime.
+     * Returns 1 when it changed, else 0.
+     */
+    public static function closeAsCompleted(mysqli $con, int $sessionId, string $now): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status = 'completed', completed_at = ?, missed_by = 'none'
+            WHERE request_id = ? AND status = 'approved'
+        ", 'si', [$now, $sessionId]);
+    }
+
+    /** Closes an accepted session as missed by $missedBy at $now. Returns 1 when it changed, else 0. */
+    public static function closeAsMissed(mysqli $con, int $sessionId, string $missedBy, string $now): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status = 'missed', missed_by = ?, completed_at = ?
+            WHERE request_id = ? AND status = 'approved'
+        ", 'ssi', [$missedBy, $now, $sessionId]);
+    }
+
+    /** Notes that the job closed $sessionId as missed by $missedBy. A second note for the same session is ignored. */
+    public static function logMissed(mysqli $con, int $sessionId, string $missedBy): void
+    {
+        self::execute($con, "
+            INSERT IGNORE INTO missed_session_logs (session_id, missed_by, detected_at) VALUES (?, ?, NOW())
+        ", 'is', [$sessionId, $missedBy]);
     }
 }

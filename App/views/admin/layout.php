@@ -212,8 +212,9 @@ if (empty($current_page)) {
                                 // already holding for the account on screen.
                                 // user_view.php lost its role chip and its
                                 // Public profile link to exactly that.
-                                $adm_nav_role = $_GET['role'] ?? '';
-                                $adm_nav_tab  = $_GET['tab'] ?? '';
+                                // A value sent as a list counts as none.
+                                $adm_nav_role = is_string($_GET['role'] ?? null) ? $_GET['role'] : '';
+                                $adm_nav_tab  = is_string($_GET['tab'] ?? null) ? $_GET['tab'] : '';
                                 if ($adm_nav_role !== '')      $activeSub = '?role=' . $adm_nav_role;
                                 elseif ($adm_nav_tab !== '')   $activeSub = '?tab=' . $adm_nav_tab;
                                 else                   $activeSub = '';
@@ -334,7 +335,7 @@ if (empty($current_page)) {
                     </svg>
                     <label for="adm-q" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">Search accounts</label>
                     <input id="adm-q" type="search" name="q" maxlength="80"
-                        value="<?= htmlspecialchars($_GET['q'] ?? '') ?>"
+                        value="<?= htmlspecialchars(is_string($_GET['q'] ?? null) ? $_GET['q'] : '') ?>"
                         placeholder="Search users by name, username or email"
                         class="bg-transparent text-sm outline-none w-full text-gray-700 placeholder-gray-400">
                 </form>

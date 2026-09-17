@@ -22,12 +22,14 @@ require_admin();
 
 date_default_timezone_set('Asia/Manila');
 
-$view    = $_GET['tab'] ?? 'all';
-$q       = trim((string)($_GET['q'] ?? ''));
+// Only a tab the list page has; anything else exports everything. The tab
+// also names the file, so an unchecked value would end up in a header.
+$view    = in_array(ad_query('tab'), array_keys(ad_session_states()), true) ? ad_query('tab') : 'all';
+$q       = trim(ad_query('q'));
 $type    = in_array($_GET['type'] ?? '', ['1v1', 'group'], true) ? $_GET['type'] : '';
-$subject = trim((string)($_GET['subject'] ?? ''));
-$from    = trim((string)($_GET['from'] ?? ''));
-$to      = trim((string)($_GET['to'] ?? ''));
+$subject = trim(ad_query('subject'));
+$from    = trim(ad_query('from'));
+$to      = trim(ad_query('to'));
 
 $rows = AdminSessionRepository::allMatching($con, [
     'q'       => $q,

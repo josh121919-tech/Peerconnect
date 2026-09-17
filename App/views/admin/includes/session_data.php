@@ -1,7 +1,8 @@
 <?php
 
 /**
- * session_data.php — how the admin session screens present a session.
+ * session_data.php — how the admin session screens present a session, and
+ * how they read their query string.
  *
  * All Sessions, Calendar View and Session Reports all show the same rows, and
  * they must not disagree: a session counted as "upcoming" on one page cannot
@@ -17,6 +18,17 @@
 
 if (!defined('AD_SESSION_FALLBACK_MINUTES')) {
     define('AD_SESSION_FALLBACK_MINUTES', AdminSessionRepository::FALLBACK_MINUTES);
+}
+
+/**
+ * A query-string value as text. A value sent as a list (?q[]=x) counts as
+ * missing: every screen here reads these as strings, and a list used to end
+ * in a warning or the error page.
+ */
+function ad_query(string $name): string
+{
+    $v = $_GET[$name] ?? '';
+    return is_string($v) ? $v : '';
 }
 
 /**

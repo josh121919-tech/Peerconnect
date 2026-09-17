@@ -32,16 +32,17 @@ $STATES = ad_session_states();
 $modes = ['month', 'week', 'day'];
 $mode  = in_array($_GET['mode'] ?? '', $modes, true) ? $_GET['mode'] : 'week';
 
-$focus = $_GET['d'] ?? '';
+$focus = ad_query('d');
 $focusTs = ($focus !== '' && strtotime($focus)) ? strtotime($focus) : time();
 $focusDay = date('Y-m-d', $focusTs);
 
-$selected = ($_GET['sel'] ?? '') !== '' && strtotime($_GET['sel']) ? date('Y-m-d', strtotime($_GET['sel'])) : $focusDay;
+$sel = ad_query('sel');
+$selected = $sel !== '' && strtotime($sel) ? date('Y-m-d', strtotime($sel)) : $focusDay;
 
 /* Filters, matching the list page's vocabulary. */
 $fStatus  = in_array($_GET['status'] ?? '', array_keys($STATES), true) ? $_GET['status'] : '';
 $fType    = in_array($_GET['type'] ?? '', ['1v1', 'group'], true) ? $_GET['type'] : '';
-$fSubject = trim((string)($_GET['subject'] ?? ''));
+$fSubject = trim(ad_query('subject'));
 $fMentor  = (int)($_GET['mentor'] ?? 0);
 
 /* ── The window each mode covers ──────────────────────────────────────── */
