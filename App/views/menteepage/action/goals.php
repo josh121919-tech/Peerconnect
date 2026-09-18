@@ -16,48 +16,38 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
 }
 
 $mentee_id = (int)$_SESSION['user_id'];
-$action    = $_POST['action'] ?? '';
+$action    = is_string($_POST['action'] ?? null) ? $_POST['action'] : '';
 
 if ($action === 'create') {
-    $title = trim($_POST['title'] ?? '');
+    // A title sent as a list counts as missing.
+    $title = is_string($_POST['title'] ?? null) ? trim($_POST['title']) : '';
     if ($title === '' || mb_strlen($title) > 150) {
         echo json_encode(['success' => false, 'message' => 'Please enter a goal title (up to 150 characters).']);
         exit;
     }
-    $stmt = $con->prepare("INSERT INTO goals (mentee_id, title, created_by) VALUES (?, ?, ?)");
-    $stmt->bind_param("isi", $mentee_id, $title, $mentee_id);
-    $ok = $stmt->execute();
-    $goal_id = $stmt->insert_id;
-    $stmt->close();
-    echo json_encode(['success' => $ok, 'goal_id' => $goal_id, 'title' => $title, 'status' => 'not_started']);
+    $goal_id = GoalRepository::createForMentee($con, $mentee_id, $title);
+    echo json_encode(['success' => true, 'goal_id' => $goal_id, 'title' => $title, 'status' => 'not_started']);
     exit;
 }
 
 if ($action === 'cycle_status') {
-    $goal_id = (int)($_POST['goal_id'] ?? 0);
+    $goal_id = is_string($_POST['goal_id'] ?? null) ? (int)$_POST['goal_id'] : 0;
     $order   = ['not_started' => 'in_progress', 'in_progress' => 'completed', 'completed' => 'not_started'];
 
     // Scoped to this mentee's own goal — never trust a client-supplied status.
-    $stmt = $con->prepare("SELECT status FROM goals WHERE goal_id = ? AND mentee_id = ? LIMIT 1");
-    $stmt->bind_param("ii", $goal_id, $mentee_id);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
+    $status = GoalRepository::statusForMentee($con, $goal_id, $mentee_id);
 
-    if (!$row) {
+    if ($status === null) {
         echo json_encode(['success' => false, 'message' => 'Goal not found.']);
         exit;
     }
 
-    $next = $order[$row['status']];
+    $next = $order[$status];
     $completedAt = $next === 'completed' ? date('Y-m-d H:i:s') : null;
 
-    $stmt = $con->prepare("UPDATE goals SET status = ?, completed_at = ? WHERE goal_id = ? AND mentee_id = ?");
-    $stmt->bind_param("ssii", $next, $completedAt, $goal_id, $mentee_id);
-    $ok = $stmt->execute();
-    $stmt->close();
+    GoalRepository::setStatusForMentee($con, $goal_id, $mentee_id, $next, $completedAt);
 
-    echo json_encode(['success' => $ok, 'status' => $next]);
+    echo json_encode(['success' => true, 'status' => $next]);
     exit;
 }
 

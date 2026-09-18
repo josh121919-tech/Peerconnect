@@ -247,4 +247,10 @@ class AvailabilityRepository extends Repository
             ORDER BY CASE WHEN session_type = '1v1' THEN 1 ELSE 2 END, date, start_time
         ", 'i', [$mentorId]);
     }
+
+    /** How many of the mentor's slots are dated today or later. */
+    public static function countFromTodayForMentor(mysqli $con, int $mentorId): int
+    {
+        return (int)self::value($con, "SELECT COUNT(*) c FROM availability WHERE mentor_id = ? AND date >= CURDATE()", 'i', [$mentorId]);
+    }
 }

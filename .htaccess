@@ -11,8 +11,10 @@ Options -MultiViews
     # stays open for certificate validation.
     RewriteRule (^|/)\.(?!well-known(/|$)) - [F,L]
 
-    # tests/ and scripts/ hold command-line tools that write to the database.
-    RewriteRule ^(?:App|Framework|vendor|tests|scripts)/ - [F,L,NC]
+    # tests/ and scripts/ hold command-line tools that write to the database;
+    # storage/ holds private files, such as verification documents, that the
+    # application reads and serves itself.
+    RewriteRule ^(?:App|Framework|vendor|tests|scripts|storage)/ - [F,L,NC]
 
     # Code and notes in the web root that are not pages. helpers.php and
     # routes.php only define things, and the pass-through rule below would run

@@ -17,6 +17,14 @@
 public/uploads/*
 # ...except the .htaccess in there, which is application config.
 !public/uploads/.htaccess
+# The old verification folder keeps only its deny-all .htaccess.
+!public/uploads/verification/
+public/uploads/verification/*
+!public/uploads/verification/.htaccess
+# Private files (verification documents) — user data, like uploads, but
+# never served. Only the folder's own .htaccess is tracked.
+storage/*
+!storage/.htaccess
 
 # ─── Database dumps ──────────────────────────────────────────────────────
 # A mysqldump of `cs` holds every member's email and password hash, so all

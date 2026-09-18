@@ -21,12 +21,14 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
 
 $user_id = (int)$_SESSION['user_id'];
 
-$full_name = trim(strip_tags((string)($_POST['full_name'] ?? '')));
-$username  = trim(strip_tags((string)($_POST['username'] ?? '')));
-$phone     = trim(strip_tags((string)($_POST['phone'] ?? '')));
-$location  = trim(strip_tags((string)($_POST['location'] ?? '')));
-$birthdate = trim((string)($_POST['birthdate'] ?? ''));
-$bio       = trim(strip_tags((string)($_POST['bio'] ?? '')));
+// A field sent as a list counts as missing, never as the text "Array".
+$field     = fn(string $name): string => is_string($_POST[$name] ?? null) ? $_POST[$name] : '';
+$full_name = trim(strip_tags($field('full_name')));
+$username  = trim(strip_tags($field('username')));
+$phone     = trim(strip_tags($field('phone')));
+$location  = trim(strip_tags($field('location')));
+$birthdate = trim($field('birthdate'));
+$bio       = trim(strip_tags($field('bio')));
 $visibility = in_array($_POST['visibility'] ?? '', ['everyone', 'mentors', 'private'], true)
     ? $_POST['visibility'] : 'everyone';
 

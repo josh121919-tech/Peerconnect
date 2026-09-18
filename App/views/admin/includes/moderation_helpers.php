@@ -11,18 +11,18 @@
 
 if (!function_exists('um_doc_url')) {
     /**
-     * The verification tables store only the file's name — the folder it was
-     * moved into lives in the upload code, not the row. Rendering the bare
-     * name as an href makes it relative to the admin route, which resolves to
-     * nothing. Rows written by some other path may already hold a full path or
-     * URL, so anything already absolute is left alone.
+     * The verification tables store only the file's name. The documents are
+     * private, so a name becomes the verification-file route, which checks the
+     * viewer is an admin (see VerificationFiles). Rows written by some other
+     * path may already hold a full path or URL, so anything already absolute
+     * is left alone.
      */
     function um_doc_url(?string $file): string
     {
         $file = trim((string)$file);
         if ($file === '') return '';
         if (preg_match('#^(https?:)?//#i', $file) || $file[0] === '/') return $file;
-        return asset('uploads/verification/' . rawurlencode($file));
+        return VerificationFiles::url($file);
     }
 }
 

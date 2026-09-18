@@ -23,11 +23,7 @@ if (!function_exists('pc_onboarding_state')) {
      */
     function pc_onboarding_state(mysqli $con, int $user_id): array
     {
-        $q = $con->prepare("SELECT onboarded_at, onboarding_skipped_at FROM profile WHERE user_id = ? LIMIT 1");
-        $q->bind_param("i", $user_id);
-        $q->execute();
-        $row = $q->get_result()->fetch_assoc() ?: [];
-        $q->close();
+        $row = ProfileRepository::fields($con, $user_id, ['onboarded_at', 'onboarding_skipped_at']) ?? [];
 
         return [
             'done'    => !empty($row['onboarded_at']),

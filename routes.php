@@ -28,6 +28,8 @@ return [
     'mentee-feedback' => 'App/views/menteepage/feedback.php',
     'mentee-review'   => 'App/views/feedback/review.php',
     'mentee-verification' => 'App/views/menteepage/verification.php',
+    // A document from a verification application, for its owner and admins only.
+    'verification-file' => 'App/views/verification/file.php',
     'mentee-sessions' => 'App/views/menteepage/sessions.php',
     'mentee-calendar' => 'App/views/menteepage/mentee_calendar.php',
     'mentee-request' => 'App/views/menteepage/request.php',

@@ -119,4 +119,110 @@ class UserRepository extends Repository
             FROM mentee_preferences WHERE mentee_id = ?
         ", 'i', [$menteeId]) ?? [];
     }
+
+    // ── A member's own account ──────────────────────────────────────────────
+
+    /** The account's 'firstname', 'lastname', 'email' and 'created_at', or null when there is no such account. */
+    public static function accountBasics(mysqli $con, int $userId): ?array
+    {
+        return self::typedRow($con, "SELECT firstname, lastname, email, created_at FROM users WHERE user_id = ?", 'i', [$userId]);
+    }
+
+    /** When the account was created, or null when there is no such account. */
+    public static function joinedAt(mysqli $con, int $userId): ?string
+    {
+        return self::value($con, "SELECT created_at FROM users WHERE user_id = ? LIMIT 1", 'i', [$userId]);
+    }
+
+    /** The account's role ('mentee', 'mentor', 'admin', or empty), or null when there is no such account. */
+    public static function role(mysqli $con, int $userId): ?string
+    {
+        return self::value($con, "SELECT role FROM users WHERE user_id = ? LIMIT 1", 'i', [$userId]);
+    }
+
+    /** The account's email address, or null when it has none or does not exist. */
+    public static function email(mysqli $con, int $userId): ?string
+    {
+        return self::value($con, "SELECT email FROM users WHERE user_id = ?", 'i', [$userId]);
+    }
+
+    /**
+     * Gives a role-less account the role it chose. Only an account whose role
+     * is still empty is changed. Returns 1 when it was set, else 0.
+     */
+    public static function claimRole(mysqli $con, int $userId, string $role): int
+    {
+        return self::execute($con, "UPDATE users SET role = ? WHERE user_id = ? AND (role IS NULL OR role = '')", 'si', [$role, $userId]);
+    }
+
+    /**
+     * Marks the account verified, after an admin approved its application.
+     * Its status is left alone: approving an application is not a way to lift
+     * a block or a restriction.
+     */
+    public static function markVerified(mysqli $con, int $userId): void
+    {
+        self::execute($con, "UPDATE users SET verified = 1 WHERE user_id = ?", 'i', [$userId]);
+    }
+
+    /**
+     * An account its owner deleted: signed out for good the way a block does
+     * it, with no email address and no name left on it. The row stays, because
+     * other people's sessions and reviews refer to it; it reads as "Deleted User".
+     */
+    public static function closeDeletedAccount(mysqli $con, int $userId): void
+    {
+        self::execute($con, "
+            UPDATE users
+            SET status = 'blocked', email = NULL, username = NULL,
+                firstname = 'Deleted', middlename = NULL, lastname = 'User', suffix = ''
+            WHERE user_id = ?
+        ", 'i', [$userId]);
+    }
+
+    // ── A mentee's profile page ─────────────────────────────────────────────
+
+    /**
+     * What the mentee has done lately, newest first: completed sessions,
+     * reviews given, submitted assessments and shared resources, as 'kind',
+     * 'ts' and 'text'.
+     */
+    public static function recentActivityForMentee(mysqli $con, int $menteeId, int $limit): array
+    {
+        return self::rows($con, "
+            SELECT 'session' AS kind, sr.session_date AS ts,
+                   CONCAT('Completed a session with ', u.firstname, ' ', u.lastname) AS text
+              FROM session_requests sr JOIN users u ON u.user_id = sr.mentor_id
+             WHERE sr.mentee_id = ? AND sr.status = 'completed'
+            UNION ALL
+            SELECT 'review', f.created_at,
+                   CONCAT('Gave a ', FORMAT(f.rating,1), ' rating to ', u.firstname, ' ', u.lastname)
+              FROM feedback f JOIN users u ON u.user_id = f.mentor_id
+             WHERE f.mentee_id = ?
+            UNION ALL
+            SELECT 'assessment', at.submitted_at,
+                   CONCAT('Completed the assessment \"', a.title, '\"')
+              FROM assessment_attempts at JOIN assessments a ON a.assessment_id = at.assessment_id
+             WHERE at.mentee_id = ? AND at.status = 'submitted'
+            UNION ALL
+            SELECT 'resource', r.created_at, CONCAT('Shared the resource \"', r.title, '\"')
+              FROM resources r WHERE r.uploader_id = ? AND r.is_active = 1
+            ORDER BY ts DESC LIMIT ?
+        ", 'iiiii', [$menteeId, $menteeId, $menteeId, $menteeId, $limit]);
+    }
+
+    /**
+     * The counts behind the mentee's milestones: completed 'sessions',
+     * 'reviews' given, submitted 'assessments', and different 'mentors'
+     * with an accepted or completed session.
+     */
+    public static function menteeMilestoneCounts(mysqli $con, int $menteeId): array
+    {
+        return self::row($con, "
+            SELECT (SELECT COUNT(*) FROM session_requests WHERE mentee_id = ? AND status = 'completed') AS sessions,
+                   (SELECT COUNT(*) FROM feedback WHERE mentee_id = ?) AS reviews,
+                   (SELECT COUNT(*) FROM assessment_attempts WHERE mentee_id = ? AND status = 'submitted') AS assessments,
+                   (SELECT COUNT(DISTINCT mentor_id) FROM session_requests WHERE mentee_id = ? AND status IN ('approved','completed')) AS mentors
+        ", 'iiii', [$menteeId, $menteeId, $menteeId, $menteeId]) ?? [];
+    }
 }

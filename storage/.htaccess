@@ -1,0 +1,10 @@
+# Private files the application reads itself — never served to a browser.
+# The root .htaccess refuses storage/ as well; this is the second lock, for a
+# server that ignores the rewrite rules.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

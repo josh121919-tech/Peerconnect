@@ -20,11 +20,18 @@ if (!rate_limit('update_email_' . $_SESSION['user_id'], 5, 300)) {
 }
 
 $user_id   = (int)$_SESSION['user_id'];
-$new_email = trim($_POST['new_email'] ?? '');
-$password  = $_POST['confirm_password'] ?? '';
+// A field sent as a list counts as missing.
+$new_email = is_string($_POST['new_email'] ?? null) ? trim($_POST['new_email']) : '';
+$password  = is_string($_POST['confirm_password'] ?? null) ? $_POST['confirm_password'] : '';
 
 if (!filter_var($new_email, FILTER_VALIDATE_EMAIL)) {
     echo json_encode(['success' => false, 'message' => 'Please enter a valid email address.']);
+    exit;
+}
+// Sign-up allows 100 characters, and the activity log files entries under
+// the address in a column of that size.
+if (strlen($new_email) > 100) {
+    echo json_encode(['success' => false, 'message' => 'That email address is too long.']);
     exit;
 }
 
@@ -56,12 +63,21 @@ if ($isDuplicate) {
     exit;
 }
 
+$old_email = (string)(UserRepository::email($con, $user_id) ?? '');
+
 $con->begin_transaction();
 try {
     $upd = $con->prepare("UPDATE users SET email = ? WHERE user_id = ?");
     $upd->bind_param("si", $new_email, $user_id);
     $upd->execute();
     $upd->close();
+
+    // The activity log files entries under the address. Moving them keeps
+    // this account's history (sign-ins, password changes) with it, rather
+    // than behind under an address it no longer has.
+    if ($old_email !== '' && strcasecmp($old_email, $new_email) !== 0) {
+        LogRepository::moveToEmail($con, $old_email, $new_email);
+    }
 
     $con->commit();
 } catch (Exception $e) {
@@ -71,4 +87,7 @@ try {
 }
 
 $_SESSION['email'] = $new_email;
+if ($old_email !== '' && strcasecmp($old_email, $new_email) !== 0) {
+    logMe($new_email, date('Y-m-d H:i:s'), 'email changed from ' . $old_email);
+}
 echo json_encode(['success' => true, 'message' => 'Email updated.', 'email' => $new_email]);

@@ -63,6 +63,19 @@ abstract class Repository
         return $changed;
     }
 
+    /** Runs an INSERT and returns the id of the new row. */
+    protected static function insert(mysqli $con, string $sql, string $types = '', array $args = []): int
+    {
+        $st = $con->prepare($sql);
+        if ($types !== '') {
+            $st->bind_param($types, ...$args);
+        }
+        $st->execute();
+        $id = (int)$st->insert_id;
+        $st->close();
+        return $id;
+    }
+
     /** The first row, or null when there is none. */
     protected static function row(mysqli $con, string $sql, string $types = '', array $args = []): ?array
     {

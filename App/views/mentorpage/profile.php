@@ -18,17 +18,10 @@ $role    = $_SESSION['role'] ?? '';
 require_once __DIR__ . '/../includes/onboarding_gate.php';
 $onboarding = pc_onboarding_state($con, $user_id);
 
-$stmt = $con->prepare("SELECT full_name, student_id, course, year_level, club FROM user_verifications WHERE user_id = ? AND status = 'approved' LIMIT 1");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$verification = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+$verification = VerificationRepository::approvedDetails($con, $user_id);
 
-$prof_stmt = $con->prepare("SELECT full_name, student_id, course, year_level, club, profile_image, location, bio, visibility FROM profile WHERE user_id = ? LIMIT 1");
-$prof_stmt->bind_param("i", $user_id);
-$prof_stmt->execute();
-$profile = $prof_stmt->get_result()->fetch_assoc();
-$prof_stmt->close();
+$profile = ProfileRepository::fields($con, $user_id,
+    ['full_name', 'student_id', 'course', 'year_level', 'club', 'profile_image', 'location', 'bio', 'visibility']);
 
 if ($profile) {
     foreach (['full_name', 'student_id', 'course', 'year_level', 'club'] as $field) {
@@ -59,11 +52,7 @@ $visibility_copy = [
 ];
 [$visibility_label, $visibility_note] = $visibility_copy[$visibility] ?? $visibility_copy['everyone'];
 
-$joined_stmt = $con->prepare("SELECT created_at FROM users WHERE user_id = ? LIMIT 1");
-$joined_stmt->bind_param("i", $user_id);
-$joined_stmt->execute();
-$joined_at = $joined_stmt->get_result()->fetch_assoc()['created_at'] ?? null;
-$joined_stmt->close();
+$joined_at = UserRepository::joinedAt($con, $user_id);
 
 /*
  * What this mentor can teach. `skill` and `learn` are the two tag types the
@@ -71,102 +60,55 @@ $joined_stmt->close();
  * with and the subject areas they can mentor in. `interest` is their own
  * degree programme, which is shown in the header line instead.
  */
-$tag_stmt = $con->prepare("SELECT tag_type, tag FROM user_tags WHERE user_id = ? ORDER BY tag_type, tag");
-$tag_stmt->bind_param("i", $user_id);
-$tag_stmt->execute();
 $expertise = [];
 $programme = null;
-foreach ($tag_stmt->get_result()->fetch_all(MYSQLI_ASSOC) as $t) {
+foreach (ProfileRepository::tagsByType($con, $user_id) as $t) {
     if ($t['tag_type'] === 'interest') {
         $programme = $programme ?? $t['tag'];
     } else {
         $expertise[] = $t['tag'];
     }
 }
-$tag_stmt->close();
 
 /*
  * Header stats. Each is a real count with a real month-over-month change;
  * a trend line is only rendered when there is something to compare, so an
  * account with one month of history shows the figure and nothing else.
  */
-$one = function (string $sql) use ($con, $user_id) {
-    $st = $con->prepare($sql);
-    $st->bind_param("i", $user_id);
-    $st->execute();
-    $row = $st->get_result()->fetch_assoc();
-    $st->close();
-    return $row ? reset($row) : null;
-};
-
-$stat_mentees = (int)$one("SELECT COUNT(DISTINCT mentee_id) c FROM session_requests
-                            WHERE mentor_id = ? AND status IN ('approved','completed')");
+$stat_mentees = (int)(SessionRepository::statsForMentor($con, $user_id)['mentees'] ?? 0);
 // "New this month" = a mentee whose first session with this mentor started
 // this month; anyone earlier is not new, however recently they last met.
-$stat_mentees_new = (int)$one("SELECT COUNT(*) c FROM (
-        SELECT mentee_id, MIN(session_date) first_at
-        FROM session_requests
-        WHERE mentor_id = ? AND status IN ('approved','completed')
-        GROUP BY mentee_id
-    ) t WHERE t.first_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')");
+$stat_mentees_new = SessionRepository::countNewMenteesThisMonthForMentor($con, $user_id);
 
-$stat_sessions = (int)$one("SELECT COUNT(*) c FROM session_requests WHERE mentor_id = ? AND status = 'completed'");
-$stat_sessions_new = (int)$one("SELECT COUNT(*) c FROM session_requests
-                                 WHERE mentor_id = ? AND status = 'completed'
-                                   AND session_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')");
+$stat_sessions     = SessionRepository::countForMentorInStatuses($con, $user_id, ['completed']);
+$stat_sessions_new = SessionRepository::countCompletedThisMonthForMentor($con, $user_id);
 
 // Counted here rather than from $my_badges, which is fetched further down.
-$stat_badges = (int)$one("SELECT COUNT(*) c FROM user_badges ub
-                            JOIN badges b ON b.badge_id = ub.badge_id
-                           WHERE ub.user_id = ? AND b.is_active = 1");
-$stat_badges_new = (int)$one("SELECT COUNT(*) c FROM user_badges ub
-                                JOIN badges b ON b.badge_id = ub.badge_id
-                               WHERE ub.user_id = ? AND b.is_active = 1
-                                 AND ub.awarded_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')");
+$stat_badges     = AchievementRepository::countActiveBadges($con, $user_id);
+$stat_badges_new = AchievementRepository::countActiveBadges($con, $user_id, true);
 
 // Open slots decide the "available for mentorship" line: a mentor with no
 // future availability is not bookable, whatever the profile says.
-$open_slots = (int)$one("SELECT COUNT(*) c FROM availability WHERE mentor_id = ? AND date >= CURDATE()");
+$open_slots = AvailabilityRepository::countFromTodayForMentor($con, $user_id);
 
 // Matching/ranking score — this already drives how mentees see this mentor
 // ranked in Find a Mentor (MentorScoreService::getRankedMentors), but was
 // never actually shown to the mentor themselves anywhere. Compute on the
 // fly if it hasn't been calculated yet, so this is never stale/empty.
-$score_stmt = $con->prepare("SELECT avg_rating, total_sessions, completion_rate, effectiveness_score, recommendation_score, last_calculated FROM mentor_scores WHERE mentor_id = ?");
-$score_stmt->bind_param("i", $user_id);
-$score_stmt->execute();
-$mentor_score = $score_stmt->get_result()->fetch_assoc();
-$score_stmt->close();
+$mentor_score = MentorScoreRepository::forMentor($con, $user_id);
 if (!$mentor_score) {
     MentorScoreService::compute($con, $user_id);
-    $score_stmt = $con->prepare("SELECT avg_rating, total_sessions, completion_rate, effectiveness_score, recommendation_score, last_calculated FROM mentor_scores WHERE mentor_id = ?");
-    $score_stmt->bind_param("i", $user_id);
-    $score_stmt->execute();
-    $mentor_score = $score_stmt->get_result()->fetch_assoc();
-    $score_stmt->close();
+    $mentor_score = MentorScoreRepository::forMentor($con, $user_id);
 }
 
-$avg_stmt = $con->prepare("SELECT AVG(rating) AS avg_rating, COUNT(*) AS total_reviews, AVG(communication) AS avg_comm, AVG(knowledge) AS avg_know, AVG(efficiency) AS avg_eff, AVG(skill) AS avg_skill FROM feedback WHERE mentor_id = ?");
-$avg_stmt->bind_param("i", $user_id);
-$avg_stmt->execute();
-$avg = $avg_stmt->get_result()->fetch_assoc();
-$avg_stmt->close();
+$avg = FeedbackRepository::averagesForMentor($con, $user_id);
 
 /*
  * Rating movement, month over month. Same rule as the Feedback page: it needs
  * a review in each of the two months to mean anything, so a mentor with only
  * one month of reviews sees the figure and no arrow.
  */
-$trend_stmt = $con->prepare("
-    SELECT AVG(CASE WHEN created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN rating END) AS this_avg,
-           AVG(CASE WHEN created_at >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01')
-                     AND created_at <  DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN rating END) AS prev_avg
-    FROM feedback WHERE mentor_id = ?
-");
-$trend_stmt->bind_param("i", $user_id);
-$trend_stmt->execute();
-$trend_row = $trend_stmt->get_result()->fetch_assoc();
-$trend_stmt->close();
+$trend_row = FeedbackRepository::monthTrendForMentor($con, $user_id);
 $rating_delta = null;
 if ($trend_row && $trend_row['this_avg'] !== null && $trend_row['prev_avg'] !== null) {
     $d = (float)$trend_row['this_avg'] - (float)$trend_row['prev_avg'];
@@ -174,46 +116,13 @@ if ($trend_row && $trend_row['this_avg'] !== null && $trend_row['prev_avg'] !== 
 }
 
 // created_at and the session subject feed the Recent Reviews rows.
-$reviews_stmt = $con->prepare("
-    SELECT f.comment, f.tags, f.rating, f.created_at, u.firstname, u.lastname, sr.subject
-    FROM feedback f
-    JOIN users u ON u.user_id = f.mentee_id
-    LEFT JOIN session_requests sr ON sr.request_id = f.session_id
-    WHERE f.mentor_id = ?
-    ORDER BY f.created_at DESC
-");
-$reviews_stmt->bind_param("i", $user_id);
-$reviews_stmt->execute();
-$reviews_result = $reviews_stmt->get_result();
-$reviews = [];
-while ($row = $reviews_result->fetch_assoc()) $reviews[] = $row;
-$reviews_stmt->close();
+$reviews = FeedbackRepository::reviewsWithSubjectForMentor($con, $user_id);
 
 // Badges earned
-$badges_stmt = $con->prepare("
-    SELECT b.name, b.description, b.criteria_type, ub.awarded_at, ub.awarded_by
-    FROM user_badges ub
-    JOIN badges b ON b.badge_id = ub.badge_id
-    WHERE ub.user_id = ? AND b.is_active = 1
-    ORDER BY ub.awarded_at DESC
-");
-$badges_stmt->bind_param("i", $user_id);
-$badges_stmt->execute();
-$my_badges = $badges_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$badges_stmt->close();
+$my_badges = AchievementRepository::activeBadgesFor($con, $user_id);
 
 // Certificates earned
-$certs_stmt = $con->prepare("
-    SELECT uc.cert_id, uc.achievement, uc.awarded_at, ct.name as template_name
-    FROM user_certificates uc
-    LEFT JOIN certificate_templates ct ON ct.template_id = uc.template_id
-    WHERE uc.user_id = ?
-    ORDER BY uc.awarded_at DESC
-");
-$certs_stmt->bind_param("i", $user_id);
-$certs_stmt->execute();
-$my_certs = $certs_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$certs_stmt->close();
+$my_certs = AchievementRepository::certificatesFor($con, $user_id);
 
 $active_page = 'profile';
 ?>

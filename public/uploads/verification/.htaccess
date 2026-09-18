@@ -1,0 +1,10 @@
+# Verification documents used to be kept here, where anyone could download
+# them. They now live in storage/verification and are served only through the
+# verification-file route; nothing in this folder may be served.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

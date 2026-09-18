@@ -26,17 +26,7 @@ if (!isset($_SESSION['user_id'])) {
 
 $user_id = (int)$_SESSION['user_id'];
 
-$stmt = $con->prepare("
-    SELECT u.role, v.status
-    FROM users u
-    LEFT JOIN user_verifications v ON v.user_id = u.user_id
-    WHERE u.user_id = ?
-    LIMIT 1
-");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$row = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+$row = VerificationRepository::statusWithRole($con, $user_id);
 
 $status = $row['status'] ?? 'none';
 $role   = $row['role']   ?? '';

@@ -46,14 +46,9 @@ $steps = ['interest', 'skill', 'learn'];
 // Already-answered? Then this is someone re-taking it from their Profile, so
 // pre-select what they have rather than making them start over.
 $existing = ['interest' => [], 'skill' => [], 'learn' => []];
-$tq = $con->prepare("SELECT tag_type, tag FROM user_tags WHERE user_id = ? ORDER BY tag_id ASC");
-$tq->bind_param("i", $user_id);
-$tq->execute();
-$tr = $tq->get_result();
-while ($row = $tr->fetch_assoc()) {
+foreach (ProfileRepository::tagsInOrderAdded($con, $user_id) as $row) {
     $existing[$row['tag_type']][] = $row['tag'];
 }
-$tq->close();
 
 // Tags this account already has that aren't in the catalog — free text typed
 // on the Profile page, or an earlier "Other". They're rendered as extra

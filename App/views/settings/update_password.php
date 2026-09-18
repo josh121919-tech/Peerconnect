@@ -20,9 +20,10 @@ if (!rate_limit('update_password_' . $_SESSION['user_id'], 5, 300)) {
 }
 
 $user_id            = (int)$_SESSION['user_id'];
-$current_password   = $_POST['current_password'] ?? '';
-$new_password       = $_POST['new_password'] ?? '';
-$confirm_new_password = $_POST['confirm_new_password'] ?? '';
+// A field sent as a list counts as missing.
+$current_password   = is_string($_POST['current_password'] ?? null) ? $_POST['current_password'] : '';
+$new_password       = is_string($_POST['new_password'] ?? null) ? $_POST['new_password'] : '';
+$confirm_new_password = is_string($_POST['confirm_new_password'] ?? null) ? $_POST['confirm_new_password'] : '';
 
 if ($current_password === '' || $new_password === '' || $confirm_new_password === '') {
     echo json_encode(['success' => false, 'message' => 'All fields are required.']);
@@ -61,6 +62,12 @@ $upd->bind_param("si", $hashed, $row['password_id']);
 $upd->execute();
 $upd->close();
 
+// "Remember me" on any other device stops working, as it does after a
+// password reset; this browser stays signed in. (A device that is signed in
+// right now keeps its current session until it ends — nothing checks a
+// session against the password, here or after a reset.)
+$signedOut = RememberService::forgetOtherDevices($con, (int)$user_id);
+
 // Recorded in the same log the sign-in flow writes to, so Settings → Security
 // can show "last changed" and list it under Recent Security Activity.
 try {
@@ -75,4 +82,6 @@ try {
     // Logging must never fail the password change itself.
 }
 
-echo json_encode(['success' => true, 'message' => 'Password updated.']);
+echo json_encode(['success' => true, 'message' => $signedOut > 0
+    ? 'Password updated. Other devices where you chose "Remember me" will ask you to sign in again.'
+    : 'Password updated.']);

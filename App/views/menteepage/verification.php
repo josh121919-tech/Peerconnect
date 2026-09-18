@@ -10,7 +10,7 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = (int)$_SESSION['user_id'];
 $errors  = [];
 
-$existing    = $con->query("SELECT * FROM user_verifications WHERE user_id = $user_id")->fetch_assoc();
+$existing    = VerificationRepository::forUser($con, $user_id);
 $status      = $existing['status']      ?? null;
 $admin_notes = $existing['admin_notes'] ?? null;
 
@@ -359,11 +359,14 @@ if (!$csrf_ok) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
-    $full_name  = trim($_POST['full_name']  ?? '');
-    $student_id = trim($_POST['student_id'] ?? '');
-    $course     = trim($_POST['course']     ?? '');
-    $year_level = trim($_POST['year_level'] ?? '');
-    $club       = trim($_POST['club']       ?? '');
+    // A field sent as a list counts as missing.
+    $field = fn(string $name): string => is_string($_POST[$name] ?? null) ? trim($_POST[$name]) : '';
+
+    $full_name  = $field('full_name');
+    $student_id = $field('student_id');
+    $course     = $field('course');
+    $year_level = $field('year_level');
+    $club       = $field('club');
 
     if (!$full_name)                                      $errors[] = "Full name is required.";
     elseif (!preg_match('/^[A-Za-z ,.\'-]{2,100}$/', $full_name)) $errors[] = "Full name: letters only, 2–100 characters.";
@@ -378,67 +381,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
     if (!$year_level)                                     $errors[] = "Year level is required.";
     elseif (!in_array($year_level, $allowed_levels, true)) $errors[] = "Please select a valid year level.";
 
+    // The column holds 100 characters; a longer name used to be cut short
+    // without a word.
     if (!$club)                                           $errors[] = "Club/Organization is required.";
-    elseif (strlen($club) > 150)                          $errors[] = "Club name must be 150 characters or fewer.";
+    elseif (mb_strlen($club) > 100)                       $errors[] = "Club name must be 100 characters or fewer.";
 
-    $id_image         = $existing['id_image']         ?? null;
-    $credential_image = $existing['credential_image'] ?? null;
+    // Both documents are checked before either is kept, and neither is kept
+    // unless the whole form is valid: a file used to be saved the moment it
+    // passed its own check, and left behind when anything else failed.
+    $id_file  = VerificationFiles::inspect($_FILES['id_image'] ?? null, 'Valid ID');
+    $cor_file = VerificationFiles::inspect($_FILES['credential_image'] ?? null, 'COR');
 
-    if (!empty($_FILES['id_image']['name'])) {
-        $allowed_exts  = ['jpg','jpeg','png','gif','webp','pdf'];
-        $allowed_mimes = ['image/jpeg','image/png','image/gif','image/webp','application/pdf'];
-        $id_ext  = strtolower(pathinfo($_FILES['id_image']['name'], PATHINFO_EXTENSION));
-        $id_mime = mime_content_type($_FILES['id_image']['tmp_name']);
-        if ($_FILES['id_image']['size'] > 3 * 1024 * 1024) {
-            $errors[] = "Valid ID must be less than 3MB.";
-        } elseif (!in_array($id_ext, $allowed_exts) || !in_array($id_mime, $allowed_mimes)) {
-            $errors[] = "Valid ID must be a JPG, PNG, GIF, WEBP, or PDF file.";
-        } else {
-            $id_image   = uniqid("id_") . "." . $id_ext;
-            $upload_dir = PUBLIC_PATH . "/uploads/verification/";
-            if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
-            move_uploaded_file($_FILES['id_image']['tmp_name'], $upload_dir . $id_image);
-        }
-    } elseif (!$existing) {
-        $errors[] = "Valid ID is required.";
+    if (!empty($id_file['error']))                        $errors[] = $id_file['error'];
+    elseif (!$id_file['present'] && !$existing)           $errors[] = "Valid ID is required.";
+
+    if (!empty($cor_file['error']))                       $errors[] = $cor_file['error'];
+    elseif (!$cor_file['present'] && !$existing)          $errors[] = "Certificate of Registration is required.";
+
+    $old_id           = $existing['id_image']         ?? null;
+    $old_cor          = $existing['credential_image'] ?? null;
+    $id_image         = $old_id;
+    $credential_image = $old_cor;
+    $stored           = [];
+
+    if (empty($errors) && !empty($id_file['ext'])) {
+        $id_image = VerificationFiles::store($_FILES['id_image'], 'id', $id_file['ext']);
+        if ($id_image === null) $errors[] = "Valid ID could not be saved. Please try again.";
+        else                    $stored[] = $id_image;
     }
-
-    if (!empty($_FILES['credential_image']['name'])) {
-        $allowed_exts  = ['jpg','jpeg','png','gif','webp','pdf'];
-        $allowed_mimes = ['image/jpeg','image/png','image/gif','image/webp','application/pdf'];
-        $cor_ext  = strtolower(pathinfo($_FILES['credential_image']['name'], PATHINFO_EXTENSION));
-        $cor_mime = mime_content_type($_FILES['credential_image']['tmp_name']);
-        if ($_FILES['credential_image']['size'] > 3 * 1024 * 1024) {
-            $errors[] = "COR must be less than 3MB.";
-        } elseif (!in_array($cor_ext, $allowed_exts) || !in_array($cor_mime, $allowed_mimes)) {
-            $errors[] = "COR must be a JPG, PNG, GIF, WEBP, or PDF file.";
-        } else {
-            $credential_image = uniqid("cor_") . "." . $cor_ext;
-            $upload_dir = PUBLIC_PATH . "/uploads/verification/";
-            if (!is_dir($upload_dir)) mkdir($upload_dir, 0755, true);
-            move_uploaded_file($_FILES['credential_image']['tmp_name'], $upload_dir . $credential_image);
-        }
-    } elseif (!$existing) {
-        $errors[] = "Certificate of Registration is required.";
+    if (empty($errors) && !empty($cor_file['ext'])) {
+        $credential_image = VerificationFiles::store($_FILES['credential_image'], 'cor', $cor_file['ext']);
+        if ($credential_image === null) $errors[] = "COR could not be saved. Please try again.";
+        else                            $stored[] = $credential_image;
+    }
+    if (!empty($errors)) {
+        // One document saved and the other did not: keep neither.
+        foreach ($stored as $f) VerificationFiles::remove($f);
     }
 
     if (empty($errors)) {
-        if ($existing) {
-            $stmt = $con->prepare("UPDATE user_verifications SET full_name=?, student_id=?, course=?, year_level=?, club=?, id_image=?, credential_image=?, status='pending', admin_notes=NULL, submitted_at=NOW(), reviewed_at=NULL WHERE user_id=?");
-            $stmt->bind_param("sssssssi", $full_name, $student_id, $course, $year_level, $club, $id_image, $credential_image, $user_id);
-        } else {
-            $stmt = $con->prepare("INSERT INTO user_verifications (user_id, full_name, student_id, course, year_level, club, id_image, credential_image, status, submitted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', NOW())");
-            $stmt->bind_param("isssssss", $user_id, $full_name, $student_id, $course, $year_level, $club, $id_image, $credential_image);
+        try {
+            VerificationRepository::submit($con, $user_id, [
+                'full_name'        => $full_name,
+                'student_id'       => $student_id,
+                'course'           => $course,
+                'year_level'       => $year_level,
+                'club'             => $club,
+                'id_image'         => $id_image,
+                'credential_image' => $credential_image,
+            ], (bool)$existing);
+        } catch (Throwable $e) {
+            foreach ($stored as $f) VerificationFiles::remove($f);
+            throw $e;
         }
-        $stmt->execute();
+
+        // The application points at the new documents now; the ones they
+        // replaced are nobody's any more.
+        if ($id_image !== $old_id)          VerificationFiles::remove($old_id);
+        if ($credential_image !== $old_cor) VerificationFiles::remove($old_cor);
         // NOTE: users.verified is intentionally NOT set here — it is granted only
-        // by admin approval (see admin/verify.php), not on submission.
+        // by admin approval (see admin/action_verify.php), not on submission.
         pc_flash('success', 'An admin will review it and you will be notified either way.', 'Verification submitted');
         header("Location: " . url('mentee-verification'));
         exit;
     }
 
-    $existing = $con->query("SELECT * FROM user_verifications WHERE user_id=$user_id")->fetch_assoc();
+    $existing = VerificationRepository::forUser($con, $user_id);
 }
 ?>
 <!DOCTYPE html>
@@ -895,7 +903,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
                         <div class="field-label" style="margin-bottom:8px;">Valid ID <sup style="color:var(--danger)">*</sup></div>
                         <label class="upload-zone" id="id-zone">
                             <?php if (!empty($existing['id_image'])): ?>
-                                <img src="<?= asset('uploads/verification/') ?><?= htmlspecialchars($existing['id_image']) ?>"
+                                <img src="<?= htmlspecialchars(VerificationFiles::url($existing['id_image'])) ?>"
                                     class="upload-preview" id="id-preview">
                             <?php else: ?>
                                 <img id="id-preview" class="upload-preview" style="display:none;">
@@ -917,7 +925,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
                         <div class="field-label" style="margin-bottom:8px;">Certificate of Registration <sup style="color:var(--danger)">*</sup></div>
                         <label class="upload-zone" id="cor-zone">
                             <?php if (!empty($existing['credential_image'])): ?>
-                                <img src="<?= asset('uploads/verification/') ?><?= htmlspecialchars($existing['credential_image']) ?>"
+                                <img src="<?= htmlspecialchars(VerificationFiles::url($existing['credential_image'])) ?>"
                                     class="upload-preview" id="cor-preview">
                             <?php else: ?>
                                 <img id="cor-preview" class="upload-preview" style="display:none;">

@@ -1,7 +1,7 @@
 <?php
 /**
- * action_verify.php
- * SECURITY: Uses prepared statements exclusively — no raw string interpolation.
+ * action_verify.php — an admin approves or rejects a verification application.
+ * SECURITY: admin-only, POST-only, CSRF-checked, prepared statements.
  */
 session_start();
 include __DIR__ . '/../db.php';
@@ -16,11 +16,13 @@ if (!verify_csrf()) {
     exit('CSRF token mismatch.');
 }
 
-$vid    = (int)($_POST['verification_id'] ?? 0);
-$raw    = $_POST['action'] ?? '';
-$notes  = trim($_POST['admin_notes'] ?? '');
+// A field sent as a list counts as missing.
+$field  = fn(string $name): string => is_string($_POST[$name] ?? null) ? $_POST[$name] : '';
+$vid    = (int)$field('verification_id');
+$raw    = $field('action');
+$notes  = trim($field('admin_notes'));
 
-$action = in_array($raw, ['approve', 'reject']) ? $raw : null;
+$action = in_array($raw, ['approve', 'reject'], true) ? $raw : null;
 
 if (!$vid || !$action) {
     header('Location: ' . url('admin-users') . '?tab=pending&error=missing');
@@ -29,38 +31,33 @@ if (!$vid || !$action) {
 
 $status = ($action === 'approve') ? 'approved' : 'rejected';
 
-$stmt = $con->prepare("UPDATE user_verifications SET status = ?, admin_notes = ?, reviewed_at = NOW() WHERE verification_id = ?");
-$stmt->bind_param("ssi", $status, $notes, $vid);
-$stmt->execute();
-$stmt->close();
+// Only an application still waiting is decided. Another admin may have got
+// there first, or this page may have been open since before the decision;
+// either way the earlier decision stands.
+if (VerificationRepository::decide($con, $vid, $status, $notes) < 1) {
+    if (VerificationRepository::ownerOf($con, $vid) === null) {
+        pc_flash('warning', 'That application could not be found, so nothing changed.', 'Not found');
+    } else {
+        pc_flash('warning', 'That application was already decided, so nothing changed.', 'Already decided');
+    }
+    header('Location: ' . url('admin-users') . '?tab=pending');
+    exit;
+}
 
-// Fetch user_id for notification + status update
-$fetch = $con->prepare("SELECT user_id FROM user_verifications WHERE verification_id = ?");
-$fetch->bind_param("i", $vid);
-$fetch->execute();
-$v = $fetch->get_result()->fetch_assoc();
-$fetch->close();
+$uid = VerificationRepository::ownerOf($con, $vid);
 
-if ($v) {
-    $uid = (int)$v['user_id'];
-
-    // Fetch user role to determine redirect link
-    $roleQ = $con->prepare("SELECT role FROM users WHERE user_id = ?");
-    $roleQ->bind_param("i", $uid);
-    $roleQ->execute();
-    $roleRow = $roleQ->get_result()->fetch_assoc();
-    $roleQ->close();
+if ($uid !== null) {
+    // Each role applies on its own page, so each is sent back to its own.
+    $isMentor = UserRepository::role($con, $uid) === 'mentor';
 
     if ($action === 'approve') {
-        $upd = $con->prepare("UPDATE users SET verified = 1, status = 'active' WHERE user_id = ?");
-        $upd->bind_param("i", $uid);
-        $upd->execute();
-        $upd->close();
+        // Verified, and nothing else: an approval does not lift a block or a
+        // restriction the account is under.
+        UserRepository::markVerified($con, $uid);
 
-        $dashLink = ($roleRow['role'] ?? '') === 'mentor' ? url('mentor-dashboard') : url('mentee-dashboard');
-        NotificationService::verificationApproved($con, $uid, $dashLink);
+        NotificationService::verificationApproved($con, $uid, url($isMentor ? 'mentor-dashboard' : 'mentee-dashboard'));
     } else {
-        NotificationService::verificationRejected($con, $uid, $notes, url('mentee-verification'));
+        NotificationService::verificationRejected($con, $uid, $notes, url($isMentor ? 'mentor-verification' : 'mentee-verification'));
     }
 
     pc_admin_log(($action === 'approve' ? 'approved' : 'rejected') . ' the verification of ' . pc_user_name($con, $uid));
@@ -68,7 +65,7 @@ if ($v) {
 
 // Verification lives inside User Management now, so come back to its queue.
 if ($action === 'approve') {
-    pc_flash('success', 'Application approved — the account is now active.', 'Approved');
+    pc_flash('success', 'Application approved — the account is now verified.', 'Approved');
 } else {
     pc_flash('success', 'Application rejected, and the applicant has been told why.', 'Rejected');
 }

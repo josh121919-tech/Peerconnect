@@ -14,24 +14,13 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'mentee') {
 $user_id = $mentee_id = (int)$_SESSION['user_id'];
 
 // ── Identity ─────────────────────────────────────────────────────────────
-$u = $con->prepare("SELECT firstname, lastname, email, created_at FROM users WHERE user_id = ?");
-$u->bind_param("i", $user_id);
-$u->execute();
-$account = $u->get_result()->fetch_assoc();
-$u->close();
+$account = UserRepository::accountBasics($con, $user_id);
 
 // verification holds what an admin approved; profile holds later edits.
-$v = $con->prepare("SELECT full_name, student_id, course, year_level, club FROM user_verifications WHERE user_id = ? AND status = 'approved' LIMIT 1");
-$v->bind_param("i", $user_id);
-$v->execute();
-$info = $v->get_result()->fetch_assoc() ?: [];
-$v->close();
+$info = VerificationRepository::approvedDetails($con, $user_id) ?: [];
 
-$p = $con->prepare("SELECT full_name, student_id, course, year_level, section, club, location, bio, profile_image FROM profile WHERE user_id = ? LIMIT 1");
-$p->bind_param("i", $user_id);
-$p->execute();
-$profile = $p->get_result()->fetch_assoc() ?: [];
-$p->close();
+$profile = ProfileRepository::fields($con, $user_id,
+    ['full_name', 'student_id', 'course', 'year_level', 'section', 'club', 'location', 'bio', 'profile_image']) ?: [];
 
 foreach (['full_name', 'student_id', 'course', 'year_level', 'club'] as $f) {
     if (!empty($profile[$f])) $info[$f] = $profile[$f];
@@ -42,73 +31,22 @@ $bio           = trim((string)($profile['bio'] ?? ''));
 
 // ── Tags ─────────────────────────────────────────────────────────────────
 $tags = ['interest' => [], 'skill' => [], 'learn' => []];
-$tq = $con->prepare("SELECT tag_type, tag FROM user_tags WHERE user_id = ? ORDER BY tag_id ASC");
-$tq->bind_param("i", $user_id);
-$tq->execute();
-$tr = $tq->get_result();
-while ($row = $tr->fetch_assoc()) {
+foreach (ProfileRepository::tagsInOrderAdded($con, $user_id) as $row) {
     $tags[$row['tag_type']][] = $row['tag'];
 }
-$tq->close();
 
 // ── Reviews this mentee has given ────────────────────────────────────────
-$rev = $con->prepare("SELECT ROUND(AVG(rating),1) avg_rating, COUNT(*) total FROM feedback WHERE mentee_id = ?");
-$rev->bind_param("i", $user_id);
-$rev->execute();
-$reviews = $rev->get_result()->fetch_assoc();
-$rev->close();
+$reviews = FeedbackRepository::givenSummaryForMentee($con, $user_id);
 
 // ── Next session ─────────────────────────────────────────────────────────
-$nx = $con->prepare("
-    SELECT sr.request_id, sr.subject, sr.session_date,
-           CONCAT(u.firstname,' ',u.lastname) AS mentor_name, pr.profile_image,
-           COALESCE(a.duration, 60) AS duration
-    FROM session_requests sr
-    JOIN users u ON u.user_id = sr.mentor_id
-    LEFT JOIN profile pr ON pr.user_id = sr.mentor_id
-    LEFT JOIN availability a
-           ON a.mentor_id = sr.mentor_id AND a.subject = sr.subject
-          AND DATE(a.date) = DATE(sr.session_date) AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE sr.mentee_id = ? AND sr.status = 'approved' AND sr.session_date >= NOW()
-    ORDER BY sr.session_date ASC LIMIT 1
-");
-$nx->bind_param("i", $user_id);
-$nx->execute();
-$next_session = $nx->get_result()->fetch_assoc();
-$nx->close();
+$next_session = SessionRepository::nextApprovedWithMentorForMentee($con, $user_id);
 
 // ── Recent activity — assembled from what actually happened ──────────────
-$activity = [];
-$aq = $con->query("
-    SELECT 'session' AS kind, sr.session_date AS ts,
-           CONCAT('Completed a session with ', u.firstname, ' ', u.lastname) AS text
-      FROM session_requests sr JOIN users u ON u.user_id = sr.mentor_id
-     WHERE sr.mentee_id = $user_id AND sr.status = 'completed'
-    UNION ALL
-    SELECT 'review', f.created_at,
-           CONCAT('Gave a ', FORMAT(f.rating,1), ' rating to ', u.firstname, ' ', u.lastname)
-      FROM feedback f JOIN users u ON u.user_id = f.mentor_id
-     WHERE f.mentee_id = $user_id
-    UNION ALL
-    SELECT 'assessment', at.submitted_at,
-           CONCAT('Completed the assessment \"', a.title, '\"')
-      FROM assessment_attempts at JOIN assessments a ON a.assessment_id = at.assessment_id
-     WHERE at.mentee_id = $user_id AND at.status = 'submitted'
-    UNION ALL
-    SELECT 'resource', r.created_at, CONCAT('Shared the resource \"', r.title, '\"')
-      FROM resources r WHERE r.uploader_id = $user_id AND r.is_active = 1
-    ORDER BY ts DESC LIMIT 6
-");
-if ($aq) $activity = $aq->fetch_all(MYSQLI_ASSOC);
+$activity = UserRepository::recentActivityForMentee($con, $user_id, 6);
 
 // ── Milestones — derived from real counts, not a badges table ────────────
 // (the badges table is mentor-only: Rising/Experienced/Master Mentor.)
-$counts = $con->query("
-    SELECT (SELECT COUNT(*) FROM session_requests WHERE mentee_id = $user_id AND status = 'completed') AS sessions,
-           (SELECT COUNT(*) FROM feedback WHERE mentee_id = $user_id) AS reviews,
-           (SELECT COUNT(*) FROM assessment_attempts WHERE mentee_id = $user_id AND status = 'submitted') AS assessments,
-           (SELECT COUNT(DISTINCT mentor_id) FROM session_requests WHERE mentee_id = $user_id AND status IN ('approved','completed')) AS mentors
-")->fetch_assoc();
+$counts = UserRepository::menteeMilestoneCounts($con, $user_id);
 
 $milestones = [
     ['First Mentorship', 'Complete your first mentoring session', (int)$counts['sessions'] >= 1, 'trophy'],

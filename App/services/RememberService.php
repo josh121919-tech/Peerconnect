@@ -121,6 +121,35 @@ class RememberService
         return $user_id;
     }
 
+    /**
+     * Signs the account out of "Remember me" everywhere except this browser,
+     * after its password was changed here. Returns how many were removed.
+     */
+    public static function forgetOtherDevices(mysqli $con, int $user_id): int
+    {
+        $keep = '';
+        if (is_string($_COOKIE[self::COOKIE] ?? null)) {
+            $keep = explode(':', $_COOKIE[self::COOKIE], 2)[0];
+        }
+        $stmt = $con->prepare("DELETE FROM remember_tokens WHERE user_id = ? AND selector <> ?");
+        $stmt->bind_param("is", $user_id, $keep);
+        $stmt->execute();
+        $removed = $stmt->affected_rows;
+        $stmt->close();
+        return $removed;
+    }
+
+    /** Signs the account out of "Remember me" on every device. Returns how many were removed. */
+    public static function forgetAllDevices(mysqli $con, int $user_id): int
+    {
+        $stmt = $con->prepare("DELETE FROM remember_tokens WHERE user_id = ?");
+        $stmt->bind_param("i", $user_id);
+        $stmt->execute();
+        $removed = $stmt->affected_rows;
+        $stmt->close();
+        return $removed;
+    }
+
     /** Drop this browser's token, and clear the cookie. Called on logout too. */
     public static function forget(mysqli $con): void
     {

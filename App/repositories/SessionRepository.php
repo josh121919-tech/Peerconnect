@@ -1111,4 +1111,68 @@ class SessionRepository extends Repository
             INSERT IGNORE INTO missed_session_logs (session_id, missed_by, detected_at) VALUES (?, ?, NOW())
         ", 'is', [$sessionId, $missedBy]);
     }
+
+    // ── Profile pages ───────────────────────────────────────────────────────
+
+    /**
+     * The mentee's next accepted session that has not started, with the
+     * mentor's 'mentor_name' and 'profile_image' and the slot's 'duration'
+     * (60 when the slot is gone); null when there is none.
+     */
+    public static function nextApprovedWithMentorForMentee(mysqli $con, int $menteeId): ?array
+    {
+        return self::typedRow($con, "
+            SELECT sr.request_id, sr.subject, sr.session_date,
+                   CONCAT(u.firstname,' ',u.lastname) AS mentor_name, pr.profile_image,
+                   COALESCE(a.duration, 60) AS duration
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentor_id
+            LEFT JOIN profile pr ON pr.user_id = sr.mentor_id
+            " . self::slotJoin() . "
+            WHERE sr.mentee_id = ? AND sr.status = 'approved' AND sr.session_date >= NOW()
+            ORDER BY sr.session_date ASC LIMIT 1
+        ", 'i', [$menteeId]);
+    }
+
+    /** How many of the mentor's completed sessions are dated this month. */
+    public static function countCompletedThisMonthForMentor(mysqli $con, int $mentorId): int
+    {
+        return (int)self::value($con, "
+            SELECT COUNT(*) c FROM session_requests
+            WHERE mentor_id = ? AND status = 'completed'
+              AND session_date >= DATE_FORMAT(CURDATE(), '%Y-%m-01')
+        ", 'i', [$mentorId]);
+    }
+
+    // ── An account that is closed ───────────────────────────────────────────
+
+    /**
+     * Every session the account takes part in that is still ahead — pending
+     * requests and accepted sessions that have not started — with both
+     * people's ids and names: 'request_id', 'status', 'subject',
+     * 'session_date', 'mentor_id', 'mentee_id', 'mentor_name', 'mentee_name'.
+     */
+    public static function openAheadForAccount(mysqli $con, int $userId): array
+    {
+        return self::typedRows($con, "
+            SELECT sr.request_id, sr.status, sr.subject, sr.session_date, sr.mentor_id, sr.mentee_id,
+                   CONCAT_WS(' ', mo.firstname, mo.lastname) AS mentor_name,
+                   CONCAT_WS(' ', me.firstname, me.lastname) AS mentee_name
+            FROM session_requests sr
+            JOIN users mo ON mo.user_id = sr.mentor_id
+            JOIN users me ON me.user_id = sr.mentee_id
+            WHERE (sr.mentor_id = ? OR sr.mentee_id = ?)
+              AND sr.status IN ('pending','approved') AND sr.session_date > NOW()
+            ORDER BY sr.session_date, sr.request_id
+        ", 'ii', [$userId, $userId]);
+    }
+
+    /** Cancels a session that is still pending or accepted, keeping $reason on it. Returns 1 when it changed. */
+    public static function cancelForClosedAccount(mysqli $con, int $sessionId, string $reason): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status = 'cancelled', rejection_reason = ?
+            WHERE request_id = ? AND status IN ('pending','approved')
+        ", 'si', [$reason, $sessionId]);
+    }
 }

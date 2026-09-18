@@ -20,15 +20,26 @@ class AchievementRepository extends Repository
         ", 'i', [$userId]);
     }
 
-    /** The user's certificates, newest first: 'achievement', 'awarded_at', 'generated_path', 'template_name' (null when the template is gone). */
+    /** The user's certificates, newest first: 'cert_id', 'achievement', 'awarded_at', 'generated_path', 'template_name' (null when the template is gone). */
     public static function certificatesFor(mysqli $con, int $userId): array
     {
         return self::typedRows($con, "
-            SELECT uc.achievement, uc.awarded_at, uc.generated_path, ct.name as template_name
+            SELECT uc.cert_id, uc.achievement, uc.awarded_at, uc.generated_path, ct.name as template_name
             FROM user_certificates uc
             LEFT JOIN certificate_templates ct ON ct.template_id = uc.template_id
             WHERE uc.user_id = ?
             ORDER BY uc.awarded_at DESC
         ", 'i', [$userId]);
+    }
+
+    /** How many of the user's badges are still active; with $thisMonth, only those awarded this month. */
+    public static function countActiveBadges(mysqli $con, int $userId, bool $thisMonth = false): int
+    {
+        return (int)self::value($con, "
+            SELECT COUNT(*) c FROM user_badges ub
+            JOIN badges b ON b.badge_id = ub.badge_id
+            WHERE ub.user_id = ? AND b.is_active = 1"
+            . ($thisMonth ? " AND ub.awarded_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01')" : ''),
+            'i', [$userId]);
     }
 }

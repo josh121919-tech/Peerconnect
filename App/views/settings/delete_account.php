@@ -26,42 +26,69 @@ $user_id = (int)$_SESSION['user_id'];
 // password (google-login.php gives them a random one at signup), which
 // would otherwise permanently lock those users out of ever deleting their
 // own account.
-$confirmEmail = trim($_POST['confirm_email'] ?? '');
+$confirmEmail = is_string($_POST['confirm_email'] ?? null) ? trim($_POST['confirm_email']) : '';
 $sessionEmail = trim($_SESSION['email'] ?? '');
 if ($confirmEmail === '' || $sessionEmail === '' || strcasecmp($confirmEmail, $sessionEmail) !== 0) {
     echo json_encode(['success' => false, 'message' => 'Email confirmation did not match.']);
     exit;
 }
 
+// Read before anything changes: the sessions still ahead (so the notices can
+// still name this person) and the application documents to delete.
+$ahead     = AccountClosureService::sessionsAhead($con, $user_id);
+$documents = VerificationRepository::filesOf($con, $user_id);
+$oldEmail  = (string)(UserRepository::email($con, $user_id) ?? '');
+
+// The activity log files entries under the email address. Once this account
+// lets go of its address someone else may sign up with it, and must not find
+// this account's history in their own Settings; it is refiled under a label
+// that still ties it to the account for admins.
+$logLabel = 'deleted-account-' . $user_id;
+
 $con->begin_transaction();
 try {
     // Revoke access the same way an admin block already does — reuses every
     // existing "blocked users can't log in / can't access pages" check
     // app-wide instead of introducing a new status value.
-    $reason = 'Account deleted by user request.';
-    $s1 = $con->prepare("INSERT INTO blocks (user_id, reason, blocked_at) VALUES (?, ?, NOW())");
-    $s1->bind_param("is", $user_id, $reason);
-    $s1->execute();
-    $s1->close();
+    ModerationRepository::recordBlock($con, $user_id, 'Account deleted by user request.');
 
-    $s2 = $con->prepare("UPDATE users SET status = 'blocked', email = NULL WHERE user_id = ?");
-    $s2->bind_param("i", $user_id);
-    $s2->execute();
-    $s2->close();
+    // No email, no username and no name: the account reads as "Deleted User"
+    // wherever other people's sessions, messages and reviews still show it.
+    UserRepository::closeDeletedAccount($con, $user_id);
 
-    // Clear identifying profile info; leave session/feedback/badge history
-    // intact so other users' records (a mentor's earned rating, a session
-    // history) aren't corrupted by this account's deletion.
-    $s4 = $con->prepare("UPDATE profile SET full_name = 'Deleted User', student_id = NULL, course = NULL, year_level = NULL, club = NULL, profile_image = NULL WHERE user_id = ?");
-    $s4->bind_param("i", $user_id);
-    $s4->execute();
-    $s4->close();
+    // Clear identifying profile and application details; leave
+    // session/feedback/badge history intact so other users' records (a
+    // mentor's earned rating, a session history) aren't corrupted by this
+    // account's deletion.
+    ProfileRepository::scrubForDeletedAccount($con, $user_id);
+    VerificationRepository::scrubForDeletedAccount($con, $user_id);
+
+    // "Remember me" on any device stops working.
+    RememberService::forgetAllDevices($con, $user_id);
+
+    if ($oldEmail !== '') {
+        LogRepository::moveToEmail($con, $oldEmail, $logLabel);
+    }
 
     $con->commit();
 } catch (Throwable $e) {
     $con->rollback();
     echo json_encode(['success' => false, 'message' => 'Something went wrong. Please try again.']);
     exit;
+}
+
+// The account is gone either way from here; what follows tidies up after it.
+logMe($logLabel, date('Y-m-d H:i:s'), 'account deleted by its owner');
+try {
+    // Sessions still ahead are called off, and the other person in each told.
+    AccountClosureService::cancelSessions($con, $user_id, $ahead);
+} catch (Throwable $e) {
+    // The missed-session job still closes them; the deletion stands.
+    error_log('Cancelling sessions of deleted account ' . $user_id . ' failed: ' . $e->getMessage());
+}
+// The student ID and registration form are not kept for a deleted account.
+foreach ($documents as $document) {
+    VerificationFiles::remove($document);
 }
 
 // Log the user out immediately.

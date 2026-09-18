@@ -156,4 +156,43 @@ class FeedbackRepository extends Repository
         }
         return $out;
     }
+
+    // ── Profile pages ───────────────────────────────────────────────────────
+
+    /** The ratings this mentee has given: 'avg_rating' (to one decimal, null when none) and 'total'. */
+    public static function givenSummaryForMentee(mysqli $con, int $menteeId): ?array
+    {
+        return self::typedRow($con, "SELECT ROUND(AVG(rating),1) avg_rating, COUNT(*) total FROM feedback WHERE mentee_id = ?", 'i', [$menteeId]);
+    }
+
+    /**
+     * The mentor's average rating from reviews left this month ('this_avg')
+     * and last month ('prev_avg'); each null when that month has none.
+     */
+    public static function monthTrendForMentor(mysqli $con, int $mentorId): ?array
+    {
+        return self::typedRow($con, "
+            SELECT AVG(CASE WHEN created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN rating END) AS this_avg,
+                   AVG(CASE WHEN created_at >= DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01')
+                             AND created_at <  DATE_FORMAT(CURDATE(), '%Y-%m-01') THEN rating END) AS prev_avg
+            FROM feedback WHERE mentor_id = ?
+        ", 'i', [$mentorId]);
+    }
+
+    /**
+     * Every review of the mentor, newest first, with the reviewer's name and
+     * the session's subject: 'comment', 'tags', 'rating', 'created_at',
+     * 'firstname', 'lastname', 'subject' (null when the session is gone).
+     */
+    public static function reviewsWithSubjectForMentor(mysqli $con, int $mentorId): array
+    {
+        return self::typedRows($con, "
+            SELECT f.comment, f.tags, f.rating, f.created_at, u.firstname, u.lastname, sr.subject
+            FROM feedback f
+            JOIN users u ON u.user_id = f.mentee_id
+            LEFT JOIN session_requests sr ON sr.request_id = f.session_id
+            WHERE f.mentor_id = ?
+            ORDER BY f.created_at DESC
+        ", 'i', [$mentorId]);
+    }
 }

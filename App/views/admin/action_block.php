@@ -48,7 +48,10 @@ if ($user_id === (int)($_SESSION['user_id'] ?? 0)) {
     exit;
 }
 
+$cancelled = 0;
 if ($user_id) {
+    // Read before the block, so the notices below can still name the person.
+    $ahead = AccountClosureService::sessionsAhead($con, $user_id);
 
     $s1 = $con->prepare("INSERT INTO blocks (user_id, reason, blocked_at) VALUES (?, ?, NOW())");
     $s1->bind_param("is", $user_id, $reason);
@@ -70,10 +73,18 @@ if ($user_id) {
     // Notify the blocked user, with the reason that was recorded.
     NotificationService::accountBlocked($con, $user_id, $reason);
 
+    // Their sessions still ahead cannot happen now. Called off, and the other
+    // person in each told, rather than left for the missed-session job to
+    // record as missed by both.
+    $cancelled = AccountClosureService::cancelSessions($con, $user_id, $ahead);
+
     // The reason itself is kept in `blocks`; the log says who and when.
-    pc_admin_log('blocked ' . pc_user_name($con, $user_id) . ($report_id ? ' from report #' . $report_id : ''));
+    pc_admin_log('blocked ' . pc_user_name($con, $user_id) . ($report_id ? ' from report #' . $report_id : '')
+        . ($cancelled ? ' and cancelled ' . $cancelled . ' upcoming session' . ($cancelled === 1 ? '' : 's') : ''));
 }
 
-pc_flash('success', 'Account blocked. They are signed out on their next request.', 'Blocked');
+pc_flash('success', 'Account blocked. They are signed out on their next request.'
+    . ($cancelled ? ' ' . $cancelled . ' upcoming session' . ($cancelled === 1 ? ' was' : 's were') . ' cancelled, and the other people told.' : ''),
+    'Blocked');
 header('Location: ' . $back);
 exit;
