@@ -1,21 +1,43 @@
 <?php
+
+/**
+ * google-login.php — "Continue with Google", for signing in and for signing up.
+ *
+ * Without ?code it starts the round trip: what the visitor asked for (sign in
+ * or sign up, the role, whether they came through the admin sign-in) is kept
+ * in the session and they are sent to Google. Google sends them back here
+ * with ?code, or with ?error when they pressed Cancel.
+ */
 require_once __DIR__ . '/../config/db.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-function redirect_with_error(string $message, string $mode = 'login'): void
+/**
+ * Back to the page the visitor started from, with $message shown on it.
+ * Errors used to go to the landing page, which shows none of them, so the
+ * message only surfaced the next time the visitor opened the sign-in page.
+ */
+function redirect_with_error(string $message, string $mode = 'login', bool $fromAdmin = false): void
 {
-    if ($mode === 'signup') {
+    if ($fromAdmin) {
+        $_SESSION['admin_login_error'] = $message;
+        header("Location: " . url('admin-login'));
+    } elseif ($mode === 'signup') {
         $_SESSION['signup_error'] = $message;
+        header("Location: " . url('signup'));
     } else {
         $_SESSION['login_error'] = $message;
+        header("Location: " . url('login'));
     }
-
-    header("Location: " . url('welcomepage'));
     exit;
 }
+
+/** A query-string value, or '' when it is missing or was sent as a list. */
+$query = fn(string $name): string => is_string($_GET[$name] ?? null) ? $_GET[$name] : '';
+
+const PC_REGISTRATION_CLOSED = 'New registrations are closed at the moment. Please check back later.';
 
 $clientId = $_ENV['GOOGLE_CLIENT_ID'] ?? '';
 $clientSecret = $_ENV['GOOGLE_CLIENT_SECRET'] ?? '';
@@ -38,9 +60,19 @@ $client->setIncludeGrantedScopes(true);
 $client->addScope('email');
 $client->addScope('profile');
 
-if (!isset($_GET['code'])) {
-    $mode = $_GET['mode'] ?? 'login';
-    $role = $_GET['role'] ?? '';
+// Cancel on Google's screen comes back with ?error and no code. That used to
+// count as a fresh start and send the visitor straight back to Google's
+// account chooser, having forgotten whether they were signing up.
+if ($query('code') === '' && isset($_GET['error'])) {
+    $saved = $_SESSION['google_oauth_state'] ?? [];
+    unset($_SESSION['google_oauth_state']);
+    $mode = ($saved['mode'] ?? '') === 'signup' ? 'signup' : 'login';
+    redirect_with_error($mode === 'signup' ? 'Google sign-up was cancelled.' : 'Google sign-in was cancelled.', $mode, !empty($saved['adm']));
+}
+
+if ($query('code') === '') {
+    $mode = $query('mode') ?: 'login';
+    $role = $query('role');
 
     if (!in_array($mode, ['login', 'signup'], true)) {
         $mode = 'login';
@@ -50,13 +82,19 @@ if (!isset($_GET['code'])) {
         redirect_with_error('Please select a role before continuing with Google.', 'signup');
     }
 
+    // Closing registration in System Settings closes it here too; Google
+    // sign-up used to create accounts regardless.
+    if ($mode === 'signup' && !pc_setting_bool($con, 'allow_registration')) {
+        redirect_with_error(PC_REGISTRATION_CLOSED, 'signup');
+    }
+
     $statePayload = [
         'mode' => $mode,
         'role' => $role,
         // Set by the admin login page's Google button. It travels in the
         // state payload rather than a plain query string on the callback so
         // it cannot be flipped by whoever lands back here.
-        'adm'  => ($_GET['from'] ?? '') === 'admin',
+        'adm'  => $query('from') === 'admin',
         'csrf' => bin2hex(random_bytes(16)),
     ];
 
@@ -67,8 +105,7 @@ if (!isset($_GET['code'])) {
     exit;
 }
 
-$state = $_GET['state'] ?? '';
-$decodedState = json_decode(base64_decode($state, true), true);
+$decodedState = json_decode((string)base64_decode($query('state'), true), true);
 $savedState = $_SESSION['google_oauth_state'] ?? null;
 unset($_SESSION['google_oauth_state']);
 
@@ -83,10 +120,10 @@ $mode = $savedState['mode'] ?? 'login';
 $role = $savedState['role'] ?? '';
 $cameFromAdmin = !empty($savedState['adm']);
 
-$token = $client->fetchAccessTokenWithAuthCode($_GET['code']);
+$token = $client->fetchAccessTokenWithAuthCode($query('code'));
 
 if (isset($token['error'])) {
-    redirect_with_error('Google authentication failed. Please try again.', $mode);
+    redirect_with_error('Google authentication failed. Please try again.', $mode, $cameFromAdmin);
 }
 
 $client->setAccessToken($token);
@@ -95,35 +132,48 @@ $oauth = new Google\Service\Oauth2($client);
 try {
     $googleUser = $oauth->userinfo->get();
 } catch (\Throwable $e) {
-    redirect_with_error('Google authentication failed. Please try again.', $mode);
+    redirect_with_error('Google authentication failed. Please try again.', $mode, $cameFromAdmin);
 }
 
 $email = trim((string) ($googleUser->email ?? ''));
-$firstname = trim((string) ($googleUser->givenName ?? ''));
+// Google's names are cut to the 50 characters the account keeps, rather
+// than left for the database to cut short.
+$firstname = mb_substr(trim((string) ($googleUser->givenName ?? '')), 0, UserRepository::NAME_MAX);
 $middlename = '';
-$lastname = trim((string) ($googleUser->familyName ?? ''));
+$lastname = mb_substr(trim((string) ($googleUser->familyName ?? '')), 0, UserRepository::NAME_MAX);
 
 if ($email === '') {
-    redirect_with_error('Google did not return an email address.', $mode);
+    redirect_with_error('Google did not return an email address.', $mode, $cameFromAdmin);
 }
 
-$stmt = $con->prepare("
-    SELECT u.user_id, u.role
-    FROM users u
-    WHERE u.email = ?
-");
-$stmt->bind_param("s", $email);
-$stmt->execute();
-$stmt->store_result();
+// Google only hands over addresses it has verified, but it says so in the
+// answer, and an address it has not verified proves nothing about who owns it.
+if (($googleUser->verifiedEmail ?? null) === false) {
+    redirect_with_error('Google has not verified the email address on that account, so it cannot be used to sign in here.', $mode, $cameFromAdmin);
+}
 
-if ($stmt->num_rows === 1) {
-    $stmt->bind_result($user_id, $existingRole);
-    $stmt->fetch();
-    $stmt->close();
+$account = UserRepository::signInByEmail($con, $email);
+
+if ($account !== null) {
+    $user_id      = (int)$account['user_id'];
+    $existingRole = (string)$account['role'];
 
     // If user is trying to SIGN UP but the email is already registered, block it
     if ($mode === 'signup') {
         redirect_with_error('This Google account is already registered. Please log in instead.', 'signup');
+    }
+
+    // A blocked account is turned away here, as the password sign-in does.
+    // It used to be signed in, recorded as a sign-in, and only thrown out on
+    // the next page it opened.
+    if ($account['status'] === 'blocked') {
+        redirect_with_error(SignInService::BLOCKED_MESSAGE, 'login', $cameFromAdmin);
+    }
+
+    // Arrived through the admin door? Then only an admin may pass, and a
+    // member is turned away before being signed in rather than after.
+    if ($cameFromAdmin && $existingRole !== 'admin') {
+        redirect_with_error('That Google account is not an administrator.', 'login', true);
     }
 
     // SECURITY: Regenerate session ID after login to prevent session fixation
@@ -136,50 +186,12 @@ if ($stmt->num_rows === 1) {
 
     logMe($email, date('Y-m-d H:i:s'), "user login via google");
 
-    // Check verification status before redirecting
-    $row = $con->query("SELECT verified, status FROM users WHERE user_id = $user_id")->fetch_assoc();
-
-    // Arrived through the admin door? Then only an admin may pass. Without
-    // this, a mentee's Google account signed in fine and was dropped on a
-    // dashboard they cannot open.
-    if ($cameFromAdmin && $existingRole !== 'admin') {
-        session_regenerate_id(true);
-        $_SESSION = [];
-        $_SESSION['admin_login_error'] = 'That Google account is not an administrator.';
-        header("Location: " . url('admin-login'));
-        exit;
-    }
-
-    // Admins have no verification step and their own dashboard; they used to
-    // fall through to the mentee side of both branches below.
-    if ($existingRole === 'admin') {
-        header("Location: " . url('admin-dashboard'));
-        exit;
-    }
-
-    if ($row['status'] !== 'active' || !$row['verified']) {
-        if ($existingRole === 'mentor') {
-            header("Location: " . url('mentor-verification'));
-        } else {
-            header("Location: " . url('mentee-verification'));
-        }
-        exit;
-    }
-
-    if ($existingRole === 'mentor') {
-        header("Location: " . url('mentor-dashboard'));
-    } else {
-        header("Location: " . url('mentee-dashboard'));
-    }
+    header("Location: " . SignInService::destination($existingRole, $account['status'], $account['verified']));
     exit;
 }
 
-$stmt->close();
-
 if ($cameFromAdmin) {
-    $_SESSION['admin_login_error'] = 'No administrator account uses that Google email.';
-    header("Location: " . url('admin-login'));
-    exit;
+    redirect_with_error('No administrator account uses that Google email.', 'login', true);
 }
 
 if ($mode !== 'signup') {
@@ -190,6 +202,12 @@ if (!in_array($role, ['mentee', 'mentor'], true)) {
     redirect_with_error('Please select a role before continuing with Google.', 'signup');
 }
 
+// Checked again on the way back: registration may have closed while the
+// visitor was on Google's screen.
+if (!pc_setting_bool($con, 'allow_registration')) {
+    redirect_with_error(PC_REGISTRATION_CLOSED, 'signup');
+}
+
 if ($firstname === '') {
     $firstname = 'Google';
 }
@@ -198,25 +216,12 @@ if ($lastname === '') {
     $lastname = 'User';
 }
 
-$con->begin_transaction();
-
+// The account gets no password. It used to get a random one nobody knew,
+// which made Settings say a password was set and ask for it before an email
+// change. The owner can add a real one through Forgot password.
 try {
-    // users.email is the one place an address is stored.
-    $stmt1 = $con->prepare("INSERT INTO users (firstname, middlename, lastname, role, email) VALUES (?, ?, ?, ?, ?)");
-    $stmt1->bind_param("sssss", $firstname, $middlename, $lastname, $role, $email);
-    $stmt1->execute();
-    $user_id = $stmt1->insert_id;
-    $stmt1->close();
-
-    $randomPasswordHash = password_hash(bin2hex(random_bytes(24)), PASSWORD_BCRYPT);
-    $stmt3 = $con->prepare("INSERT INTO passwords (user_id, password_hash) VALUES (?, ?)");
-    $stmt3->bind_param("is", $user_id, $randomPasswordHash);
-    $stmt3->execute();
-    $stmt3->close();
-
-    $con->commit();
-} catch (Exception $e) {
-    $con->rollback();
+    $user_id = UserRepository::createMember($con, $firstname, $middlename, $lastname, $role, $email);
+} catch (Throwable $e) {
     redirect_with_error('Google sign-up failed. Please try again.', 'signup');
 }
 

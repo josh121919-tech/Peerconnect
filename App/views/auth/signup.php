@@ -32,14 +32,19 @@ $form = ['firstname' => '', 'middlename' => '', 'lastname' => '', 'email' => '',
 
 /*
  * Registration can be closed from System Settings → General. Closing it has
- * to hold on the POST as well as hide the form — otherwise a page left open
- * in a tab still creates accounts after it was turned off.
+ * to hold on the POST — otherwise a page left open in a tab still creates
+ * accounts after it was turned off — and on Google sign-up, which checks the
+ * same setting. The notice shows as soon as the page opens, rather than after
+ * someone has filled the whole form in.
  */
 $registration_open = pc_setting_bool($con, 'allow_registration');
-$pw_min = max(6, min(20, pc_setting_int($con, 'password_min_length', 8)));
+$pw_min = PasswordPolicy::minLength($con);
+$closed_message = 'New registrations are closed at the moment. Please check back later.';
 
 if (!$registration_open && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['signup'])) {
-    $signup_error = 'New registrations are closed at the moment. Please check back later.';
+    $signup_error = $closed_message;
+} elseif (!$registration_open && $signup_error === '') {
+    $signup_error = $closed_message;
 } elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['signup'])) {
     if (!verify_csrf()) {
         $_SESSION['signup_error'] = "Invalid request. Please try again.";
@@ -47,18 +52,21 @@ if (!$registration_open && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST
         exit;
     }
 
-    $form['firstname']  = trim((string)($_POST['firstname'] ?? ''));
-    $form['middlename'] = trim((string)($_POST['middlename'] ?? ''));
-    $form['lastname']   = trim((string)($_POST['lastname'] ?? ''));
-    $form['email']      = trim((string)($_POST['email'] ?? ''));
-    $form['role']       = (string)($_POST['role'] ?? '');
+    // A field sent as a list counts as empty, never as the text "Array".
+    $field = fn(string $name): string => is_string($_POST[$name] ?? null) ? $_POST[$name] : '';
+
+    $form['firstname']  = trim($field('firstname'));
+    $form['middlename'] = trim($field('middlename'));
+    $form['lastname']   = trim($field('lastname'));
+    $form['email']      = trim($field('email'));
+    $form['role']       = $field('role');
 
     $firstname  = $form['firstname'];
     $middlename = $form['middlename'];
     $lastname   = $form['lastname'];
     $email      = $form['email'];
-    $password = (string)($_POST['password'] ?? '');
-    $confirm  = (string)($_POST['confirm_password'] ?? '');
+    $password = $field('password');
+    $confirm  = $field('confirm_password');
     $role     = $form['role'];
     $agreed   = !empty($_POST['agree_terms']);
 
@@ -72,51 +80,37 @@ if (!$registration_open && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST
         $signup_error = "Middle name contains invalid characters.";
     } elseif (!preg_match($name_ok, $lastname)) {
         $signup_error = "Last name contains invalid characters.";
+    } elseif (mb_strlen($firstname) > UserRepository::NAME_MAX || mb_strlen($lastname) > UserRepository::NAME_MAX) {
+        // The columns hold 50 characters, and a longer name used to be cut short.
+        $signup_error = "First and last names can each be up to " . UserRepository::NAME_MAX . " characters.";
+    } elseif (mb_strlen($middlename) > 100) {
+        $signup_error = "Middle name can be up to 100 characters.";
     } elseif (strlen($email) > 100) {
         $signup_error = "That email address is too long.";
     } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $signup_error = "Invalid email format.";
     } elseif ($password !== $confirm) {
         $signup_error = "Passwords do not match.";
-    } elseif (!preg_match("/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@#$%^&*!?])[A-Za-z\d@#$%^&*!?]{" . $pw_min . ",20}$/", $password)) {
-        $signup_error = "Password must be {$pw_min}–20 characters and include uppercase, lowercase, a number, and one of @#$%^&*!?";
+    } elseif (($pw_problem = PasswordPolicy::problem($password, $pw_min)) !== null) {
+        $signup_error = $pw_problem;
     } elseif (!in_array($role, ['mentee', 'mentor'], true)) {
         $signup_error = "Please choose how you want to use PeerConnect.";
     } elseif (!$agreed) {
         $signup_error = "Please accept the Terms of Service and Privacy Policy to continue.";
     } else {
-        $recaptcha_response = $_POST['g-recaptcha-response'] ?? '';
-        // Settings can turn the check off; an empty secret already did.
-        $recaptcha_secret   = pc_setting_bool($con, 'captcha_enable') ? ($_ENV['RECAPTCHA_SECRET_KEY'] ?? '') : '';
-        $verify        = @file_get_contents("https://www.google.com/recaptcha/api/siteverify?secret={$recaptcha_secret}&response={$recaptcha_response}");
-        $response_data = $verify !== false ? json_decode($verify) : null;
-
-        if (!$response_data || empty($response_data->success)) {
+        // Always required. There used to be a switch in System Settings that
+        // hid the CAPTCHA box without lifting the check behind it, so turning
+        // it off stopped anyone from signing up at all.
+        if (!CaptchaService::verify($_POST['g-recaptcha-response'] ?? null)) {
             $signup_error = "Please complete the CAPTCHA verification.";
         } else {
-            $dupe = $con->prepare("SELECT 1 FROM users WHERE email = ? LIMIT 1");
-            $dupe->bind_param("s", $email);
-            $dupe->execute();
-            $dupe->store_result();
-            $already = $dupe->num_rows > 0;
-            $dupe->close();
-
-            if ($already) {
+            if (UserRepository::emailTaken($con, $email)) {
                 $signup_error = "This email is already registered. Try logging in instead.";
             } else {
                 $con->begin_transaction();
                 try {
-                    $stmt1 = $con->prepare("INSERT INTO users (firstname, middlename, lastname, role, email) VALUES (?, ?, ?, ?, ?)");
-                    $stmt1->bind_param("sssss", $firstname, $middlename, $lastname, $role, $email);
-                    $stmt1->execute();
-                    $new_user_id = $stmt1->insert_id;
-                    $stmt1->close();
-
-                    $hashed = password_hash($password, PASSWORD_BCRYPT);
-                    $stmt3 = $con->prepare("INSERT INTO passwords (user_id, password_hash) VALUES (?, ?)");
-                    $stmt3->bind_param("is", $new_user_id, $hashed);
-                    $stmt3->execute();
-                    $stmt3->close();
+                    $new_user_id = UserRepository::createMember($con, $firstname, $middlename, $lastname, $role, $email);
+                    PasswordRepository::create($con, $new_user_id, password_hash($password, PASSWORD_BCRYPT));
 
                     $con->commit();
 
@@ -142,7 +136,7 @@ if (!$registration_open && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST
     }
 }
 
-$recaptcha_site_key = pc_setting_bool($con, 'captcha_enable') ? ($_ENV['RECAPTCHA_SITE_KEY'] ?? '') : '';
+$recaptcha_site_key = CaptchaService::siteKey();
 $hero_art     = 'images/background.png';
 $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
 $csrf         = csrf_token();
@@ -316,7 +310,7 @@ $sell_icons = [
                         <!-- Exactly the rules the server enforces, so the form can
                              never call a password strong that the server rejects. -->
                         <ul class="su-rules" id="su-rules">
-                            <li data-rule="len"><span class="su-rule-i"></span>8&ndash;20 characters</li>
+                            <li data-rule="len"><span class="su-rule-i"></span><?= $pw_min ?>&ndash;20 characters</li>
                             <li data-rule="upper"><span class="su-rule-i"></span>Uppercase</li>
                             <li data-rule="lower"><span class="su-rule-i"></span>Lowercase</li>
                             <li data-rule="num"><span class="su-rule-i"></span>Number</li>
@@ -519,7 +513,7 @@ $sell_icons = [
 
             function checks(v) {
                 return {
-                    len: v.length >= 8 && v.length <= 20,
+                    len: v.length >= <?= (int)$pw_min ?> && v.length <= 20,
                     upper: /[A-Z]/.test(v),
                     lower: /[a-z]/.test(v),
                     num: /\d/.test(v),

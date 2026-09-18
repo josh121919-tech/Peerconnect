@@ -17,4 +17,23 @@ class LogRepository extends Repository
     {
         return self::execute($con, "UPDATE logs SET email = ? WHERE email = ?", 'ss', [$to, $from]);
     }
+
+    /** Records $activity under $email, timed by the database clock. */
+    public static function add(mysqli $con, string $email, string $activity): void
+    {
+        self::execute($con, "INSERT INTO logs (email, activity, log_date) VALUES (?, ?, NOW())", 'ss', [$email, $activity]);
+    }
+
+    /** The newest entries under $email, as 'activity' and 'log_date'. */
+    public static function recentFor(mysqli $con, string $email, int $limit): array
+    {
+        return self::typedRows($con, "SELECT activity, log_date FROM logs WHERE email = ? ORDER BY log_date DESC LIMIT ?", 'si', [$email, $limit]);
+    }
+
+    /** When any of $activities was last recorded under $email, or null when none ever was. */
+    public static function lastTime(mysqli $con, string $email, array $activities): ?string
+    {
+        return self::value($con, "SELECT MAX(log_date) FROM logs WHERE email = ? AND activity IN (" . self::marks($activities) . ")",
+            's' . str_repeat('s', count($activities)), array_merge([$email], array_values($activities)));
+    }
 }

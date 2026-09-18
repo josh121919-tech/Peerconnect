@@ -21,7 +21,7 @@ $login_error = '';
 // account an admin blocked mid-session. Without this the redirect looked like
 // an ordinary logout and the person had no idea why.
 if (isset($_GET['blocked'])) {
-    $login_error = "Your account has been blocked. Please contact the administrator.";
+    $login_error = SignInService::BLOCKED_MESSAGE;
 }
 if (isset($_SESSION['login_error'])) {
     $login_error = $_SESSION['login_error'];
@@ -42,21 +42,6 @@ if (isset($_SESSION['login_notice'])) {
  */
 if (!defined('PC_LOGIN_DUMMY_HASH')) {
     define('PC_LOGIN_DUMMY_HASH', '$2y$10$33tyLMF9N4RKQe695YaOKOwcr4QIDFaGDjhVBd5PCi2yTw9r6RonG');
-}
-
-/** Where a signed-in account belongs, given its state. */
-function login_destination(string $role, ?string $status, $verified): string
-{
-    // Admins have no verification step and their own dashboard. Falling
-    // through the mentor/mentee ternary sent them to the mentee dashboard,
-    // which now bounces them straight back out again.
-    if ($role === 'admin') {
-        return url('admin-dashboard');
-    }
-    if ($status !== 'active' || !$verified) {
-        return url($role === 'mentor' ? 'mentor-verification' : 'mentee-verification');
-    }
-    return url($role === 'mentor' ? 'mentor-dashboard' : 'mentee-dashboard');
 }
 
 // Already signed in? Nothing to do here.
@@ -81,9 +66,9 @@ $is_login_post = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])
 $wants_form    = isset($_GET['switch']);
 
 if (!$is_login_post && !$wants_form && ($remembered = RememberService::attempt($con))) {
-    $row = $con->query("SELECT role, status, verified FROM users WHERE user_id = " . (int)$remembered)->fetch_assoc();
+    $row = UserRepository::signInState($con, (int)$remembered);
     if ($row) {
-        header("Location: " . login_destination($row['role'], $row['status'], $row['verified']));
+        header("Location: " . SignInService::destination((string)$row['role'], $row['status'], $row['verified']));
         exit;
     }
 }
@@ -95,8 +80,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
         exit;
     }
 
-    $email    = trim($_POST['email'] ?? '');
-    $password = trim($_POST['password'] ?? '');
+    // A field sent as a list counts as empty; trim() used to fail on it.
+    $field    = fn(string $name): string => is_string($_POST[$name] ?? null) ? $_POST[$name] : '';
+    $email    = trim($field('email'));
+    $password = trim($field('password'));
     $remember = !empty($_POST['remember']);
 
     // How many tries and how long the lock lasts come from System Settings →
@@ -125,40 +112,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
         }
 
         if ($login_error === '') {
-            $recaptcha_response = $_POST['g-recaptcha-response'] ?? '';
-            $recaptcha_secret   = $_ENV['RECAPTCHA_SECRET_KEY'] ?? '';
-            $verify        = @file_get_contents("https://www.google.com/recaptcha/api/siteverify?secret={$recaptcha_secret}&response={$recaptcha_response}");
-            $response_data = $verify !== false ? json_decode($verify) : null;
-
-            if (!$response_data || empty($response_data->success)) {
+            if (!CaptchaService::verify($_POST['g-recaptcha-response'] ?? null)) {
                 $login_error = "Please complete the CAPTCHA verification.";
             } elseif ($email === '' || $password === '') {
                 $login_error = "All fields are required.";
             } else {
-                $stmt = $con->prepare("
-                    SELECT u.user_id, u.role, u.status, u.verified
-                    FROM users u WHERE u.email = ?
-                    LIMIT 1
-                ");
-                $stmt->bind_param("s", $email);
-                $stmt->execute();
-                $stmt->store_result();
-                $stmt->bind_result($user_id, $role, $user_status, $verified);
-                $found = $stmt->num_rows === 1 && $stmt->fetch();
-                $stmt->close();
+                $account     = UserRepository::signInByEmail($con, $email);
+                $found       = $account !== null;
+                $user_id     = $account['user_id'] ?? null;
+                $role        = $account['role'] ?? null;
+                $user_status = $account['status'] ?? null;
+                $verified    = $account['verified'] ?? null;
 
+                // An account made with Google has no password, and cannot
+                // sign in with one until its owner sets one.
                 $password_id   = null;
                 $password_hash = '';
                 if ($found) {
-                    $stmt2 = $con->prepare("SELECT password_id, password_hash FROM passwords WHERE user_id = ?");
-                    $stmt2->bind_param("i", $user_id);
-                    $stmt2->execute();
-                    $stmt2->store_result();
-                    $stmt2->bind_result($password_id, $password_hash);
-                    if ($stmt2->num_rows !== 1 || !$stmt2->fetch()) {
+                    $pw = PasswordRepository::forUser($con, (int)$user_id);
+                    if ($pw === null) {
                         $found = false;
+                    } else {
+                        $password_id   = $pw['password_id'];
+                        $password_hash = $pw['password_hash'];
                     }
-                    $stmt2->close();
                 }
 
                 // Verify the password FIRST, then decide what to say.
@@ -188,7 +165,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
                 }
 
                 if ($password_ok && $user_status === 'blocked') {
-                    $login_error = "Your account has been blocked. Please contact the administrator.";
+                    $login_error = SignInService::BLOCKED_MESSAGE;
                 } elseif ($password_ok) {
                     // One good sign-in forgets the failures for this pair.
                     pc_throttle_clear($con, $throttle);
@@ -215,7 +192,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
                     }
 
                     logMe($email, date('Y-m-d H:i:s'), "user login");
-                    header("Location: " . login_destination($role, $user_status, $verified));
+                    header("Location: " . SignInService::destination((string)$role, $user_status, $verified));
                     exit;
                 } else {
                     // One message whether the address is unknown or the password
@@ -238,7 +215,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
     }
 }
 
-$recaptcha_site_key = $_ENV['RECAPTCHA_SITE_KEY'] ?? '';
+$recaptcha_site_key = CaptchaService::siteKey();
 $hero_art     = 'images/background.png';
 $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
 $csrf         = csrf_token();
@@ -376,7 +353,7 @@ $back_url     = pc_back_url();
                             </svg>
                             <input id="login-email" type="email" name="email" required maxlength="100"
                                 autocomplete="email" placeholder="Enter your email"
-                                value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
+                                value="<?= htmlspecialchars($email ?? '') ?>">
                         </div>
                     </div>
 

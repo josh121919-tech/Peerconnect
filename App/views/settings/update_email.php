@@ -40,25 +40,21 @@ if ($password === '') {
     exit;
 }
 
-$stmt = $con->prepare("SELECT password_hash FROM passwords WHERE user_id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$row = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+$row = PasswordRepository::forUser($con, $user_id);
 
-if (!$row || !password_verify($password, $row['password_hash'])) {
+if (!$row) {
+    // An account made with Google has no password to confirm the change with.
+    echo json_encode(['success' => false, 'message' => 'This account has no password yet. Use Forgot password to add one, then change your email here.']);
+    exit;
+}
+
+if (!password_verify($password, $row['password_hash'])) {
     echo json_encode(['success' => false, 'message' => 'Incorrect password.']);
     exit;
 }
 
 // Taken by anyone else? This user's own current address is excluded.
-$dupCheck = $con->prepare("SELECT user_id FROM users WHERE email = ? AND user_id != ?");
-$dupCheck->bind_param("si", $new_email, $user_id);
-$dupCheck->execute();
-$isDuplicate = $dupCheck->get_result()->num_rows > 0;
-$dupCheck->close();
-
-if ($isDuplicate) {
+if (UserRepository::emailTaken($con, $new_email, $user_id)) {
     echo json_encode(['success' => false, 'message' => 'That email is already in use.']);
     exit;
 }
@@ -67,10 +63,7 @@ $old_email = (string)(UserRepository::email($con, $user_id) ?? '');
 
 $con->begin_transaction();
 try {
-    $upd = $con->prepare("UPDATE users SET email = ? WHERE user_id = ?");
-    $upd->bind_param("si", $new_email, $user_id);
-    $upd->execute();
-    $upd->close();
+    UserRepository::setEmail($con, $user_id, $new_email);
 
     // The activity log files entries under the address. Moving them keeps
     // this account's history (sign-ins, password changes) with it, rather

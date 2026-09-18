@@ -153,9 +153,9 @@ class PasswordResetService
                 return false;
             }
 
-            // Every account has a passwords row (signup and Google sign-up both
-            // create one), but an UPDATE that matched nothing would silently
-            // leave the old password in place, so insert if it is ever missing.
+            // An account made with Google has no passwords row until its first
+            // reset, which is how it adds a password; an UPDATE that matched
+            // nothing would leave it without one, so insert when it is missing.
             $stmt = $con->prepare("UPDATE passwords SET password_hash = ? WHERE user_id = ?");
             $stmt->bind_param("si", $hash, $user_id);
             $stmt->execute();

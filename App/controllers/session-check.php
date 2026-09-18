@@ -17,15 +17,7 @@ function force_logout(string $redirect): void {
     // Clean up DB token if exists
     global $con;
     if (isset($_SESSION['password_id']) && isset($_SESSION['token'])) {
-        $stmt = $con->prepare("UPDATE passwords SET token_id = NULL WHERE password_id = ?");
-        $stmt->bind_param("i", $_SESSION['password_id']);
-        $stmt->execute();
-        $stmt->close();
-
-        $stmt = $con->prepare("DELETE FROM tokens WHERE token = ?");
-        $stmt->bind_param("s", $_SESSION['token']);
-        $stmt->execute();
-        $stmt->close();
+        LoginTokenService::revoke($con, (int)$_SESSION['password_id'], (string)$_SESSION['token']);
     }
 
     $_SESSION = [];
@@ -61,18 +53,7 @@ session_regenerate_id(true);
 // which the version of this check that lived here before would have done.
 // Only login.php sets password_id, and only it mints a real token.
 if (isset($_SESSION['password_id'], $_SESSION['token'])) {
-    $stmt = $con->prepare("
-        SELECT p.password_id
-        FROM tokens t
-        JOIN passwords p ON p.token_id = t.token_id
-        WHERE t.token = ? AND p.password_id = ?
-    ");
-    $stmt->bind_param('si', $_SESSION['token'], $_SESSION['password_id']);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if ($row === null) {
+    if (!LoginTokenService::isCurrent($con, (string)$_SESSION['token'], (int)$_SESSION['password_id'])) {
         // Revoked: signed out elsewhere, or a password reset cleared it.
         force_logout($login_url);
     }

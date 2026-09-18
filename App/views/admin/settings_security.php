@@ -9,8 +9,9 @@
  * checks for it is worse than no switch. What is here is wired:
  *
  *   lockout      → auth/login.php and admin/login.php
- *   CAPTCHA      → auth/signup.php (both the widget and the server check)
- *   password min → auth/signup.php and the password reset
+ *   CAPTCHA      → always on, not a setting (services/CaptchaService.php)
+ *   password min → services/PasswordPolicy.php: sign-up, admin sign-up,
+ *                  Settings → Change password and the password reset
  *
  * Active sessions are listed from what the app genuinely tracks: remember-me
  * tokens, which are rows with a device and a last-used time. PHP's own
@@ -121,18 +122,23 @@ include __DIR__ . '/includes/settings_ui.php';
 
             <?php
             /*
-             * The CAPTCHA switch only makes sense where keys exist. Turning it
-             * off is offered because an admin may need to while testing, but
-             * the page is explicit that it is the thing standing between the
-             * sign-up form and automated accounts.
+             * The CAPTCHA is always required on member sign-in, sign-up and
+             * Forgot password, so there is nothing to switch. There used to be
+             * a switch here, but turning it off only hid the box: the check
+             * behind it stayed, and nobody could sign up until it was back on.
              */
-            $captchaKeyed = ($_ENV['RECAPTCHA_SITE_KEY'] ?? '') !== '' && ($_ENV['RECAPTCHA_SECRET_KEY'] ?? '') !== '';
-            st_toggle('captcha_enable', 'CAPTCHA on the sign-up form',
-                'Google reCAPTCHA has to be solved before an account is created.',
-                $S['captcha_enable'] === '1' && $captchaKeyed,
-                !$captchaKeyed,
-                $captchaKeyed ? 'This is what stops automated sign-ups.' : 'Add RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY to .env to use this.');
+            $captchaKeyed = CaptchaService::isConfigured();
             ?>
+            <div class="st-sw<?= $captchaKeyed ? '' : ' off' ?>">
+                <div style="min-width:0;flex:1;">
+                    <label>CAPTCHA on member sign-in and sign-up</label>
+                    <p><?php if ($captchaKeyed): ?>
+                        Always on. Google reCAPTCHA has to be solved before a member signs in, creates an account or asks for a password reset. <em>This is what stops automated sign-ups.</em>
+                    <?php else: ?>
+                        Add RECAPTCHA_SITE_KEY and RECAPTCHA_SECRET_KEY to .env. <em>Until then members cannot sign in or sign up with a password.</em>
+                    <?php endif; ?></p>
+                </div>
+            </div>
 
             <div class="st-f" style="margin-top:14px;">
                 <label for="s-pw">Minimum password length</label>
@@ -141,7 +147,7 @@ include __DIR__ . '/includes/settings_ui.php';
                         <option value="<?= $n ?>" <?= (int)$S['password_min_length'] === $n ? 'selected' : '' ?>><?= $n ?> characters</option>
                     <?php endforeach; ?>
                 </select>
-                <small>A password must also contain an upper case letter, a lower case letter, a number and one of @#$%^&amp;*!? — those are not optional.</small>
+                <small>Applies to member sign-up, admin sign-up, changing a password in Settings and resetting one. A password must also contain an upper case letter, a lower case letter, a number and one of @#$%^&amp;*!? — those are not optional.</small>
             </div>
 
             <div class="st-foot">
@@ -207,8 +213,8 @@ include __DIR__ . '/includes/settings_ui.php';
                  pc_setting_bool($con, 'login_lockout_enable')
                     ? pc_setting_int($con, 'login_max_attempts', 5) . ' tries, then ' . pc_setting_int($con, 'login_lockout_mins', 5) . ' minutes'
                     : 'Turned off'],
-                ['CAPTCHA on sign-up', $captchaKeyed && pc_setting_bool($con, 'captcha_enable'),
-                 $captchaKeyed ? (pc_setting_bool($con, 'captcha_enable') ? 'Active' : 'Turned off') : 'No keys in .env'],
+                ['CAPTCHA on sign-in and sign-up', $captchaKeyed,
+                 $captchaKeyed ? 'Always on' : 'No keys in .env'],
                 ['HTTPS', (($_SERVER['HTTPS'] ?? '') !== '' || ($_SERVER['SERVER_PORT'] ?? '') == 443),
                  (($_SERVER['HTTPS'] ?? '') !== '' || ($_SERVER['SERVER_PORT'] ?? '') == 443) ? 'This request is encrypted' : 'This request is plain HTTP'],
             ];

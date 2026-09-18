@@ -49,11 +49,7 @@ unset($_SESSION['admin_login_error']);
 // credentials while holding somebody else's cookie signed you in as them.)
 $is_post = $_SERVER['REQUEST_METHOD'] === 'POST';
 if (!$is_post && !isset($_GET['switch']) && ($remembered = RememberService::attempt($con))) {
-    $who = $con->prepare("SELECT role FROM users WHERE user_id = ? LIMIT 1");
-    $who->bind_param("i", $remembered);
-    $who->execute();
-    $role = $who->get_result()->fetch_assoc()['role'] ?? '';
-    $who->close();
+    $role = (string)(UserRepository::role($con, (int)$remembered) ?? '');
 
     if ($role === 'admin') {
         header('Location: ' . url('admin-dashboard'));
@@ -66,8 +62,9 @@ if (!$is_post && !isset($_GET['switch']) && ($remembered = RememberService::atte
 }
 
 if ($is_post && isset($_POST['admin_login'])) {
-    $email    = trim($_POST['email'] ?? '');
-    $password = (string)($_POST['password'] ?? '');
+    // A field sent as a list counts as empty; trim() used to fail on it.
+    $email    = trim(is_string($_POST['email'] ?? null) ? $_POST['email'] : '');
+    $password = is_string($_POST['password'] ?? null) ? $_POST['password'] : '';
     $remember = isset($_POST['remember']);
 
     // The same persistent store the member sign-in uses. This counter lived in
@@ -88,17 +85,7 @@ if ($is_post && isset($_POST['admin_login'])) {
         if ($email === '' || $password === '') {
             $login_error = 'Enter your email and password.';
         } else {
-            $stmt = $con->prepare("
-                SELECT u.user_id, u.firstname, u.status, p.password_hash
-                FROM users u
-                JOIN passwords p ON p.user_id = u.user_id
-                WHERE u.email = ? AND u.role = 'admin'
-                LIMIT 1
-            ");
-            $stmt->bind_param("s", $email);
-            $stmt->execute();
-            $row = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
+            $row = UserRepository::adminSignInByEmail($con, $email);
 
             // Always spend the bcrypt time, matched or not.
             if ($row) {
@@ -692,7 +679,7 @@ $support     = defined('MAIL_FROM') && MAIL_FROM !== '' ? MAIL_FROM : '';
                                 </svg>
                                 <input id="al-email" name="email" type="email" required autocomplete="username"
                                     placeholder="Enter your admin email"
-                                    value="<?= htmlspecialchars($_POST['email'] ?? '') ?>">
+                                    value="<?= htmlspecialchars($email ?? '') ?>">
                             </div>
                         </div>
 

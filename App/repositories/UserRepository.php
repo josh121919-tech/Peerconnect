@@ -180,6 +180,85 @@ class UserRepository extends Repository
         ", 'i', [$userId]);
     }
 
+    /** 'firstname', 'lastname', 'email', 'username', 'role', 'verified', 'status' and 'created_at', for Settings. */
+    public static function settingsAccount(mysqli $con, int $userId): ?array
+    {
+        return self::typedRow($con, "
+            SELECT firstname, lastname, email, username, role, verified, status, created_at
+            FROM users WHERE user_id = ?
+        ", 'i', [$userId]);
+    }
+
+    /** Saves the name and username from Settings → Account. A null username clears it. */
+    public static function saveNamesAndUsername(mysqli $con, int $userId, string $firstname, string $lastname, ?string $username): void
+    {
+        self::execute($con, "UPDATE users SET firstname = ?, lastname = ?, username = ? WHERE user_id = ?",
+            'sssi', [$firstname, $lastname, $username, $userId]);
+    }
+
+    public static function setEmail(mysqli $con, int $userId, string $email): void
+    {
+        self::execute($con, "UPDATE users SET email = ? WHERE user_id = ?", 'si', [$email, $userId]);
+    }
+
+    // ── Signing in and creating accounts ────────────────────────────────────
+
+    /** How long a first, middle or last name may be: the columns hold 50 characters. */
+    public const NAME_MAX = 50;
+
+    /** The account using $email, as 'user_id', 'role', 'status' and 'verified', or null. */
+    public static function signInByEmail(mysqli $con, string $email): ?array
+    {
+        return self::typedRow($con, "SELECT user_id, role, status, verified FROM users WHERE email = ? LIMIT 1", 's', [$email]);
+    }
+
+    /**
+     * The admin account using $email, as 'user_id', 'firstname', 'status' and
+     * 'password_hash', or null when there is none or it has no password.
+     */
+    public static function adminSignInByEmail(mysqli $con, string $email): ?array
+    {
+        return self::typedRow($con, "
+            SELECT u.user_id, u.firstname, u.status, p.password_hash
+            FROM users u
+            JOIN passwords p ON p.user_id = u.user_id
+            WHERE u.email = ? AND u.role = 'admin'
+            LIMIT 1
+        ", 's', [$email]);
+    }
+
+    /** 'role', 'status' and 'verified': what decides where a signed-in account is sent. */
+    public static function signInState(mysqli $con, int $userId): ?array
+    {
+        return self::typedRow($con, "SELECT role, status, verified FROM users WHERE user_id = ? LIMIT 1", 'i', [$userId]);
+    }
+
+    /** Whether another account (not $exceptUserId) already uses $email. */
+    public static function emailTaken(mysqli $con, string $email, int $exceptUserId = 0): bool
+    {
+        return self::value($con, "SELECT 1 FROM users WHERE email = ? AND user_id <> ? LIMIT 1", 'si', [$email, $exceptUserId]) !== null;
+    }
+
+    /** Whether another account (not $exceptUserId) already uses $username. */
+    public static function usernameTaken(mysqli $con, string $username, int $exceptUserId = 0): bool
+    {
+        return self::value($con, "SELECT 1 FROM users WHERE username = ? AND user_id <> ? LIMIT 1", 'si', [$username, $exceptUserId]) !== null;
+    }
+
+    /** A new mentee or mentor account, unverified. Returns its id. */
+    public static function createMember(mysqli $con, string $firstname, string $middlename, string $lastname, string $role, string $email): int
+    {
+        return self::insert($con, "INSERT INTO users (firstname, middlename, lastname, role, email) VALUES (?, ?, ?, ?, ?)",
+            'sssss', [$firstname, $middlename, $lastname, $role, $email]);
+    }
+
+    /** A new admin account, active and verified. Returns its id. */
+    public static function createAdmin(mysqli $con, string $firstname, string $lastname, string $username, string $email): int
+    {
+        return self::insert($con, "INSERT INTO users (firstname, lastname, username, role, status, verified, email) VALUES (?, ?, ?, 'admin', 'active', 1, ?)",
+            'ssss', [$firstname, $lastname, $username, $email]);
+    }
+
     // ── A mentee's profile page ─────────────────────────────────────────────
 
     /**

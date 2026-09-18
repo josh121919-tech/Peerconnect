@@ -74,12 +74,12 @@ $integrations = [
     [
         'name'   => 'reCAPTCHA',
         'group'  => 'Authentication',
-        'desc'   => 'Blocks automated sign-ups on the registration form.',
+        'desc'   => 'Blocks automated sign-ins and sign-ups on the member forms.',
         'colour' => ['#A6301F', '#FBE5E1'],
-        'ready'  => ($_ENV['RECAPTCHA_SITE_KEY'] ?? '') !== '' && ($_ENV['RECAPTCHA_SECRET_KEY'] ?? '') !== '',
-        'usage'  => pc_setting_bool($con, 'captcha_enable') ? 'Enabled on the sign-up form' : 'Turned off in Security settings',
+        'ready'  => CaptchaService::isConfigured(),
+        'usage'  => 'Always on for member sign-in, sign-up and Forgot password',
         'env'    => 'RECAPTCHA_SITE_KEY, RECAPTCHA_SECRET_KEY',
-        'where'  => 'App/views/auth/signup.php',
+        'where'  => 'App/services/CaptchaService.php',
         'link'   => ['admin-settings-security', 'Security settings'],
     ],
     [

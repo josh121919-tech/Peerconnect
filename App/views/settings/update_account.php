@@ -41,6 +41,15 @@ if (mb_strlen($full_name) > 100) {
     echo json_encode(['success' => false, 'message' => 'That name is too long (100 characters max).']);
     exit;
 }
+// The account keeps a first name (the first word) and a last name (the rest),
+// each in a column of 50 characters, which used to cut a longer one short.
+$parts     = preg_split('/\s+/', $full_name, 2);
+$firstname = $parts[0];
+$lastname  = $parts[1] ?? '';
+if (mb_strlen($firstname) > UserRepository::NAME_MAX || mb_strlen($lastname) > UserRepository::NAME_MAX) {
+    echo json_encode(['success' => false, 'message' => 'Your first name and your last name can each be up to ' . UserRepository::NAME_MAX . ' characters.']);
+    exit;
+}
 if ($username !== '' && !preg_match('/^[a-zA-Z0-9._]{3,30}$/', $username)) {
     echo json_encode(['success' => false, 'message' => 'Usernames are 3–30 characters, letters, numbers, dots and underscores only.']);
     exit;
@@ -72,46 +81,17 @@ if (mb_strlen($location) > 120) {
 }
 
 // Usernames are unique across the platform.
-if ($username !== '') {
-    $dup = $con->prepare("SELECT 1 FROM users WHERE username = ? AND user_id <> ?");
-    $dup->bind_param("si", $username, $user_id);
-    $dup->execute();
-    $taken = $dup->get_result()->num_rows > 0;
-    $dup->close();
-    if ($taken) {
-        echo json_encode(['success' => false, 'message' => 'That username is already taken.']);
-        exit;
-    }
+if ($username !== '' && UserRepository::usernameTaken($con, $username, $user_id)) {
+    echo json_encode(['success' => false, 'message' => 'That username is already taken.']);
+    exit;
 }
-
-// Split the single name field back into the two columns users actually has.
-$parts     = preg_split('/\s+/', $full_name, 2);
-$firstname = $parts[0];
-$lastname  = $parts[1] ?? '';
 
 $con->begin_transaction();
 try {
-    $u = $con->prepare("UPDATE users SET firstname = ?, lastname = ?, username = ? WHERE user_id = ?");
-    $uname = $username !== '' ? $username : null;
-    $u->bind_param("sssi", $firstname, $lastname, $uname, $user_id);
-    $u->execute();
-    $u->close();
+    UserRepository::saveNamesAndUsername($con, $user_id, $firstname, $lastname, $username !== '' ? $username : null);
 
     // profile may not have a row yet for older accounts.
-    $p = $con->prepare("
-        INSERT INTO profile (user_id, full_name, phone, location, birthdate, bio, visibility)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-            full_name  = VALUES(full_name),
-            phone      = VALUES(phone),
-            location   = VALUES(location),
-            birthdate  = VALUES(birthdate),
-            bio        = VALUES(bio),
-            visibility = VALUES(visibility)
-    ");
-    $p->bind_param("issssss", $user_id, $full_name, $phone, $location, $birthdate, $bio, $visibility);
-    $p->execute();
-    $p->close();
+    ProfileRepository::saveAccountDetails($con, $user_id, $full_name, $phone, $location, $birthdate, $bio, $visibility);
 
     $con->commit();
 } catch (Throwable $e) {

@@ -21,17 +21,8 @@ $panels = ['account' => 'Account', 'notifications' => 'Notifications', 'privacy'
 $tab    = isset($_GET['tab'], $panels[$_GET['tab']]) ? $_GET['tab'] : 'account';
 
 // ── Account ──────────────────────────────────────────────────────────────
-$u = $con->prepare("SELECT firstname, lastname, email, username, role, verified, status, created_at FROM users WHERE user_id = ?");
-$u->bind_param("i", $user_id);
-$u->execute();
-$account = $u->get_result()->fetch_assoc();
-$u->close();
-
-$p = $con->prepare("SELECT full_name, club, course, year_level, profile_image, phone, location, birthdate, bio, visibility FROM profile WHERE user_id = ?");
-$p->bind_param("i", $user_id);
-$p->execute();
-$profile = $p->get_result()->fetch_assoc() ?: [];
-$p->close();
+$account = UserRepository::settingsAccount($con, $user_id);
+$profile = ProfileRepository::fields($con, $user_id, ['full_name', 'club', 'course', 'year_level', 'profile_image', 'phone', 'location', 'birthdate', 'bio', 'visibility']) ?: [];
 
 $full_name = trim($profile['full_name'] ?? '') !== ''
     ? $profile['full_name']
@@ -39,21 +30,11 @@ $full_name = trim($profile['full_name'] ?? '') !== ''
 $profile_image = $profile['profile_image'] ?? null;
 $visibility    = $profile['visibility'] ?? 'everyone';
 
-// ── Notification preferences ─────────────────────────────────────────────
-$np = $con->prepare("SELECT session_requests, session_reminders, feedback_received, messages FROM notification_preferences WHERE user_id = ?");
-$np->bind_param("i", $user_id);
-$np->execute();
-$prefs = $np->get_result()->fetch_assoc()
+// ── Notification preferences and privacy ────────────────────────────────
+$prefs = PreferenceRepository::notifications($con, $user_id)
     ?: ['session_requests' => 1, 'session_reminders' => 1, 'feedback_received' => 1, 'messages' => 0];
-$np->close();
-
-// ── Privacy settings ─────────────────────────────────────────────────────
-$pv = $con->prepare("SELECT personalized_recommendations, share_activity, third_party_integrations FROM privacy_settings WHERE user_id = ?");
-$pv->bind_param("i", $user_id);
-$pv->execute();
-$privacy = $pv->get_result()->fetch_assoc()
+$privacy = PreferenceRepository::privacy($con, $user_id)
     ?: ['personalized_recommendations' => 1, 'share_activity' => 1, 'third_party_integrations' => 1];
-$pv->close();
 
 $gcal_connected = false;
 try {
@@ -63,38 +44,29 @@ try {
 
 // ── Security ─────────────────────────────────────────────────────────────
 // The activity feed and "last changed" both come from `logs`, which the
-// sign-in flow already writes to (and update_password.php now does too).
-$sec = $con->prepare("
-    SELECT activity, log_date FROM logs
-    WHERE email = ? ORDER BY log_date DESC LIMIT 8
-");
-$sec->bind_param("s", $account['email']);
-$sec->execute();
-$activity = $sec->get_result()->fetch_all(MYSQLI_ASSOC);
-$sec->close();
+// sign-in flow already writes to, as do changing and resetting a password.
+$account_email    = (string)($account['email'] ?? '');
+$activity         = LogRepository::recentFor($con, $account_email, 8);
+$password_changed = LogRepository::lastTime($con, $account_email, ['password changed', 'password reset completed']);
 
-$pwChanged = $con->prepare("SELECT MAX(log_date) d FROM logs WHERE email = ? AND activity = 'password changed'");
-$pwChanged->bind_param("s", $account['email']);
-$pwChanged->execute();
-$password_changed = $pwChanged->get_result()->fetch_assoc()['d'] ?? null;
-$pwChanged->close();
-
-$hasPw = $con->prepare("SELECT 1 FROM passwords WHERE user_id = ?");
-$hasPw->bind_param("i", $user_id);
-$hasPw->execute();
-$has_password = $hasPw->get_result()->num_rows > 0;
-$hasPw->close();
+// An account made with Google has no password until its owner sets one
+// through Forgot password.
+$has_password = PasswordRepository::exists($con, $user_id);
+$pw_min       = PasswordPolicy::minLength($con);
 
 // Every check below is a fact about this account, not a placeholder.
 $checks = [
-    ['ok' => $has_password,                          'label' => 'Password set on your account',        'fix' => 'Sign-in is Google-only for this account.'],
+    ['ok' => $has_password,                          'label' => 'Password set on your account',        'fix' => 'You sign in with Google. Use Forgot password to add a password as well.'],
     ['ok' => (int)$account['verified'] === 1,        'label' => 'Account verified by an admin',        'fix' => 'Submit your student ID for verification.'],
     ['ok' => ($account['status'] ?? '') === 'active', 'label' => 'Account in good standing',            'fix' => 'Your account is restricted — contact support.'],
-    ['ok' => $password_changed !== null,             'label' => 'Password changed since sign-up',      'fix' => 'You are still on your original password.'],
 ];
+if ($has_password) {
+    // Only an account that has a password can still be on its first one.
+    $checks[] = ['ok' => $password_changed !== null, 'label' => 'Password changed since sign-up', 'fix' => 'You are still on your original password.'];
+}
 $passed = count(array_filter($checks, fn($c) => $c['ok']));
-$status_label = $passed === count($checks) ? 'Strong' : ($passed >= 2 ? 'Fair' : 'Needs attention');
-$status_color = $passed === count($checks) ? 'var(--success)' : ($passed >= 2 ? 'var(--warning)' : 'var(--danger)');
+$status_label = $passed === count($checks) ? 'Strong' : ($passed >= count($checks) - 2 ? 'Fair' : 'Needs attention');
+$status_color = $passed === count($checks) ? 'var(--success)' : ($passed >= count($checks) - 2 ? 'var(--warning)' : 'var(--danger)');
 
 $profile_url = $is_mentor ? url('mentor-profile') : url('mentee-profile');
 $active_page = 'settings';
@@ -701,6 +673,8 @@ function st_ago(?string $ts): string
                             </div>
                             <?php if ($has_password): ?>
                                 <button class="btn btn-ghost btn-sm" type="button" onclick="document.getElementById('pwBox').hidden = !document.getElementById('pwBox').hidden">Change Password</button>
+                            <?php else: ?>
+                                <a class="btn btn-ghost btn-sm" href="<?= htmlspecialchars(url('forgot-password')) ?>">Add a Password</a>
                             <?php endif; ?>
                         </div>
 
@@ -722,7 +696,7 @@ function st_ago(?string $ts): string
                                 </div>
                                 <div style="background:var(--mint-faint);border-radius:var(--radius);padding:11px 14px;margin:12px 0;font-size:12px;color:var(--gray-600);line-height:1.6;">
                                     <b style="color:var(--forest);">Password tips:</b>
-                                    8–20 characters · a mix of upper and lower case, a number and a symbol · avoid your name or birthdate.
+                                    <?= $pw_min ?>–<?= PasswordPolicy::MAX ?> characters · a mix of upper and lower case, a number and one of <?= htmlspecialchars(PasswordPolicy::SYMBOLS) ?> · avoid your name or birthdate.
                                 </div>
                                 <button class="btn btn-primary btn-sm" type="button" onclick="savePassword()">Save password</button>
                             </div>
@@ -739,23 +713,30 @@ function st_ago(?string $ts): string
                                     <div class="st-row-desc">Used to sign in and to reach you about your sessions.</div>
                                 </div>
                             </div>
-                            <button class="btn btn-ghost btn-sm" type="button" onclick="document.getElementById('emailBox').hidden = !document.getElementById('emailBox').hidden">Change Email</button>
+                            <?php if ($has_password): ?>
+                                <button class="btn btn-ghost btn-sm" type="button" onclick="document.getElementById('emailBox').hidden = !document.getElementById('emailBox').hidden">Change Email</button>
+                            <?php endif; ?>
                         </div>
-                        <div id="emailBox" hidden style="border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:6px;">
-                            <div class="st-grid">
-                                <div class="st-field">
-                                    <label for="em-new">New email address</label>
-                                    <input class="st-input" type="email" id="em-new" autocomplete="email">
-                                </div>
-                                <?php if ($has_password): ?>
+                        <?php if ($has_password): ?>
+                            <div id="emailBox" hidden style="border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-top:6px;">
+                                <div class="st-grid">
+                                    <div class="st-field">
+                                        <label for="em-new">New email address</label>
+                                        <input class="st-input" type="email" id="em-new" autocomplete="email">
+                                    </div>
                                     <div class="st-field">
                                         <label for="em-pw">Your password</label>
                                         <input class="st-input" type="password" id="em-pw" autocomplete="current-password">
                                     </div>
-                                <?php endif; ?>
+                                </div>
+                                <button class="btn btn-primary btn-sm" type="button" style="margin-top:12px;" onclick="saveEmail()">Save email</button>
                             </div>
-                            <button class="btn btn-primary btn-sm" type="button" style="margin-top:12px;" onclick="saveEmail()">Save email</button>
-                        </div>
+                        <?php else: ?>
+                            <div class="prow-empty">
+                                Changing your email asks for your password, and this account doesn't have one yet.
+                                <a href="<?= htmlspecialchars(url('forgot-password')) ?>" style="color:var(--forest);font-weight:600;">Add a password</a> first.
+                            </div>
+                        <?php endif; ?>
 
                         <div class="st-section">Recent Security Activity</div>
                         <?php if (!$activity): ?>
@@ -1139,8 +1120,21 @@ function st_ago(?string $ts): string
                         ['Messages', (d.messages || []).length],
                         ['Assessment attempts', (d.assessment_attempts || []).length],
                         ['Resources you uploaded', (d.resources_uploaded || []).length],
+                        ['Interests and skills', (d.interests_and_skills || []).length],
+                        ['Goals', (d.goals || []).length],
+                        ['Reviews mentors wrote about you', (d.reviews_from_mentors || []).length],
+                        ['Reviews you wrote about mentees', (d.reviews_written_about_mentees || []).length],
+                        ['Review drafts', (d.review_drafts || []).length],
+                        ['Session attendance records', (d.session_attendance || []).length],
+                        ['Availability slots', (d.availability || []).length],
+                        ['Assessments you created', (d.assessments_created || []).length],
+                        ['Badges', (d.badges || []).length],
+                        ['Certificates', (d.certificates || []).length],
+                        ['Saved resources', (d.saved_resources || []).length],
+                        ['Reports you filed', (d.reports_filed || []).length],
+                        ['Notifications', (d.notifications || []).length],
                         ['Sign-in activity entries', (d.activity_log || []).length]
-                    ];
+                    ].filter(([k, v]) => v > 0 || ['Account record', 'Profile details', 'Sessions', 'Messages'].includes(k));
                     box.innerHTML = items.map(([k, v]) =>
                         '<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);">' +
                         '<span style="color:var(--gray-600);">' + k + '</span><b style="color:var(--forest);">' + v + '</b></div>'

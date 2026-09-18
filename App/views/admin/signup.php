@@ -34,6 +34,10 @@ if (($_SESSION['role'] ?? '') === 'admin') {
 const ADM_CODE_TTL      = 900;  // 15 minutes
 const ADM_MAX_ATTEMPTS  = 5;
 const ADM_RESEND_WAIT   = 60;   // seconds between sends
+// Wrong admin keys allowed from one address in ADM_KEY_WINDOW seconds. The
+// key used to be open to unlimited guessing: only sending codes was limited.
+const ADM_KEY_TRIES     = 10;
+const ADM_KEY_WINDOW    = 900;  // 15 minutes
 
 $error   = '';
 $notice  = '';
@@ -76,7 +80,9 @@ function adm_send_code(string $to, string $name, string $code): array
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $action = $_POST['action'] ?? '';
+    $action = is_string($_POST['action'] ?? null) ? $_POST['action'] : '';
+    // A field sent as a list counts as empty; strip_tags() and trim() used to fail on it.
+    $field  = fn(string $name): string => is_string($_POST[$name] ?? null) ? $_POST[$name] : '';
 
     if (!verify_csrf()) {
         $error = 'Security token mismatch. Please refresh the page and try again.';
@@ -85,50 +91,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ── Step 1: account details ──────────────────────────────────────────
     elseif ($action === 'details') {
         $step       = 1;
-        $full_name  = trim(strip_tags($_POST['full_name'] ?? ''));
-        $email      = trim($_POST['email'] ?? '');
-        $username   = trim(strip_tags($_POST['username'] ?? ''));
-        $password   = (string)($_POST['password'] ?? '');
-        $confirm    = (string)($_POST['confirm'] ?? '');
-        $admin_key  = trim((string)($_POST['admin_key'] ?? ''));
+        $full_name  = trim(strip_tags($field('full_name')));
+        $email      = trim($field('email'));
+        $username   = trim(strip_tags($field('username')));
+        $password   = $field('password');
+        $confirm    = $field('confirm');
+        $admin_key  = trim($field('admin_key'));
         $agreed     = isset($_POST['agree']);
         $old        = ['full_name' => $full_name, 'email' => $email, 'username' => $username];
 
         // No fallback: an unset ADMIN_INVITE_KEY must reject every key.
         $expected_key = (string)($_ENV['ADMIN_INVITE_KEY'] ?? '');
+        $key_bucket   = substr('admin-key|' . pc_client_ip(), 0, 190);
+        $name_parts   = preg_split('/\s+/', $full_name, 2);
+        $pw_problem   = PasswordPolicy::problem($password, PasswordPolicy::minLength($con));
 
         if ($full_name === '' || $email === '' || $username === '' || $password === '') {
             $error = 'Fill in every field to continue.';
-        } elseif (mb_strlen($full_name) > 100 || mb_strlen($username) > 30 || mb_strlen($email) > 255) {
+        } elseif (mb_strlen($full_name) > 100 || mb_strlen($username) > 30 || strlen($email) > 100) {
             $error = 'One of those values is longer than we can store.';
+        } elseif (mb_strlen($name_parts[0]) > UserRepository::NAME_MAX || mb_strlen($name_parts[1] ?? '') > UserRepository::NAME_MAX) {
+            // The account keeps the first word as the first name and the rest
+            // as the last name, each in 50 characters, which used to cut them short.
+            $error = 'Your first name and your last name can each be up to ' . UserRepository::NAME_MAX . ' characters.';
         } elseif (!preg_match('/^[A-Za-z0-9_.]{3,30}$/', $username)) {
             $error = 'Usernames use 3–30 letters, numbers, dots or underscores.';
         } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
             $error = 'That email address does not look right.';
-        } elseif (strlen($password) < 8) {
-            $error = 'Use at least 8 characters for your password.';
+        } elseif ($pw_problem !== null) {
+            // The same rule members have; admin accounts used to take any 8 characters.
+            $error = $pw_problem;
         } elseif ($password !== $confirm) {
             $error = 'The two passwords do not match.';
         } elseif (!$agreed) {
             $error = 'Please accept the Terms of Service and Privacy Policy to continue.';
+        } elseif (($key_wait = pc_throttle_retry_after($con, $key_bucket, ADM_KEY_WINDOW, ADM_KEY_TRIES)) > 0) {
+            $error = 'Too many wrong admin keys. Please try again in ' . max(1, (int)ceil($key_wait / 60)) . ' minute(s).';
         } elseif ($expected_key === '' || !hash_equals($expected_key, $admin_key)) {
             // Same message either way — a distinct "not configured" error would
             // tell an outsider that no key can currently work.
+            pc_throttle_hit($con, $key_bucket);
             $error = 'That admin key is not valid. Ask the system owner for the current key.';
         } elseif (!EmailService::isConfigured()) {
             $error = 'Email is not configured on this server, so the verification code cannot be sent. Contact the system owner.';
         } else {
-            $dupe = $con->prepare("SELECT 1 FROM users WHERE email = ? LIMIT 1");
-            $dupe->bind_param("s", $email);
-            $dupe->execute();
-            $email_taken = (bool)$dupe->get_result()->fetch_row();
-            $dupe->close();
-
-            $du = $con->prepare("SELECT 1 FROM users WHERE username = ? LIMIT 1");
-            $du->bind_param("s", $username);
-            $du->execute();
-            $user_taken = (bool)$du->get_result()->fetch_row();
-            $du->close();
+            $email_taken = UserRepository::emailTaken($con, $email);
+            $user_taken  = UserRepository::usernameTaken($con, $username);
 
             if ($email_taken) {
                 $error = 'That email already has an account. Sign in instead.';
@@ -205,7 +213,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // ── Step 2: verify, then create ──────────────────────────────────────
     elseif ($action === 'verify' && $pending) {
         $step = 2;
-        $code = preg_replace('/\D/', '', (string)($_POST['code'] ?? ''));
+        $code = preg_replace('/\D/', '', $field('code'));
 
         if (!rate_limit('admin_signup_verify', 12, 600)) {
             $error = 'Too many tries. Please wait a few minutes.';
@@ -226,17 +234,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } else {
             // Re-check both uniqueness constraints: someone may have taken the
             // email or username during the fifteen minutes we were waiting.
-            $dupe = $con->prepare("SELECT 1 FROM users WHERE email = ? LIMIT 1");
-            $dupe->bind_param("s", $pending['email']);
-            $dupe->execute();
-            $email_taken = (bool)$dupe->get_result()->fetch_row();
-            $dupe->close();
-
-            $du = $con->prepare("SELECT 1 FROM users WHERE username = ? LIMIT 1");
-            $du->bind_param("s", $pending['username']);
-            $du->execute();
-            $user_taken = (bool)$du->get_result()->fetch_row();
-            $du->close();
+            $email_taken = UserRepository::emailTaken($con, $pending['email']);
+            $user_taken  = UserRepository::usernameTaken($con, $pending['username']);
 
             if ($email_taken || $user_taken) {
                 unset($_SESSION['admin_signup']);
@@ -247,16 +246,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $con->begin_transaction();
                 try {
                     // users.email is the one place an address is stored.
-                    $ins = $con->prepare("INSERT INTO users (firstname, lastname, username, role, status, verified, email) VALUES (?,?,?,'admin','active',1,?)");
-                    $ins->bind_param("ssss", $pending['firstname'], $pending['lastname'], $pending['username'], $pending['email']);
-                    $ins->execute();
-                    $uid = (int)$ins->insert_id;
-                    $ins->close();
-
-                    $ins3 = $con->prepare("INSERT INTO passwords (user_id, password_hash) VALUES (?,?)");
-                    $ins3->bind_param("is", $uid, $pending['hash']);
-                    $ins3->execute();
-                    $ins3->close();
+                    $uid = UserRepository::createAdmin($con, $pending['firstname'], $pending['lastname'], $pending['username'], $pending['email']);
+                    PasswordRepository::create($con, $uid, $pending['hash']);
 
                     $con->commit();
                     $created_email = $pending['email'];
@@ -285,6 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $csrf       = csrf_token();
+$pw_min     = PasswordPolicy::minLength($con);
 $login_url  = url('admin-login');
 $home_url   = url('welcomepage');
 $done_name  = $_SESSION['admin_signup_done'] ?? '';
@@ -1003,7 +995,7 @@ if ($pending) {
                                         <rect x="3" y="5.5" width="18" height="13" rx="2.5" />
                                         <path stroke-linecap="round" d="m4 7 8 6 8-6" />
                                     </svg>
-                                    <input id="f-email" name="email" type="email" maxlength="255" required
+                                    <input id="f-email" name="email" type="email" maxlength="100" required
                                         placeholder="Enter your official email" value="<?= htmlspecialchars($old['email']) ?>">
                                 </div>
                             </div>
@@ -1026,7 +1018,7 @@ if ($pending) {
                                         <rect x="4.5" y="10" width="15" height="10" rx="2" />
                                         <path stroke-linecap="round" d="M8 10V7.5a4 4 0 0 1 8 0V10" />
                                     </svg>
-                                    <input id="f-pass" name="password" type="password" required minlength="8"
+                                    <input id="f-pass" name="password" type="password" required minlength="<?= $pw_min ?>" maxlength="<?= PasswordPolicy::MAX ?>"
                                         placeholder="Create a password" autocomplete="new-password">
                                     <button type="button" class="as-peek" onclick="asPeek('f-pass', this)" aria-label="Show password">
                                         <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
@@ -1036,6 +1028,7 @@ if ($pending) {
                                     </button>
                                 </div>
                             </div>
+                            <p style="grid-column:1 / -1;margin:-4px 0 0;font-size:12px;color:#717680;line-height:1.5;"><?= htmlspecialchars(PasswordPolicy::describe($pw_min)) ?>.</p>
 
                             <div class="as-f as-full">
                                 <label for="f-confirm">Confirm Password</label>
@@ -1044,7 +1037,7 @@ if ($pending) {
                                         <rect x="4.5" y="10" width="15" height="10" rx="2" />
                                         <path stroke-linecap="round" d="M8 10V7.5a4 4 0 0 1 8 0V10" />
                                     </svg>
-                                    <input id="f-confirm" name="confirm" type="password" required minlength="8"
+                                    <input id="f-confirm" name="confirm" type="password" required minlength="<?= $pw_min ?>" maxlength="<?= PasswordPolicy::MAX ?>"
                                         placeholder="Confirm your password" autocomplete="new-password">
                                     <button type="button" class="as-peek" onclick="asPeek('f-confirm', this)" aria-label="Show password">
                                         <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">

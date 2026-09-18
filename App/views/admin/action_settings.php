@@ -109,7 +109,6 @@ function ast_changes(array $before, array $pairs): array
         'login_lockout_enable'  => ['sign-in lockout', 'switch'],
         'login_max_attempts'    => ['sign-in attempts', 'value'],
         'login_lockout_mins'    => ['lockout minutes', 'value'],
-        'captcha_enable'        => ['CAPTCHA', 'switch'],
         'password_min_length'   => ['minimum password length', 'value'],
         'email_enable'          => ['email', 'switch'],
         'email_on_registration' => ['registration emails', 'switch'],
@@ -226,23 +225,18 @@ switch ($section) {
         $tries = max(1, min(20, (int)($_POST['login_max_attempts'] ?? 5)));
         $mins  = max(1, min(1440, (int)($_POST['login_lockout_mins'] ?? 5)));
         $pwLen = max(6, min(20, (int)($_POST['password_min_length'] ?? 8)));
-        $captcha = ($_POST['captcha_enable'] ?? '0') === '1';
 
+        // The CAPTCHA is always on (see CaptchaService), so it is not saved here.
         $pairs = [
             'login_lockout_enable' => ($_POST['login_lockout_enable'] ?? '0') === '1' ? '1' : '0',
             'login_max_attempts'   => (string)$tries,
             'login_lockout_mins'   => (string)$mins,
-            'captcha_enable'       => $captcha ? '1' : '0',
             'password_min_length'  => (string)$pwLen,
         ];
         pc_setting_save($con, $pairs, $me);
         ast_log($before, $pairs, 'security settings');
 
-        if (!$captcha) {
-            pc_flash('warning', 'Saved, but CAPTCHA is now off — the sign-up form has nothing stopping automated accounts.', 'Security updated');
-        } else {
-            pc_flash('success', 'Security settings saved.', 'Settings updated');
-        }
+        pc_flash('success', 'Security settings saved.', 'Settings updated');
         break;
     }
 

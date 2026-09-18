@@ -113,6 +113,23 @@ class ProfileRepository extends Repository
         ", 'issssss', [$userId, $fullName, $studentId, $course, $yearLevel, $club, $image]);
     }
 
+    /** Saves Settings → Account's profile fields, creating the row for an account that has none yet. */
+    public static function saveAccountDetails(mysqli $con, int $userId, string $fullName, string $phone, string $location,
+                                              ?string $birthdate, string $bio, string $visibility): void
+    {
+        self::execute($con, "
+            INSERT INTO profile (user_id, full_name, phone, location, birthdate, bio, visibility)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                full_name  = VALUES(full_name),
+                phone      = VALUES(phone),
+                location   = VALUES(location),
+                birthdate  = VALUES(birthdate),
+                bio        = VALUES(bio),
+                visibility = VALUES(visibility)
+        ", 'issssss', [$userId, $fullName, $phone, $location, $birthdate, $bio, $visibility]);
+    }
+
     /**
      * An account deleted by its owner: the profile keeps its row (other
      * people's history refers to the account) but loses everything that

@@ -81,6 +81,25 @@ class LoginTokenService
     }
 
     /**
+     * Whether $token is still the one the password row points at. It stops
+     * being so when the account signs in again elsewhere or resets its password.
+     */
+    public static function isCurrent(mysqli $con, string $token, int $password_id): bool
+    {
+        $stmt = $con->prepare("
+            SELECT p.password_id
+            FROM tokens t
+            JOIN passwords p ON p.token_id = t.token_id
+            WHERE t.token = ? AND p.password_id = ?
+        ");
+        $stmt->bind_param('si', $token, $password_id);
+        $stmt->execute();
+        $found = $stmt->get_result()->fetch_assoc() !== null;
+        $stmt->close();
+        return $found;
+    }
+
+    /**
      * Drop the token this session was using. Safe to call with either half
      * missing — a Google login, for instance, sets no password token at all.
      */

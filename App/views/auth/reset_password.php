@@ -81,9 +81,12 @@ if (!$reset && !$invalid) {
 }
 
 // ── Submitting the new password ────────────────────────────────────────
+// The same rule as sign-up and Settings, minimum length included.
+$pw_min = PasswordPolicy::minLength($con);
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset']) && $reset) {
-    $password = (string)($_POST['password'] ?? '');
-    $confirm  = (string)($_POST['confirm_password'] ?? '');
+    // A field sent as a list counts as empty.
+    $password = is_string($_POST['password'] ?? null) ? $_POST['password'] : '';
+    $confirm  = is_string($_POST['confirm_password'] ?? null) ? $_POST['confirm_password'] : '';
 
     if (!verify_csrf()) {
         $error = "Invalid request. Please try again.";
@@ -91,8 +94,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reset']) && $reset) {
         $error = "Please fill in both password fields.";
     } elseif ($password !== $confirm) {
         $error = "Passwords do not match.";
-    } elseif (!preg_match("/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@#$%^&*!?])[A-Za-z\d@#$%^&*!?]{8,20}$/", $password)) {
-        $error = "Password must be 8–20 characters and include uppercase, lowercase, a number, and one of @#$%^&*!?";
+    } elseif (($pw_problem = PasswordPolicy::problem($password, $pw_min)) !== null) {
+        $error = $pw_problem;
     } else {
         $ok = PasswordResetService::complete($con, (int)$reset['reset_id'], (int)$reset['user_id'], $password);
 
@@ -308,7 +311,7 @@ $csrf         = csrf_token();
                             <p class="su-strength" id="rp-strength"></p>
 
                             <ul class="su-rules" id="rp-rules">
-                                <li data-rule="len"><span class="su-rule-i"></span>8&ndash;20 characters</li>
+                                <li data-rule="len"><span class="su-rule-i"></span><?= $pw_min ?>&ndash;20 characters</li>
                                 <li data-rule="upper"><span class="su-rule-i"></span>Uppercase</li>
                                 <li data-rule="lower"><span class="su-rule-i"></span>Lowercase</li>
                                 <li data-rule="num"><span class="su-rule-i"></span>Number</li>
@@ -362,7 +365,7 @@ $csrf         = csrf_token();
 
             function checks(v) {
                 return {
-                    len: v.length >= 8 && v.length <= 20,
+                    len: v.length >= <?= (int)$pw_min ?> && v.length <= 20,
                     upper: /[A-Z]/.test(v),
                     lower: /[a-z]/.test(v),
                     num: /\d/.test(v),

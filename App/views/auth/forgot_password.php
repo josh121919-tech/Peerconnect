@@ -21,8 +21,11 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // Signed in already? Then there is nothing to recover — change the password
-// from settings instead.
-if (!empty($_SESSION['user_id']) && !empty($_SESSION['role'])) {
+// from settings instead. The exception is an account made with Google, which
+// has no password to change: this form is how it adds one, and Settings
+// sends it here.
+if (!empty($_SESSION['user_id']) && !empty($_SESSION['role'])
+    && PasswordRepository::exists($con, (int)$_SESSION['user_id'])) {
     header("Location: " . url($_SESSION['role'] === 'mentor' ? 'mentor-settings' : 'mentee-settings'));
     exit;
 }
@@ -32,7 +35,7 @@ $sent  = false;
 $email_value = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot'])) {
-    $email_value = trim((string)($_POST['email'] ?? ''));
+    $email_value = trim(is_string($_POST['email'] ?? null) ? $_POST['email'] : '');
 
     if (!verify_csrf()) {
         $error = "Invalid request. Please try again.";
@@ -47,12 +50,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot'])) {
     } elseif (!filter_var($email_value, FILTER_VALIDATE_EMAIL)) {
         $error = "Invalid email format.";
     } else {
-        $recaptcha_response = $_POST['g-recaptcha-response'] ?? '';
-        $recaptcha_secret   = $_ENV['RECAPTCHA_SECRET_KEY'] ?? '';
-        $verify        = @file_get_contents("https://www.google.com/recaptcha/api/siteverify?secret={$recaptcha_secret}&response={$recaptcha_response}");
-        $response_data = $verify !== false ? json_decode($verify) : null;
-
-        if (!$response_data || empty($response_data->success)) {
+        if (!CaptchaService::verify($_POST['g-recaptcha-response'] ?? null)) {
             $error = "Please complete the CAPTCHA verification.";
         } else {
             $result = PasswordResetService::request($con, $email_value);
@@ -71,7 +69,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['forgot'])) {
     }
 }
 
-$recaptcha_site_key = $_ENV['RECAPTCHA_SITE_KEY'] ?? '';
+$recaptcha_site_key = CaptchaService::siteKey();
 $hero_art     = 'images/background.png';
 $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
 $csrf         = csrf_token();

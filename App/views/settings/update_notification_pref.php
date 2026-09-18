@@ -16,25 +16,15 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
 
 $user_id = (int)$_SESSION['user_id'];
 $pref    = $_POST['pref'] ?? '';
-$enabled = ($_POST['enabled'] ?? '') === '1' ? 1 : 0;
+$enabled = ($_POST['enabled'] ?? '') === '1';
 
-$allowed = ['session_requests', 'session_reminders', 'feedback_received', 'messages'];
-if (!in_array($pref, $allowed, true)) {
+if (!in_array($pref, PreferenceRepository::NOTIFICATION_KEYS, true)) {
     echo json_encode(['success' => false, 'message' => 'Unknown preference.']);
     exit;
 }
 
-// Seed a default row first (idempotent), then update just the one toggle —
-// avoids needing to know/send the other three current values from the client.
-$seed = $con->prepare("INSERT IGNORE INTO notification_preferences (user_id) VALUES (?)");
-$seed->bind_param("i", $user_id);
-$seed->execute();
-$seed->close();
+// The account's row is created with the defaults first, so only the one
+// switch that changed has to be sent.
+PreferenceRepository::setNotification($con, $user_id, $pref, $enabled);
 
-$sql = "UPDATE notification_preferences SET `$pref` = ? WHERE user_id = ?";
-$stmt = $con->prepare($sql);
-$stmt->bind_param("ii", $enabled, $user_id);
-$ok = $stmt->execute();
-$stmt->close();
-
-echo json_encode(['success' => (bool)$ok, 'message' => $ok ? 'Saved.' : 'Could not save preference.']);
+echo json_encode(['success' => true, 'message' => 'Saved.']);

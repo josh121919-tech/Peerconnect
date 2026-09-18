@@ -35,18 +35,21 @@ if ($new_password !== $confirm_new_password) {
     exit;
 }
 
-if (!preg_match("/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@#$%^&*!?])[A-Za-z\d@#$%^&*!?]{8,20}$/", $new_password)) {
-    echo json_encode(['success' => false, 'message' => 'Password must be 8-20 characters and include an uppercase letter, lowercase letter, number, and special character.']);
+$problem = PasswordPolicy::problem($new_password, PasswordPolicy::minLength($con));
+if ($problem !== null) {
+    echo json_encode(['success' => false, 'message' => $problem]);
     exit;
 }
 
-$stmt = $con->prepare("SELECT password_id, password_hash FROM passwords WHERE user_id = ?");
-$stmt->bind_param("i", $user_id);
-$stmt->execute();
-$row = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+$row = PasswordRepository::forUser($con, $user_id);
 
-if (!$row || !password_verify($current_password, $row['password_hash'])) {
+if (!$row) {
+    // An account made with Google has no password to change yet.
+    echo json_encode(['success' => false, 'message' => 'This account has no password yet. Use Forgot password to add one.']);
+    exit;
+}
+
+if (!password_verify($current_password, $row['password_hash'])) {
     echo json_encode(['success' => false, 'message' => 'Current password is incorrect.']);
     exit;
 }
@@ -56,11 +59,7 @@ if (password_verify($new_password, $row['password_hash'])) {
     exit;
 }
 
-$hashed = password_hash($new_password, PASSWORD_BCRYPT);
-$upd = $con->prepare("UPDATE passwords SET password_hash = ? WHERE password_id = ?");
-$upd->bind_param("si", $hashed, $row['password_id']);
-$upd->execute();
-$upd->close();
+PasswordRepository::setHash($con, (int)$row['password_id'], password_hash($new_password, PASSWORD_BCRYPT));
 
 // "Remember me" on any other device stops working, as it does after a
 // password reset; this browser stays signed in. (A device that is signed in
@@ -71,12 +70,9 @@ $signedOut = RememberService::forgetOtherDevices($con, (int)$user_id);
 // Recorded in the same log the sign-in flow writes to, so Settings → Security
 // can show "last changed" and list it under Recent Security Activity.
 try {
-    $emailRow = $con->query("SELECT email FROM users WHERE user_id = " . (int)$user_id)->fetch_assoc();
-    if ($emailRow) {
-        $lg = $con->prepare("INSERT INTO logs (email, activity, log_date) VALUES (?, 'password changed', NOW())");
-        $lg->bind_param("s", $emailRow['email']);
-        $lg->execute();
-        $lg->close();
+    $email = UserRepository::email($con, $user_id);
+    if ($email !== null) {
+        LogRepository::add($con, $email, 'password changed');
     }
 } catch (Throwable $e) {
     // Logging must never fail the password change itself.

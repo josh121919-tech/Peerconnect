@@ -40,8 +40,8 @@ if (!function_exists('pc_setting_defaults')) {
             'login_lockout_enable' => '1',   // auth/login.php + admin/login.php
             'login_max_attempts'   => '5',
             'login_lockout_mins'   => '5',
-            'captcha_enable'       => '1',   // auth/signup.php
-            'password_min_length'  => '8',   // signup + reset + change password
+            // No CAPTCHA switch: it is always on (App/services/CaptchaService.php).
+            'password_min_length'  => '8',   // PasswordPolicy: sign-up, admin sign-up, reset, change password
             'notify_new_login'     => '0',
 
             /* ── Email & notifications ── */

@@ -20,30 +20,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
 
 $user_id = (int)$_SESSION['user_id'];
 
-$allowed = [
-    // Dashboard "Recommended for You" and the Matching page.
-    'personalized_recommendations',
-    // Whether this mentor appears on the Leaderboard.
-    'share_activity',
-    // Whether Google Calendar may be connected / synced.
-    'third_party_integrations',
-];
-
-$key = (string)($_POST['key'] ?? '');
-if (!in_array($key, $allowed, true)) {
+// What each switch changes:
+//   personalized_recommendations  Dashboard "Recommended for You" and the Matching page.
+//   share_activity                whether this mentor appears on the Leaderboard.
+//   third_party_integrations      whether Google Calendar may be connected / synced.
+$key = is_string($_POST['key'] ?? null) ? $_POST['key'] : '';   // a list is not a key
+if (!in_array($key, PreferenceRepository::PRIVACY_KEYS, true)) {
     echo json_encode(['success' => false, 'message' => 'Unknown privacy setting.']);
     exit;
 }
 $value = ($_POST['value'] ?? '0') === '1' ? 1 : 0;
 
-// Column name comes from the whitelist above, never from the request.
-$stmt = $con->prepare("
-    INSERT INTO privacy_settings (user_id, `$key`) VALUES (?, ?)
-    ON DUPLICATE KEY UPDATE `$key` = VALUES(`$key`)
-");
-$stmt->bind_param("ii", $user_id, $value);
-$stmt->execute();
-$stmt->close();
+PreferenceRepository::setPrivacy($con, $user_id, $key, $value === 1);
 
 // Turning off third-party integrations has to actually disconnect Google,
 // otherwise the switch would be a label rather than a setting.
