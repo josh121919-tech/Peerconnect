@@ -98,6 +98,12 @@ class UserRepository extends Repository
         ", str_repeat('i', count($ids)), $ids);
     }
 
+    /** The user's questionnaire tags ('tag_type', 'tag'), by type and then in the order they were added. */
+    public static function tagsInOrderAdded(mysqli $con, int $userId): array
+    {
+        return self::typedRows($con, "SELECT tag_type, tag FROM user_tags WHERE user_id = ? ORDER BY tag_type, tag_id", 'i', [$userId]);
+    }
+
     /**
      * Settings → Data Privacy → "Personalized recommendations". On unless the
      * member has switched it off; a member with no privacy row has the default.
@@ -329,5 +335,20 @@ class UserRepository extends Repository
                    (SELECT COUNT(*) FROM assessment_attempts WHERE mentee_id = ? AND status = 'submitted') AS assessments,
                    (SELECT COUNT(DISTINCT mentor_id) FROM session_requests WHERE mentee_id = ? AND status IN ('approved','completed')) AS mentors
         ", 'iiii', [$menteeId, $menteeId, $menteeId, $menteeId]) ?? [];
+    }
+
+    /**
+     * Mentors and mentees an admin can send a notice to: every one not
+     * deleted by its owner, by role then name ('user_id', 'name', 'role',
+     * 'status', 'email').
+     */
+    public static function noticeRecipients(mysqli $con): array
+    {
+        return self::typedRows($con, "
+            SELECT user_id, TRIM(CONCAT_WS(' ', firstname, lastname)) AS name, role, status, email
+            FROM users
+            WHERE role IN ('mentor', 'mentee') AND NOT (status = 'blocked' AND email IS NULL)
+            ORDER BY role, firstname, lastname
+        ");
     }
 }

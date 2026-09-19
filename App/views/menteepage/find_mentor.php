@@ -4,16 +4,19 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 include __DIR__ . "/../db.php";
 
-// SECURITY: Input sanitization — strip tags, trim
-$search  = trim(strip_tags($_GET['search']  ?? ''));
-$subject = trim(strip_tags($_GET['subject'] ?? ''));
-$club    = trim(strip_tags($_GET['club']    ?? ''));
+// A value sent as a list counts as missing; strip_tags() of a list used to end
+// the page on a server error. The search is bound as a parameter and printed
+// escaped, so it is only trimmed.
+$get     = fn(string $name): string => is_string($_GET[$name] ?? null) ? trim($_GET[$name]) : '';
+$search  = $get('search');
+$subject = $get('subject');
+$club    = $get('club');
 
-$sort         = in_array($_GET['sort'] ?? '', ['relevant', 'rating', 'sessions'], true) ? $_GET['sort'] : 'relevant';
-$session_type = in_array($_GET['type'] ?? '', ['1v1', 'group'], true) ? $_GET['type'] : '';
+$sort         = in_array($get('sort'), ['relevant', 'rating', 'sessions'], true) ? $get('sort') : 'relevant';
+$session_type = in_array($get('type'), ['1v1', 'group'], true) ? $get('type') : '';
 
 $per_page = 12;
-$page     = max(1, (int)($_GET['page'] ?? 1));
+$page     = max(1, (int)($get('page') ?: 1));
 
 // ── Real, fixed taxonomy — same lists the signup/verification form already
 //    uses (App/views/menteepage/verification.php), not a freeform/dynamic
@@ -40,125 +43,36 @@ $subject_stems = [
     'Elementary Education'  => 'Elementary',
 ];
 
-// Build parameterized query (SECURITY: no string interpolation of user input)
-$whereClauses = [
-    // Active, verified mentors — the same rule the booking endpoints apply, so
-    // nobody listed here is refused on booking and nobody hidden can be booked.
-    UserRepository::bookableMentorCondition('u'),
-    // Settings → Account → Profile Visibility. A mentor set to "private" is
-    // not listed here; mentees they already work with keep their sessions.
-    "COALESCE((SELECT pf.visibility FROM profile pf WHERE pf.user_id = u.user_id), 'everyone') <> 'private'",
+// Only values from the fixed lists above filter the list.
+$filters = [
+    'search'       => $search,
+    'expertise'    => ($subject !== '' && in_array($subject, $subject_options, true)) ? $subject_stems[$subject] : '',
+    'club'         => ($club !== '' && in_array($club, PC_CLUBS, true)) ? $club : '',
+    'session_type' => $session_type,
 ];
-$bindTypes    = '';
-$bindValues   = [];
-
-if ($search !== '') {
-    $whereClauses[] = "(u.firstname LIKE ? OR u.lastname LIKE ? OR p.expertise LIKE ?)";
-    $like = '%' . $search . '%';
-    $bindTypes .= 'sss';
-    $bindValues[] = &$like;
-    $bindValues[] = &$like;
-    $bindValues[] = &$like;
-}
-if ($subject !== '' && in_array($subject, $subject_options, true)) {
-    $whereClauses[] = "p.expertise LIKE ?";
-    $subjectLike = '%' . $subject_stems[$subject] . '%';
-    $bindTypes .= 's';
-    $bindValues[] = &$subjectLike;
-}
-if ($club !== '' && in_array($club, PC_CLUBS, true)) {
-    $whereClauses[] = "p.club = ?";
-    $bindTypes .= 's';
-    $bindValues[] = &$club;
-}
-if ($session_type !== '') {
-    $whereClauses[] = "EXISTS (SELECT 1 FROM availability av WHERE av.mentor_id = u.user_id AND av.session_type = ?)";
-    $bindTypes .= 's';
-    $bindValues[] = &$session_type;
-}
-
-$whereSQL = implode(' AND ', $whereClauses);
 
 // ── "Most Relevant" = overlap with this mentee's questionnaire answers ───
 // Sorting by session count alone made "relevant" a synonym for "busiest",
 // which is the leaderboard order again. When the viewer is a mentee who has
 // answered the questionnaire, mentors who picked the same subjects and skills
 // lead, and the old activity ordering breaks ties. Ordering happens in SQL so
-// pagination still works. $viewer_id is cast to int, so interpolating it here
-// carries no user input.
+// pagination still works.
 require_once __DIR__ . '/../../services/MentorScoreService.php';
 $viewer_id     = (($_SESSION['role'] ?? '') === 'mentee') ? (int)($_SESSION['user_id'] ?? 0) : 0;
 $viewer_weight = $viewer_id > 0 ? MentorScoreService::menteeTagWeight($con, $viewer_id) : 0;
 
-$tagSelect = '0 AS tag_weight';
-$relevantOrder = 'total_sessions DESC, avg_rating DESC, u.firstname ASC';
-if ($viewer_weight > 0) {
-    $tagSelect = "COALESCE((
-            SELECT SUM(CASE mt.tag_type WHEN 'learn' THEN 3 WHEN 'skill' THEN 2 ELSE 1 END)
-            FROM user_tags mt
-            JOIN user_tags st
-              ON st.user_id = $viewer_id AND st.tag_type = mt.tag_type AND st.tag = mt.tag
-            WHERE mt.user_id = u.user_id
-        ), 0) AS tag_weight";
-    $relevantOrder = "tag_weight DESC, $relevantOrder";
-}
+$total_mentors = MentorDirectoryRepository::count($con, $filters);
+$total_pages   = max(1, (int)ceil($total_mentors / $per_page));
+$page          = min($page, $total_pages);
+$offset        = ($page - 1) * $per_page;
 
-$orderSQL = [
-    'relevant' => $relevantOrder,
-    'rating'   => 'avg_rating DESC, total_reviews DESC, u.firstname ASC',
-    'sessions' => 'total_sessions DESC, u.firstname ASC',
-][$sort];
-
-// Count query for pagination — same filters, no LIMIT.
-$countQuery = "
-    SELECT COUNT(*) AS total
-    FROM users u
-    LEFT JOIN user_verifications p ON u.user_id = p.user_id
-    WHERE $whereSQL
-";
-$countStmt = $con->prepare($countQuery);
-if ($bindTypes !== '') {
-    $countBind = array_merge([$bindTypes], $bindValues);
-    call_user_func_array([$countStmt, 'bind_param'], $countBind);
-}
-$countStmt->execute();
-$total_mentors = (int)($countStmt->get_result()->fetch_assoc()['total'] ?? 0);
-$countStmt->close();
-$total_pages = max(1, (int)ceil($total_mentors / $per_page));
-$page = min($page, $total_pages);
-$offset = ($page - 1) * $per_page;
-
-$query = "
-    SELECT u.user_id, u.firstname, u.lastname, u.verified, u.status,
-           p.club, p.expertise, p.course, pr.profile_image,
-           (SELECT COUNT(*) FROM session_requests sr WHERE sr.mentor_id = u.user_id AND sr.status = 'completed') as total_sessions,
-           (SELECT COUNT(DISTINCT sr2.mentee_id) FROM session_requests sr2 WHERE sr2.mentor_id = u.user_id) as mentee_count,
-           (SELECT ROUND(AVG(f.rating),1) FROM feedback f WHERE f.mentor_id = u.user_id) as avg_rating,
-           (SELECT COUNT(*) FROM feedback f2 WHERE f2.mentor_id = u.user_id) as total_reviews,
-           (SELECT MIN(av.date) FROM availability av WHERE av.mentor_id = u.user_id AND av.date >= CURDATE()) as next_available,
-           $tagSelect
-    FROM users u
-    LEFT JOIN user_verifications p ON u.user_id = p.user_id
-    LEFT JOIN profile pr ON u.user_id = pr.user_id
-    WHERE $whereSQL
-    ORDER BY $orderSQL
-    LIMIT $per_page OFFSET $offset
-";
-
-$stmt = $con->prepare($query);
-if ($bindTypes !== '') {
-    array_unshift($bindValues, $bindTypes);
-    call_user_func_array([$stmt, 'bind_param'], $bindValues);
-}
-$stmt->execute();
-$mentor_rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+$mentor_rows = MentorDirectoryRepository::page($con, $filters, $sort, $viewer_weight > 0 ? $viewer_id : 0, $per_page, $offset);
 
 // Which of this mentee's answers each mentor on this page also picked —
 // one query for the page, then rendered as highlighted chips on the cards.
 $shared_tags = $viewer_weight > 0 && $mentor_rows
     ? MentorScoreService::sharedTags($con, $viewer_id, array_column($mentor_rows, 'user_id'))
     : [];
-$stmt->close();
 
 $find_mentor_url = url('mentee-find');
 $view_mentor_url = url('mentee-view-mentor');
@@ -166,29 +80,9 @@ $active_page = 'find_mentor';
 $is_logged_in = isset($_SESSION['user_id']) && isset($_SESSION['role']);
 $has_filters = $search || $subject || $club || $session_type;
 
-// Pre-fetch badges for all mentors shown (keyed by user_id → array of badge names)
-$mentor_badges = [];
-try {
-    $badge_q = $con->query("
-        SELECT ub.user_id, b.name, b.criteria_type
-        FROM user_badges ub
-        JOIN badges b ON b.badge_id = ub.badge_id
-        WHERE b.is_active = 1
-        ORDER BY ub.awarded_at DESC
-    ");
-    if ($badge_q) {
-        while ($brow = $badge_q->fetch_assoc()) {
-            $uid = (int)$brow['user_id'];
-            if (!isset($mentor_badges[$uid])) $mentor_badges[$uid] = [];
-            if (count($mentor_badges[$uid]) < 3) {
-                $mentor_badges[$uid][] = $brow['name'];
-            }
-        }
-    }
-} catch (Exception $e) {
-    // badges table may not exist yet — fail silently
-    $mentor_badges = [];
-}
+// Up to three badges for each mentor shown. This used to read every badge of
+// every member on each visit, then keep three per mentor.
+$mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor_rows, 'user_id'), 3);
 ?>
 <!DOCTYPE html>
 <html lang="en">

@@ -873,6 +873,10 @@ if ($RUN['flows']) {
         db("INSERT INTO session_requests (mentee_id, mentor_id, subject, message, session_date, status)
             VALUES (?, ?, ?, ?, NOW() - INTERVAL 2 DAY, 'approved')", 'iiss', $menteeId, $mentorId, $subject, MARK . ' fixture session');
         $sessionId = (int)$con->insert_id;
+        // Both opened the call: a review then closes the session straight
+        // away. Without both joins it stays for the missed-session job.
+        db("INSERT INTO session_attendance (session_id, user_id, role, joined_at) VALUES (?, ?, 'mentor', NOW() - INTERVAL 2 DAY), (?, ?, 'mentee', NOW() - INTERVAL 2 DAY)",
+            'iiii', $sessionId, $mentorId, $sessionId, $menteeId);
 
         $review = [
             'csrf_token'    => $csrf,
@@ -892,7 +896,7 @@ if ($RUN['flows']) {
             pass("Feedback: review stored for session #$sessionId");
 
             ($sr['status'] === 'completed' && $sr['completed_at'] !== null)
-                ? pass('Feedback: the session moved from approved to completed, with a completion time')
+                ? pass('Feedback: both joined, so the session moved from approved to completed, with a completion time')
                 : fail("Feedback: the session is '{$sr['status']}', expected completed with completed_at set");
 
             db_row("SELECT score_id FROM mentor_scores WHERE mentor_id = ?", 'i', $mentorId)

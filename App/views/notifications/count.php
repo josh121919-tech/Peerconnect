@@ -12,11 +12,4 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$uid  = (int)$_SESSION['user_id'];
-$stmt = $con->prepare("SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0");
-$stmt->bind_param("i", $uid);
-$stmt->execute();
-$count = (int)$stmt->get_result()->fetch_row()[0];
-$stmt->close();
-
-echo json_encode(['count' => $count]);
+echo json_encode(['count' => NotificationRepository::countUnread($con, (int)$_SESSION['user_id'])]);

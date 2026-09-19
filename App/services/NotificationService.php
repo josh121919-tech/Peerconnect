@@ -15,6 +15,10 @@ require_once __DIR__ . '/EmailService.php';
  */
 class NotificationService
 {
+    /** The longest title and message an admin may write in a notice of their own. */
+    public const ADMIN_TITLE_MAX   = 120;
+    public const ADMIN_MESSAGE_MAX = 1000;
+
     // Maps a notification type to the Settings → Notifications toggle that
     // gates it. Types not listed here (verification, badges, certificates,
     // account actions) are administrative/important and always send.

@@ -61,6 +61,9 @@ return [
     // Repairs an account left with no role. See action_role.php for why it
     // only ever fills an empty one.
     'admin-action-role' => 'App/views/admin/action_role.php',
+    'report-proof' => 'App/views/admin/report_proof.php',
+    'admin-notifications' => 'App/views/admin/notifications.php',
+    'admin-action-notify' => 'App/views/admin/action_notify.php',
 
     'video-room' => 'App/views/VideoConferencing/room.php',
     'video-end' => 'App/views/VideoConferencing/end_session.php',

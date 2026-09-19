@@ -693,6 +693,19 @@ include 'layout.php';
         padding: 16px 18px;
     }
 
+    .um-proof {
+        margin-top: 8px;
+        padding: 0;
+        border: 0;
+        background: none;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--forest);
+        text-decoration: underline;
+        cursor: pointer;
+    }
+
     .um-rmeta {
         font-size: 12.5px;
         color: var(--gray-500);
@@ -1054,11 +1067,15 @@ include 'layout.php';
                                 <span class="um-chip um-<?= htmlspecialchars($r['reported_status']) ?>"><?= $r_deleted ? 'Deleted' : htmlspecialchars(ucfirst($r['reported_status'])) ?></span>
                             </div>
                             <p class="um-rmeta">
-                                <b><?= htmlspecialchars($r['issue_type']) ?></b> &middot;
+                                <b><?= htmlspecialchars(ReportService::label($r['issue_type'])) ?></b> &middot;
                                 reported by <?= htmlspecialchars($r['reporter_name'] ?? 'someone') ?>
                                 on <?= um_ago($r['created_at']) ?><br>
                                 <?= nl2br(htmlspecialchars($r['description'] ?? '')) ?>
                             </p>
+                            <?php if (($proof = ReportService::proofUrl($r['proof'] ?? null)) !== ''): ?>
+                                <button type="button" class="um-proof"
+                                    onclick="umDoc(<?= htmlspecialchars(json_encode($proof), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode('Attached to the report about ' . $r['reported_name']), ENT_QUOTES) ?>)">View attached image</button>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <div class="um-vact" style="margin-top:14px;">

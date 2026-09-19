@@ -96,6 +96,7 @@ if (empty($current_page)) {
             'quiz'  => '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h4m2 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.6a1 1 0 0 1 .7.3l5.4 5.4a1 1 0 0 1 .3.7V19a2 2 0 0 1-2 2Z"/>',
             'mega'  => '<path stroke-linecap="round" stroke-linejoin="round" d="M11 5.9 5 9H3a1 1 0 0 0-1 1v4a1 1 0 0 0 1 1h2l6 3.1V5.9ZM16 9a4 4 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11"/>',
             'cog'   => '<circle cx="12" cy="12" r="3.2"/><path stroke-linecap="round" stroke-linejoin="round" d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"/>',
+            'bell'  => '<path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2c0 .5-.2 1-.6 1.4L4 17h5m6 0v1a3 3 0 1 1-6 0v-1m6 0H9"/>',
             'list'  => '<path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>',
             'badge' => '<circle cx="12" cy="9" r="5.5"/><path stroke-linecap="round" stroke-linejoin="round" d="m8.5 13.5-1 7 4.5-2.4 4.5 2.4-1-7"/>',
             'cert'  => '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>',
@@ -159,6 +160,9 @@ if (empty($current_page)) {
                     '@admin-settings-backup'        => 'Backup & Restore',
                     '@admin-settings-logs'          => 'Activity Logs',
                 ]],
+                // Reports, the notices admins send members, and anything
+                // addressed to the admin.
+                ['admin-notifications', 'notifications', 'bell', 'Notifications'],
             ],
         ];
         ?>
@@ -468,17 +472,17 @@ if (empty($current_page)) {
                             <?php if ($adm_report_rows): ?>
                                 <p class="adm-bell-sec">Open reports</p>
                                 <?php foreach ($adm_report_rows as $n): ?>
-                                    <a class="adm-bell-item" href="<?= url('admin-users') ?>?tab=reported">
+                                    <a class="adm-bell-item" href="<?= url('admin-notifications') ?>?report=<?= (int)$n['report_id'] ?>">
                                         <span class="adm-bell-dot bell-red"></span>
                                         <span class="adm-bell-txt">
-                                            <b><?= htmlspecialchars($n['issue_type'] ?: 'Report') ?></b>
+                                            <b><?= htmlspecialchars(ReportService::label($n['issue_type'])) ?></b>
                                             against <?= htmlspecialchars(trim((string)$n['target']) ?: 'a removed account') ?>.
                                             <span class="adm-bell-when"><?= htmlspecialchars($adm_ago($n['created_at'])) ?></span>
                                         </span>
                                     </a>
                                 <?php endforeach; ?>
                                 <?php if ($adm_open_reports > count($adm_report_rows)): ?>
-                                    <a class="adm-bell-more" href="<?= url('admin-users') ?>?tab=reported"><?= $adm_open_reports - count($adm_report_rows) ?> more open</a>
+                                    <a class="adm-bell-more" href="<?= url('admin-notifications') ?>?tab=reports"><?= $adm_open_reports - count($adm_report_rows) ?> more open</a>
                                 <?php endif; ?>
                             <?php endif; ?>
 
@@ -497,6 +501,7 @@ if (empty($current_page)) {
                                 <?php endforeach; ?>
                             <?php endif; ?>
                         </div>
+                        <a class="adm-bell-more" href="<?= url('admin-notifications') ?>" style="display:block;text-align:center;border-top:1px solid var(--gray-100);padding:10px;">See all notifications</a>
                     </div>
                 </div>
 

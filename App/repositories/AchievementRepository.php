@@ -20,6 +20,32 @@ class AchievementRepository extends Repository
         ", 'i', [$userId]);
     }
 
+    /**
+     * The names of up to $perUser of each user's active badges, newest award
+     * first, keyed by user id. Users with none are left out.
+     */
+    public static function badgeNamesFor(mysqli $con, array $userIds, int $perUser): array
+    {
+        if (!$userIds) {
+            return [];
+        }
+        $ids = array_map('intval', array_values($userIds));
+        $out = [];
+        foreach (self::rows($con, "
+            SELECT ub.user_id, b.name
+            FROM user_badges ub
+            JOIN badges b ON b.badge_id = ub.badge_id
+            WHERE b.is_active = 1 AND ub.user_id IN (" . self::marks($ids) . ")
+            ORDER BY ub.awarded_at DESC
+        ", str_repeat('i', count($ids)), $ids) as $r) {
+            $uid = (int)$r['user_id'];
+            if (count($out[$uid] ?? []) < $perUser) {
+                $out[$uid][] = $r['name'];
+            }
+        }
+        return $out;
+    }
+
     /** The user's certificates, newest first: 'cert_id', 'achievement', 'awarded_at', 'generated_path', 'template_name' (null when the template is gone). */
     public static function certificatesFor(mysqli $con, int $userId): array
     {

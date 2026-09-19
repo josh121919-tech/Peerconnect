@@ -519,6 +519,50 @@ class SessionRepository extends Repository
         ", 'iii', [$sessionId, $userId, $userId]);
     }
 
+    /**
+     * Whether both people opened the call for the session: the mentee for
+     * this booking, the mentor for any booking of the same group slot. The
+     * same test the missed-session job uses to close a session as completed.
+     */
+    public static function bothJoined(mysqli $con, int $sessionId): bool
+    {
+        return self::value($con, "
+            SELECT EXISTS (
+                       SELECT 1 FROM session_attendance att
+                       JOIN session_requests s2 ON s2.request_id = att.session_id
+                       WHERE att.user_id = sr.mentor_id
+                         AND s2.mentor_id = sr.mentor_id
+                         AND s2.subject = sr.subject
+                         AND s2.session_date = sr.session_date)
+               AND EXISTS (
+                       SELECT 1 FROM session_attendance att
+                       WHERE att.session_id = sr.request_id AND att.user_id = sr.mentee_id)
+            FROM session_requests sr WHERE sr.request_id = ?
+        ", 'i', [$sessionId]) === '1';
+    }
+
+    /** Closes an approved session as completed now, after its mentee reviewed it. Returns 1 when it changed. */
+    public static function completeAfterReview(mysqli $con, int $sessionId, int $menteeId): int
+    {
+        return self::execute($con, "
+            UPDATE session_requests SET status = 'completed', completed_at = NOW()
+            WHERE request_id = ? AND mentee_id = ? AND status = 'approved'
+        ", 'ii', [$sessionId, $menteeId]);
+    }
+
+    /**
+     * How many different people the user has had a session with that has
+     * started: mentees when $asMentor, otherwise mentors. An approved session
+     * still ahead does not count.
+     */
+    public static function countPartnersSoFar(mysqli $con, int $userId, bool $asMentor): int
+    {
+        $sql = $asMentor
+            ? "SELECT COUNT(DISTINCT mentee_id) FROM session_requests WHERE mentor_id = ? AND status IN ('approved','completed') AND session_date <= NOW()"
+            : "SELECT COUNT(DISTINCT mentor_id) FROM session_requests WHERE mentee_id = ? AND status IN ('approved','completed') AND session_date <= NOW()";
+        return (int)self::value($con, $sql, 'i', [$userId]);
+    }
+
     /** The mentor marks one of their sessions completed now. Returns 1 when the row changed. */
     public static function completeByMentor(mysqli $con, int $sessionId, int $mentorId): int
     {

@@ -8,14 +8,11 @@ if (!isset($_SESSION['user_id'])) { http_response_code(401); echo json_encode(['
 // CSRF check
 if (!verify_csrf()) { http_response_code(403); echo json_encode(['ok'=>false]); exit; }
 
-$uid  = (int)$_SESSION['user_id'];
-$nid  = (int)($_POST['notification_id'] ?? 0);
+$raw = is_string($_POST['notification_id'] ?? null) ? $_POST['notification_id'] : '';
+$nid = ctype_digit($raw) ? (int)$raw : 0;
 
 if ($nid) {
-    $stmt = $con->prepare("UPDATE notifications SET is_read=1 WHERE notification_id=? AND user_id=?");
-    $stmt->bind_param("ii", $nid, $uid);
-    $stmt->execute();
-    $stmt->close();
+    NotificationRepository::markRead($con, $nid, (int)$_SESSION['user_id']);
 }
 
 echo json_encode(['ok' => true]);

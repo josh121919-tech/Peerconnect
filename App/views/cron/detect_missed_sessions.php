@@ -19,8 +19,9 @@ define('RUNNING_AS_CRON', PHP_SAPI === 'cli');
  * the mentor that the request lapsed.
  *
  * This is the only thing that closes a session nobody closed: admins cannot
- * mark sessions completed or missed by hand. The mentor ending the call and
- * the mentee leaving feedback complete a session before it gets here.
+ * mark sessions completed or missed by hand. The mentor ending the call, and
+ * the mentee leaving feedback when both of them joined, complete a session
+ * before it gets here.
  *
  * Reached three ways: scripts/maintenance.php includes it every 30 minutes from
  * Task Scheduler, it can be run on its own from the command line, and two

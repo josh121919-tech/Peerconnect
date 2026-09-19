@@ -48,29 +48,7 @@ $CATS = [
  * subject + exact start). That slot can have been deleted since, so both are
  * optional and the session line renders only the parts that came back.
  */
-$stmt = $con->prepare("
-    SELECT mr.review_id, mr.mentor_id, mr.rating, mr.comment, mr.created_at,
-           mr.preparedness, mr.participation, mr.communication, mr.receptiveness,
-           u.firstname, u.lastname,
-           sr.subject      AS s_subject,
-           sr.session_date AS s_date,
-           a.duration      AS s_duration,
-           a.session_type  AS s_type
-    FROM mentee_reviews mr
-    JOIN users u ON u.user_id = mr.mentor_id
-    LEFT JOIN session_requests sr ON sr.request_id = mr.session_id
-    LEFT JOIN availability a
-           ON a.mentor_id        = sr.mentor_id
-          AND a.subject          = sr.subject
-          AND DATE(a.date)       = DATE(sr.session_date)
-          AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE mr.mentee_id = ?
-    ORDER BY mr.created_at DESC
-");
-$stmt->bind_param("i", $mentee_id);
-$stmt->execute();
-$rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+$rows = FeedbackRepository::receivedWithSessions($con, $mentee_id, false);
 
 $total = count($rows);
 
@@ -117,15 +95,9 @@ $lowKey = $rated ? array_search(min($rated), $catAvg, true) : null;
 
 $uniqueMentors = count($mentorIds);
 
-$workedStmt = $con->prepare("
-    SELECT COUNT(DISTINCT mentor_id) c
-    FROM session_requests
-    WHERE mentee_id = ? AND status IN ('approved','completed')
-");
-$workedStmt->bind_param("i", $mentee_id);
-$workedStmt->execute();
-$workedCount = (int)($workedStmt->get_result()->fetch_assoc()['c'] ?? 0);
-$workedStmt->close();
+// Mentors whose session has already started. Approved sessions still ahead
+// used to count, so "of N you've worked with" included people not yet met.
+$workedCount = SessionRepository::countPartnersSoFar($con, $mentee_id, false);
 
 // Average-rating movement. It only means something with a review in each of
 // the two months, so with a single period the card falls back to the count.
@@ -139,25 +111,7 @@ $lastAt       = $total ? strtotime((string)$rows[0]['created_at']) : null;
 
 // Finished sessions this mentee hasn't reviewed yet — drives the CTA badge.
 // Mirrors the mentor page's query with the two directions swapped.
-$pendStmt = $con->prepare("
-    SELECT COUNT(*) c
-    FROM session_requests sr
-    LEFT JOIN availability a
-           ON a.mentor_id        = sr.mentor_id
-          AND a.subject          = sr.subject
-          AND DATE(a.date)       = DATE(sr.session_date)
-          AND TIME(a.start_time) = TIME(sr.session_date)
-    LEFT JOIN feedback f
-           ON f.session_id = sr.request_id AND f.mentee_id = sr.mentee_id
-    WHERE sr.mentee_id = ?
-      AND sr.status IN ('approved','completed')
-      AND DATE_ADD(sr.session_date, INTERVAL COALESCE(a.duration, 60) MINUTE) <= NOW()
-      AND f.feedback_id IS NULL
-");
-$pendStmt->bind_param("i", $mentee_id);
-$pendStmt->execute();
-$review_pending = (int)($pendStmt->get_result()->fetch_assoc()['c'] ?? 0);
-$pendStmt->close();
+$review_pending = FeedbackRepository::countAwaitingReview($con, $mentee_id, false);
 
 /*
  * Insight lines. Each restates something already on the page as a sentence,

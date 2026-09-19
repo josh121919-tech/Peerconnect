@@ -15,10 +15,9 @@ $back = ($_SESSION['role'] ?? '') === 'mentor' ? url('mentor-calendar') : url('m
 
 // Settings → Data Privacy → "Allow third-party integrations". Off means no
 // Google connection may be made.
-$allowed = (int)($con->query("
-    SELECT COALESCE(MAX(third_party_integrations), 1) v FROM privacy_settings
-    WHERE user_id = " . (int)$_SESSION['user_id']
-)->fetch_assoc()['v'] ?? 1) === 1;
+// No saved choice means the default, which is on.
+$privacy = PreferenceRepository::privacy($con, (int)$_SESSION['user_id']);
+$allowed = (int)($privacy['third_party_integrations'] ?? 1) === 1;
 
 if (!$allowed) {
     pc_flash('error', 'Third-party integrations are turned off in Settings → Data Privacy. Turn them back on to connect Google Calendar.', 'Google Calendar');

@@ -49,14 +49,9 @@ $active_page = 'matching';
 
 // ── What we match on ──────────────────────────────────────────────────
 $tags = ['learn' => [], 'skill' => [], 'interest' => []];
-$tq = $con->prepare("SELECT tag_type, tag FROM user_tags WHERE user_id = ? ORDER BY tag_type, tag_id");
-$tq->bind_param("i", $mentee_id);
-$tq->execute();
-$tr = $tq->get_result();
-while ($row = $tr->fetch_assoc()) {
+foreach (UserRepository::tagsInOrderAdded($con, $mentee_id) as $row) {
     $tags[$row['tag_type']][] = $row['tag'];
 }
-$tq->close();
 
 $mentee_weight = MentorScoreService::menteeTagWeight($con, $mentee_id);
 $has_answers   = $mentee_weight > 0;

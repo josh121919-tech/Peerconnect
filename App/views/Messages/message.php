@@ -14,79 +14,27 @@ if (!isset($_SESSION['user_id'], $_SESSION['role'])
 
 $myId    = (int)$_SESSION['user_id'];
 $myRole  = $_SESSION['role'] ?? '';
-$chatId  = isset($_GET['chat']) ? (int)$_GET['chat'] : 0;
+$chatId  = is_string($_GET['chat'] ?? null) ? (int)$_GET['chat'] : 0;
 
 // Conversations list — includes the other user's role/photo (for the avatar
 // + role badge) and who sent the last message (for the "You: " prefix).
-$stmt = $con->prepare("
-    SELECT
-        u.user_id AS id,
-        CONCAT(COALESCE(u.firstname,''), ' ', COALESCE(u.lastname,'')) AS name,
-        u.role,
-        pr.profile_image,
-        MAX(m.created_at) AS last_time,
-        (SELECT content FROM messages
-         WHERE (sender_id = u.user_id AND receiver_id = ?)
-            OR (sender_id = ? AND receiver_id = u.user_id)
-         ORDER BY created_at DESC LIMIT 1) AS last_msg,
-        (SELECT sender_id FROM messages
-         WHERE (sender_id = u.user_id AND receiver_id = ?)
-            OR (sender_id = ? AND receiver_id = u.user_id)
-         ORDER BY created_at DESC LIMIT 1) AS last_sender_id,
-        SUM(CASE WHEN m.receiver_id = ? AND m.sender_id = u.user_id AND m.is_read = 0 THEN 1 ELSE 0 END) AS unread
-    FROM users u
-    LEFT JOIN profile pr ON pr.user_id = u.user_id
-    JOIN messages m
-      ON (m.sender_id = u.user_id AND m.receiver_id = ?)
-      OR (m.sender_id = ? AND m.receiver_id = u.user_id)
-    WHERE u.user_id != ?
-    GROUP BY u.user_id, u.firstname, u.lastname, u.role, pr.profile_image
-    ORDER BY last_time DESC
-");
-$stmt->bind_param("iiiiiiii", $myId, $myId, $myId, $myId, $myId, $myId, $myId, $myId);
-$stmt->execute();
-$conversations = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+$conversations = MessageRepository::conversationsFor($con, $myId);
 
 // Active user — plus expertise (mentors) / course (mentees) for the chat
 // header's secondary line, real data pulled the same way other pages do.
 $activeUser = null;
+$refusal    = null;
 if ($chatId) {
-  $s = $con->prepare("
-        SELECT u.user_id AS id, CONCAT(COALESCE(u.firstname,''), ' ', COALESCE(u.lastname,'')) AS name,
-               u.role, pr.profile_image, uv.expertise, uv.course
-        FROM users u
-        LEFT JOIN profile pr ON pr.user_id = u.user_id
-        LEFT JOIN user_verifications uv ON uv.user_id = u.user_id
-        WHERE u.user_id = ?
-    ");
-  $s->bind_param("i", $chatId);
-  $s->execute();
-  $activeUser = $s->get_result()->fetch_assoc();
-  $s->close();
-
-  $u = $con->prepare("UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0");
-  $u->bind_param("ii", $chatId, $myId);
-  $u->execute();
-  $u->close();
+  $activeUser = MessageRepository::chatPartner($con, $chatId);
+  MessageRepository::markReadFrom($con, $chatId, $myId);
+  // The same rule the send endpoint applies, so the page never offers a
+  // message box that every send from it would be refused.
+  $refusal = $activeUser ? MessageService::refusal($con, $myId, $chatId) : null;
 }
 
 // Initial messages — includes is_read so my own sent bubbles can show a
 // real (as-of-page-load) sent/read state instead of a fabricated one.
-$initialMessages = [];
-if ($chatId) {
-  $s = $con->prepare("
-        SELECT id, sender_id, content, is_read, created_at
-        FROM messages
-        WHERE (sender_id = ? AND receiver_id = ?)
-           OR (sender_id = ? AND receiver_id = ?)
-        ORDER BY created_at DESC LIMIT 50
-    ");
-  $s->bind_param("iiii", $myId, $chatId, $chatId, $myId);
-  $s->execute();
-  $initialMessages = array_reverse($s->get_result()->fetch_all(MYSQLI_ASSOC));
-  $s->close();
-}
+$initialMessages = $chatId ? MessageRepository::latestBetween($con, $myId, $chatId, 50) : [];
 
 $colors = ['#F87171', '#FB923C', '#FACC15', '#4ADE80', '#60A5FA', '#C084FC', '#F472B6'];
 function avatarColor(int $id): string
@@ -662,15 +610,21 @@ $active_page = 'messages';
             </div>
 
             <!-- Composer -->
-            <div class="composer">
-              <textarea class="composer-input" id="msgInput" placeholder="Type a message..." rows="1"></textarea>
-              <button id="sendBtn" title="Send" class="send-btn">
-                <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
-                  <line x1="22" y1="2" x2="11" y2="13" />
-                  <polygon points="22 2 15 22 11 13 2 9 22 2" />
-                </svg>
-              </button>
-            </div>
+            <?php if ($refusal !== null): ?>
+              <div class="composer" role="note" style="justify-content:center;font-size:12.5px;color:var(--gray-500);">
+                <?= htmlspecialchars($refusal) ?>
+              </div>
+            <?php else: ?>
+              <div class="composer">
+                <textarea class="composer-input" id="msgInput" placeholder="Type a message..." rows="1" maxlength="<?= MessageService::MAX_LENGTH ?>"></textarea>
+                <button id="sendBtn" title="Send" class="send-btn">
+                  <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                    <line x1="22" y1="2" x2="11" y2="13" />
+                    <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                  </svg>
+                </button>
+              </div>
+            <?php endif; ?>
           <?php endif; ?>
         </div>
 
@@ -762,14 +716,16 @@ $active_page = 'messages';
             if (data.message_id) lastMsgId = Math.max(lastMsgId, Number(data.message_id));
             pollMessages();
           } else {
-            showToast('Failed to send. Try again.');
+            // The endpoint says why (too long, too many, not allowed).
+            showToast(data.error || 'Failed to send. Try again.');
           }
         })
         .catch(() => showToast('Network error.'))
         .finally(() => {
           isSending = false;
-          document.getElementById('sendBtn').disabled = false;
-          ta.focus();
+          const btn = document.getElementById('sendBtn');
+          if (btn) btn.disabled = false;
+          if (ta) ta.focus();
         });
     }
 

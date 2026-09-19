@@ -12,18 +12,7 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-$uid  = (int)$_SESSION['user_id'];
-$stmt = $con->prepare("
-    SELECT notification_id, type, title, message, link, is_read, created_at
-    FROM notifications
-    WHERE user_id = ?
-    ORDER BY created_at DESC
-    LIMIT 15
-");
-$stmt->bind_param("i", $uid);
-$stmt->execute();
-$rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-$stmt->close();
+$rows = NotificationRepository::recentForBell($con, (int)$_SESSION['user_id'], 15);
 
 // Add human-readable "time ago"
 foreach ($rows as &$r) {

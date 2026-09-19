@@ -11,7 +11,8 @@
  * the kind of difference nobody notices until the two disagree about what
  * "restricted" does.
  *
- * Requires from the including page: $csrf.
+ * Requires from the including page: $csrf. Optional: $um_return
+ * ('notifications') sends Block and Restrict back to that page afterwards.
  * Provides to it: umOpen(), umClose(), umBlock(), umRestrict(), umReject(),
  * umDoc(), and um_doc_tile() for rendering a document thumbnail.
  *
@@ -93,6 +94,7 @@ $um_ui_done = true;
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
         <input type="hidden" name="user_id" id="umBlockUser" value="0">
         <input type="hidden" name="report_id" id="umBlockReport" value="0">
+        <?php if (!empty($um_return)): ?><input type="hidden" name="return_to" value="<?= htmlspecialchars($um_return) ?>"><?php endif; ?>
         <h3>Block <span id="umBlockName">this account</span>?</h3>
         <p>They will be signed out on their next request and cannot sign in again until unblocked.</p>
         <label for="umBlockReason">Reason (kept on the account record)</label>
@@ -109,6 +111,7 @@ $um_ui_done = true;
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
         <input type="hidden" name="user_id" id="umRestrictUser" value="0">
         <input type="hidden" name="report_id" id="umRestrictReport" value="0">
+        <?php if (!empty($um_return)): ?><input type="hidden" name="return_to" value="<?= htmlspecialchars($um_return) ?>"><?php endif; ?>
         <h3>Restrict <span id="umRestrictName">this account</span></h3>
         <p>They can still sign in and read, but cannot book, message or publish until the restriction expires. It lifts itself once the chosen number of days has passed. If they are already restricted, this replaces the current restriction.</p>
         <label for="umDays">Length</label>

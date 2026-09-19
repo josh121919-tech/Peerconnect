@@ -21,6 +21,11 @@ $back = url('admin-users') . '?tab=reported';
 
 $raw       = is_string($_POST['report_id'] ?? null) ? trim($_POST['report_id']) : '';
 $report_id = ctype_digit($raw) ? (int)$raw : 0;
+
+// Sent from the Notifications page: back there, to the same report.
+if (($_POST['return_to'] ?? '') === 'notifications') {
+    $back = url('admin-notifications') . '?report=' . $report_id;
+}
 if (!$report_id) {
     header('Location: ' . $back);
     exit;

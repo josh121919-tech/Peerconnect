@@ -42,4 +42,18 @@ class LogRepository extends Repository
         return self::value($con, "SELECT MAX(log_date) FROM logs WHERE email = ? AND activity IN (" . self::marks($activities) . ")",
             's' . str_repeat('s', count($activities)), array_merge([$email], array_values($activities)));
     }
+
+    /**
+     * Admin log entries whose text contains $needle, newest first, with the
+     * admin's email ('email', 'activity', 'log_date'). % and _ in $needle
+     * match only themselves.
+     */
+    public static function adminEntriesContaining(mysqli $con, string $needle, int $limit): array
+    {
+        return self::typedRows($con, "
+            SELECT email, activity, log_date FROM logs
+            WHERE activity LIKE 'admin %' AND activity LIKE ?
+            ORDER BY log_date DESC LIMIT ?
+        ", 'si', ['%' . addcslashes($needle, '%_\\') . '%', $limit]);
+    }
 }

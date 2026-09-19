@@ -18,58 +18,62 @@ if (!verify_csrf()) {
     exit;
 }
 
-$reported_user_id = isset($_POST['mentor_id'])   ? (int)$_POST['mentor_id']        : 0;
-$issue_type       = isset($_POST['issue_type'])  ? trim(strip_tags($_POST['issue_type']))  : '';
-$description      = isset($_POST['reason'])      ? trim(strip_tags($_POST['reason']))      : '';
-$reported_by      = (int)$_SESSION['user_id'];
+$reported_by = (int)$_SESSION['user_id'];
 
-if (!$reported_user_id || !$issue_type || !$description || !$reported_by) {
+// A field sent as a list counts as missing (strip_tags() of a list used to
+// end the request with a server error). The text is stored as typed:
+// strip_tags() cut everything after a "<", so "they said <3 then left" was
+// saved as "they said ". Every page that shows it escapes it.
+$field            = fn(string $name): string => is_string($_POST[$name] ?? null) ? trim($_POST[$name]) : '';
+$reported_user_id = ctype_digit($field('mentor_id')) ? (int)$field('mentor_id') : 0;
+$issue_type       = $field('issue_type');
+$description      = $field('reason');
+
+if (!$reported_user_id || $issue_type === '' || $description === '') {
     echo json_encode(['success' => false, 'message' => 'Invalid data.']);
     exit;
 }
+if (!isset(ReportService::ISSUE_TYPES[$issue_type])) {
+    echo json_encode(['success' => false, 'message' => 'Please choose one of the listed issue types.']);
+    exit;
+}
+if (mb_strlen($description) > ReportService::DESCRIPTION_MAX) {
+    echo json_encode(['success' => false, 'message' => 'Please keep the description under ' . number_format(ReportService::DESCRIPTION_MAX) . ' characters.']);
+    exit;
+}
 
-$proof_path = null;
+// The account must be a real member, and not the reporter. A missing one
+// used to end in a server error from the database.
+$target = UserRepository::moderationTarget($con, $reported_user_id);
+if (!$target || ModerationService::isDeleted($target) || !in_array($target['role'], ['mentee', 'mentor'], true)) {
+    echo json_encode(['success' => false, 'message' => 'That account could not be found.']);
+    exit;
+}
+if ($reported_user_id === $reported_by) {
+    echo json_encode(['success' => false, 'message' => 'You cannot report yourself.']);
+    exit;
+}
 
-if (!empty($_FILES['proof']['tmp_name'])) {
-    $allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-    $mime    = mime_content_type($_FILES['proof']['tmp_name']);
+// Nothing limited how many reports one member could send.
+if (!rate_limit('report_' . $reported_by, ReportService::REPORT_LIMIT, ReportService::REPORT_WINDOW)) {
+    echo json_encode(['success' => false, 'message' => 'You have sent several reports in a short time. Please wait a few minutes before sending another.']);
+    exit;
+}
 
-    if (!in_array($mime, $allowed)) {
-        echo json_encode(['success' => false, 'message' => 'Only JPEG, PNG, WEBP, or GIF images are allowed.']);
+$proof = null;
+$check = ReportService::inspectProof($_FILES['proof'] ?? null);
+if ($check['present']) {
+    if (isset($check['error'])) {
+        echo json_encode(['success' => false, 'message' => $check['error']]);
         exit;
     }
-
-    if ($_FILES['proof']['size'] > 5 * 1024 * 1024) {
-        echo json_encode(['success' => false, 'message' => 'Image must be under 5 MB.']);
-        exit;
-    }
-
-    $upload_dir = PUBLIC_PATH . '/uploads/reports/';
-    if (!is_dir($upload_dir)) {
-        mkdir($upload_dir, 0755, true);
-    }
-
-    $ext        = pathinfo($_FILES['proof']['name'], PATHINFO_EXTENSION);
-    $filename   = uniqid('proof_', true) . '.' . strtolower($ext);
-    $dest       = $upload_dir . $filename;
-
-    if (!move_uploaded_file($_FILES['proof']['tmp_name'], $dest)) {
+    $proof = ReportService::storeProof($_FILES['proof'], $check['ext']);
+    if ($proof === null) {
         echo json_encode(['success' => false, 'message' => 'Failed to save image.']);
         exit;
     }
-
-    $proof_path = 'uploads/reports/' . $filename;
 }
 
-$stmt = $con->prepare("
-    INSERT INTO reports (reported_user_id, reported_by, issue_type, description, proof, status, created_at)
-    VALUES (?, ?, ?, ?, ?, 'pending', NOW())
-");
-$stmt->bind_param('iisss', $reported_user_id, $reported_by, $issue_type, $description, $proof_path);
-$res = $stmt->execute();
+ModerationRepository::fileReport($con, $reported_user_id, $reported_by, $issue_type, $description, $proof);
 
-echo $res
-    ? json_encode(['success' => true])
-    : json_encode(['success' => false, 'message' => 'Failed to save report.']);
-
-$stmt->close();
+echo json_encode(['success' => true]);

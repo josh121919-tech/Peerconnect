@@ -32,27 +32,16 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
     rv_back('error', 'Security token mismatch. Please refresh and try again.', $home);
 }
 
-$session_id = (int)($_POST['session_id'] ?? 0);
-$is_draft   = ($_POST['action'] ?? 'submit') === 'draft';
+// A field sent as a list counts as missing: (int) of a list is 1, which saved
+// a one-star rating, and (string) of one is the word "Array".
+$field = fn(string $name): string => is_string($_POST[$name] ?? null) ? $_POST[$name] : '';
+
+$session_id = ctype_digit($field('session_id')) ? (int)$field('session_id') : 0;
+$is_draft   = ($field('action') ?: 'submit') === 'draft';
 
 // ── The session must be one this person was actually in, and it must be over.
 // Both facts are checked here, not just in the page that drew the form.
-$mine_col  = $is_mentee ? 'sr.mentee_id' : 'sr.mentor_id';
-$stmt = $con->prepare("
-    SELECT sr.request_id, sr.mentee_id, sr.mentor_id, sr.subject,
-           DATE_ADD(sr.session_date, INTERVAL COALESCE(a.duration, 60) MINUTE) <= NOW() AS has_ended
-    FROM session_requests sr
-    LEFT JOIN availability a
-           ON a.mentor_id        = sr.mentor_id
-          AND a.subject          = sr.subject
-          AND DATE(a.date)       = DATE(sr.session_date)
-          AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE sr.request_id = ? AND $mine_col = ? AND sr.status IN ('approved','completed')
-");
-$stmt->bind_param("ii", $session_id, $user_id);
-$stmt->execute();
-$session = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+$session = FeedbackRepository::sessionToReview($con, $session_id, $user_id, $is_mentee);
 
 if (!$session) {
     rv_back('error', 'You can only review sessions you took part in.', $home);
@@ -65,6 +54,9 @@ $mentee_id = (int)$session['mentee_id'];
 $mentor_id = (int)$session['mentor_id'];
 
 // ── Collect the five scores and their notes ──────────────────────────────
+// Text is kept as typed. strip_tags() used to cut it off at the first "<",
+// so "Great <3 would book again" was saved as "Great ". Every page that shows
+// a review escapes it.
 $keys = $is_mentee
     ? ['communication', 'efficiency', 'knowledge', 'skill', 'rating']
     : ['preparedness', 'participation', 'communication', 'receptiveness', 'rating'];
@@ -72,23 +64,16 @@ $keys = $is_mentee
 $scores = [];
 $notes  = [];
 foreach ($keys as $k) {
-    $scores[$k] = min(5, max(0, (int)($_POST[$k] ?? 0)));
-    $notes[$k]  = mb_substr(trim(strip_tags((string)($_POST['note_' . $k] ?? ''))), 0, 250);
+    $score      = $field($k);
+    $scores[$k] = is_numeric($score) ? min(5, max(0, (int)$score)) : 0;
+    $notes[$k]  = mb_substr(trim($field('note_' . $k)), 0, 250);
 }
-$comment = mb_substr(trim(strip_tags((string)($_POST['comment'] ?? ''))), 0, 1000);
+$comment = mb_substr(trim($field('comment')), 0, 1000);
 
-$direction    = $is_mentee ? 'mentee_to_mentor' : 'mentor_to_mentee';
-$review_table = $is_mentee ? 'feedback' : 'mentee_reviews';
-$author_col   = $is_mentee ? 'mentee_id' : 'mentor_id';
+$direction = $is_mentee ? 'mentee_to_mentor' : 'mentor_to_mentee';
 
 // Already submitted? Reviews are written once.
-$dup = $con->prepare("SELECT 1 FROM $review_table WHERE session_id = ? AND $author_col = ?");
-$dup->bind_param("ii", $session_id, $user_id);
-$dup->execute();
-$already = $dup->get_result()->num_rows > 0;
-$dup->close();
-
-if ($already) {
+if (FeedbackRepository::hasReviewed($con, $session_id, $user_id, $is_mentee)) {
     rv_back('error', 'You have already reviewed this session.', $home, $session_id);
 }
 
@@ -100,14 +85,7 @@ if ($is_draft) {
         array_combine(array_map(fn($k) => 'note_' . $k, $keys), array_values($notes))
     ));
 
-    $up = $con->prepare("
-        INSERT INTO feedback_drafts (direction, session_id, author_id, payload, updated_at)
-        VALUES (?, ?, ?, ?, NOW())
-        ON DUPLICATE KEY UPDATE payload = VALUES(payload), updated_at = NOW()
-    ");
-    $up->bind_param("siis", $direction, $session_id, $user_id, $payload);
-    $up->execute();
-    $up->close();
+    FeedbackRepository::saveDraft($con, $direction, $session_id, $user_id, $payload);
 
     rv_back('success', 'Draft saved. You can finish this review whenever you\'re ready.', $home, $session_id);
 }
@@ -119,83 +97,34 @@ foreach ($keys as $k) {
     }
 }
 
-if ($is_mentee) {
-    $ins = $con->prepare("
-        INSERT INTO feedback
-            (session_id, mentee_id, mentor_id, rating, comment,
-             communication, efficiency, knowledge, skill,
-             note_communication, note_efficiency, note_knowledge, note_skill, note_overall,
-             created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-    ");
-    $ins->bind_param(
-        "iiidsiiiisssss",
-        $session_id,
-        $mentee_id,
-        $mentor_id,
-        $scores['rating'],
-        $comment,
-        $scores['communication'],
-        $scores['efficiency'],
-        $scores['knowledge'],
-        $scores['skill'],
-        $notes['communication'],
-        $notes['efficiency'],
-        $notes['knowledge'],
-        $notes['skill'],
-        $notes['rating']
-    );
-} else {
-    $ins = $con->prepare("
-        INSERT INTO mentee_reviews
-            (session_id, mentor_id, mentee_id, rating, comment,
-             preparedness, participation, communication, receptiveness,
-             note_preparedness, note_participation, note_communication, note_receptiveness, note_overall,
-             created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-    ");
-    $ins->bind_param(
-        "iiidsiiiisssss",
-        $session_id,
-        $mentor_id,
-        $mentee_id,
-        $scores['rating'],
-        $comment,
-        $scores['preparedness'],
-        $scores['participation'],
-        $scores['communication'],
-        $scores['receptiveness'],
-        $notes['preparedness'],
-        $notes['participation'],
-        $notes['communication'],
-        $notes['receptiveness'],
-        $notes['rating']
-    );
+// The database allows one review per person per session. Two submits at once
+// (a double-click) both pass the check above; the second used to end on a
+// server error page instead of this message.
+try {
+    if ($is_mentee) {
+        FeedbackRepository::addMenteeReview($con, $session_id, $mentee_id, $mentor_id, $scores, $notes, $comment);
+    } else {
+        FeedbackRepository::addMentorReview($con, $session_id, $mentor_id, $mentee_id, $scores, $notes, $comment);
+    }
+} catch (mysqli_sql_exception $e) {
+    if ($e->getCode() === 1062) {
+        rv_back('error', 'You have already reviewed this session.', $home, $session_id);
+    }
+    throw $e;
 }
-$ins->execute();
-$ins->close();
 
 // The draft has served its purpose.
-$del = $con->prepare("DELETE FROM feedback_drafts WHERE session_id = ? AND author_id = ? AND direction = ?");
-$del->bind_param("iis", $session_id, $user_id, $direction);
-$del->execute();
-$del->close();
+FeedbackRepository::deleteDraft($con, $session_id, $user_id, $direction);
 
-// A reviewed session is a finished session (mentee side keeps the original
-// behaviour: it closes the request). The slot is kept: it holds the session's
-// length, and a past slot is never offered for booking again.
-if ($is_mentee) {
-    // NOW() stamps completed_at as well — it was left NULL on every genuine
-    // completion, so only sessions the cron marked missed ever had one.
-    // 'approved', not '<> completed': the negative form also matches
-    // cancelled, missed and rejected. It is harmless today only because the
-    // lookup at the top of this file already restricts to approved/completed
-    // — state that far away is not worth relying on, so the intent is stated
-    // where the write happens.
-    $upd = $con->prepare("UPDATE session_requests SET status = 'completed', completed_at = NOW() WHERE request_id = ? AND mentee_id = ? AND status = 'approved'");
-    $upd->bind_param("ii", $session_id, $mentee_id);
-    $upd->execute();
-    $upd->close();
+// A reviewed session is closed as completed straight away only when both
+// people joined the call — the same test the missed-session job applies an
+// hour after the end. A mentee's review used to complete it whether or not
+// the mentor ever came, so "they never showed up" counted as a completed
+// session for that mentor. Otherwise the job decides, as for any session.
+// 'approved', not '<> completed': the write states its own intent. The slot
+// is kept: it holds the session's length.
+if ($is_mentee && SessionRepository::bothJoined($con, $session_id)) {
+    SessionRepository::completeAfterReview($con, $session_id, $mentee_id);
 }
 
 // A new rating changes the mentor's composite score, which is what the
@@ -213,13 +142,9 @@ if ($is_mentee) {
 
 // Tell the other person, using the notification service already in place.
 try {
-    $who_id = $is_mentee ? $mentee_id : $mentor_id;
-    $nameQ  = $con->prepare("SELECT firstname, lastname FROM users WHERE user_id = ?");
-    $nameQ->bind_param("i", $who_id);
-    $nameQ->execute();
-    $nameRow = $nameQ->get_result()->fetch_assoc();
-    $nameQ->close();
-    $who = $nameRow ? trim($nameRow['firstname'] . ' ' . $nameRow['lastname']) : ($is_mentee ? 'Your mentee' : 'Your mentor');
+    $who_id  = $is_mentee ? $mentee_id : $mentor_id;
+    $nameRow = UserRepository::names($con, $who_id);
+    $who     = $nameRow ? trim($nameRow['firstname'] . ' ' . $nameRow['lastname']) : ($is_mentee ? 'Your mentee' : 'Your mentor');
 
     if ($is_mentee) {
         NotificationService::feedbackReceived($con, $mentor_id, $who, url('mentor-feedback'));

@@ -114,6 +114,7 @@ include 'layout.php';
         font-size: 13px; font-weight: 600; color: var(--gray-500); text-decoration: none;
     }
     .uv-back:hover { color: var(--forest); }
+    .uv-proof { margin-top: 6px; padding: 0; border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--forest); text-decoration: underline; cursor: pointer; }
     .uv-back svg { width: 15px; height: 15px; }
 
 
@@ -589,13 +590,17 @@ include 'layout.php';
                         <?php foreach ($reports as $r): ?>
                             <div class="uv-row">
                                 <div class="uv-row-main">
-                                    <div class="uv-row-t"><?= htmlspecialchars($r['issue_type'] ?: 'Report') ?></div>
+                                    <div class="uv-row-t"><?= htmlspecialchars(ReportService::label($r['issue_type'])) ?></div>
                                     <div class="uv-row-s">
                                         By <?= htmlspecialchars(trim((string)$r['reporter']) ?: 'a removed account') ?>
                                         &middot; <?= htmlspecialchars(ucfirst($r['status'])) ?>
                                     </div>
                                     <?php if (trim((string)$r['description']) !== ''): ?>
                                         <div class="uv-row-note"><?= nl2br(htmlspecialchars($r['description'])) ?></div>
+                                    <?php endif; ?>
+                                    <?php if (($proof = ReportService::proofUrl($r['proof'] ?? null)) !== ''): ?>
+                                        <button type="button" class="uv-proof"
+                                            onclick="umDoc(<?= htmlspecialchars(json_encode($proof), ENT_QUOTES) ?>, <?= htmlspecialchars(json_encode('Attached to a report about ' . $name), ENT_QUOTES) ?>)">View attached image</button>
                                     <?php endif; ?>
                                 </div>
                                 <div class="uv-row-when"><?= uv_date($r['created_at']) ?></div>

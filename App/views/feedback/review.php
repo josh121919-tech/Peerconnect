@@ -45,49 +45,18 @@ $rating_words = [1 => 'Poor', 2 => 'Fair', 3 => 'Good', 4 => 'Very Good', 5 => '
 // has already passed. The end time is worked out by MySQL rather than PHP:
 // session_date is written on the database clock and PHP's timezone here is a
 // different one, so comparing the two in PHP shifts the cut-off by hours.
-$other_col = $is_mentee ? 'sr.mentor_id' : 'sr.mentee_id';
-$mine_col  = $is_mentee ? 'sr.mentee_id' : 'sr.mentor_id';
-
-$sessions = $con->query("
-    SELECT sr.request_id, sr.session_date, sr.subject, sr.status,
-           $other_col AS other_id,
-           CONCAT(u.firstname, ' ', u.lastname) AS other_name,
-           p.club, p.profile_image,
-           COALESCE(a.duration, 60)        AS duration,
-           COALESCE(a.session_type, '1v1') AS session_type,
-           DATE_ADD(sr.session_date, INTERVAL COALESCE(a.duration, 60) MINUTE) AS session_end
-    FROM session_requests sr
-    JOIN users u   ON u.user_id = $other_col
-    LEFT JOIN profile p ON p.user_id = $other_col
-    LEFT JOIN availability a
-           ON a.mentor_id        = sr.mentor_id
-          AND a.subject          = sr.subject
-          AND DATE(a.date)       = DATE(sr.session_date)
-          AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE $mine_col = $user_id
-      AND sr.status IN ('approved', 'completed')
-      AND DATE_ADD(sr.session_date, INTERVAL COALESCE(a.duration, 60) MINUTE) <= NOW()
-    ORDER BY sr.session_date DESC
-")->fetch_all(MYSQLI_ASSOC);
+$sessions = FeedbackRepository::reviewableSessions($con, $user_id, $is_mentee);
 
 // Which of them this person has already reviewed.
-$review_table = $is_mentee ? 'feedback' : 'mentee_reviews';
-$author_col   = $is_mentee ? 'mentee_id' : 'mentor_id';
-$reviewed     = [];
-if ($sessions) {
-    $ids = implode(',', array_map(fn($s) => (int)$s['request_id'], $sessions));
-    $rr  = $con->query("SELECT * FROM $review_table WHERE $author_col = $user_id AND session_id IN ($ids)");
-    while ($r = $rr->fetch_assoc()) {
-        $reviewed[(int)$r['session_id']] = $r;
-    }
-}
+$reviewed = FeedbackRepository::reviewsByAuthor($con, $user_id, $is_mentee, array_column($sessions, 'request_id'));
 
 $pending = array_values(array_filter($sessions, fn($s) => !isset($reviewed[(int)$s['request_id']])));
 $done    = array_values(array_filter($sessions, fn($s) => isset($reviewed[(int)$s['request_id']])));
 
 // ── Which session are we looking at? ─────────────────────────────────────
 // Accepts ?session= (this page) or ?session_id= (the post-video-call redirect).
-$requested = (int)($_GET['session'] ?? $_GET['session_id'] ?? 0);
+$requested = $_GET['session'] ?? $_GET['session_id'] ?? 0;
+$requested = is_string($requested) ? (int)$requested : 0;
 $session   = null;
 foreach ($sessions as $s) {
     if ((int)$s['request_id'] === $requested) {
@@ -107,13 +76,9 @@ $is_read_only = $existing !== null;
 $draft = null;
 if ($session && !$is_read_only) {
     $direction = $is_mentee ? 'mentee_to_mentor' : 'mentor_to_mentee';
-    $dq = $con->prepare("SELECT payload FROM feedback_drafts WHERE session_id = ? AND author_id = ? AND direction = ?");
-    $dq->bind_param("iis", $session_id, $user_id, $direction);
-    $dq->execute();
-    $drow = $dq->get_result()->fetch_assoc();
-    $dq->close();
-    if ($drow) {
-        $decoded = json_decode($drow['payload'], true);
+    $payload   = FeedbackRepository::draftPayload($con, $session_id, $user_id, $direction);
+    if ($payload !== null) {
+        $decoded = json_decode($payload, true);
         if (is_array($decoded)) $draft = $decoded;
     }
 }
@@ -129,17 +94,7 @@ $values['note_rating'] = (string)($existing['note_overall'] ?? $draft['note_over
 $values['comment']     = (string)($existing['comment'] ?? $draft['comment'] ?? '');
 
 // ── The other side's review of this same session (the second tab) ────────
-$counter_table = $is_mentee ? 'mentee_reviews' : 'feedback';
-$counter_col   = $is_mentee ? 'mentor_id' : 'mentee_id';
-$counterpart   = null;
-if ($session) {
-    $other_id = (int)$session['other_id'];
-    $cq = $con->prepare("SELECT * FROM $counter_table WHERE session_id = ? AND $counter_col = ?");
-    $cq->bind_param("ii", $session_id, $other_id);
-    $cq->execute();
-    $counterpart = $cq->get_result()->fetch_assoc() ?: null;
-    $cq->close();
-}
+$counterpart = $session ? FeedbackRepository::counterpartReview($con, $session_id, (int)$session['other_id'], $is_mentee) : null;
 $counter_aspects = $is_mentee
     ? [
         'preparedness'  => 'Preparedness',

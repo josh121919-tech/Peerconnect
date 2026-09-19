@@ -82,6 +82,25 @@ class ModerationRepository extends Repository
 
     // ── Reports ─────────────────────────────────────────────────────────────
 
+    /** Files a report. $proof is the stored proof image's name, or null. Returns the report's id. */
+    public static function fileReport(mysqli $con, int $reportedUserId, int $reportedBy, string $issueType, string $description, ?string $proof): int
+    {
+        return self::insert($con, "
+            INSERT INTO reports (reported_user_id, reported_by, issue_type, description, proof, status, created_at)
+            VALUES (?, ?, ?, ?, ?, 'pending', NOW())
+        ", 'iisss', [$reportedUserId, $reportedBy, $issueType, $description, $proof]);
+    }
+
+    /**
+     * Whether some report's proof is the file $name. Older rows store a path
+     * ('uploads/reports/<name>'), newer ones the name alone.
+     */
+    public static function proofIsKnown(mysqli $con, string $name): bool
+    {
+        return self::value($con, "SELECT 1 FROM reports WHERE proof = ? OR proof = CONCAT('uploads/reports/', ?) LIMIT 1",
+            'ss', [$name, $name]) !== null;
+    }
+
     /** 'report_id', 'reported_user_id' and 'status' of one report, or null when there is no such report. */
     public static function report(mysqli $con, int $reportId): ?array
     {
@@ -123,7 +142,7 @@ class ModerationRepository extends Repository
     public static function reportsAgainst(mysqli $con, int $userId, int $limit): array
     {
         return self::typedRows($con, "
-            SELECT r.report_id, r.issue_type, r.description, r.status, r.created_at,
+            SELECT r.report_id, r.issue_type, r.description, r.proof, r.status, r.created_at,
                    CONCAT_WS(' ', w.firstname, w.lastname) AS reporter
             FROM reports r LEFT JOIN users w ON w.user_id = r.reported_by
             WHERE r.reported_user_id = ? ORDER BY r.created_at DESC LIMIT ?
@@ -139,5 +158,58 @@ class ModerationRepository extends Repository
                    (SELECT COUNT(*) FROM reports WHERE reported_by = ?) AS filed
         ", 'iii', [$userId, $userId, $userId]);
         return array_map('intval', $row);
+    }
+
+    // ── The admin Notifications page ────────────────────────────────────────
+
+    /**
+     * Reports for the admin's list, open ones (urgent, then pending) before
+     * resolved, newest first within each, at most $limit: the report with
+     * both people's names, roles and photos.
+     */
+    public static function reportsForInbox(mysqli $con, int $limit): array
+    {
+        return self::typedRows($con, "
+            SELECT r.report_id, r.issue_type, r.description, r.status, r.created_at, r.updated_at,
+                   r.reported_user_id, r.reported_by,
+                   TRIM(CONCAT_WS(' ', ru.firstname, ru.lastname)) AS reported_name, ru.role AS reported_role,
+                   TRIM(CONCAT_WS(' ', bu.firstname, bu.lastname)) AS reporter_name, bu.role AS reporter_role
+            FROM reports r
+            JOIN users ru      ON ru.user_id = r.reported_user_id
+            LEFT JOIN users bu ON bu.user_id = r.reported_by
+            ORDER BY FIELD(r.status, 'urgent', 'pending') = 0, FIELD(r.status, 'urgent', 'pending'), r.created_at DESC
+            LIMIT ?
+        ", 'i', [$limit]);
+    }
+
+    /**
+     * One report with everything the admin's detail panel shows: both
+     * people's names, roles, statuses, photos and whether each account was
+     * deleted by its owner ('reported_deleted', 'reporter_deleted').
+     */
+    public static function reportDetail(mysqli $con, int $reportId): ?array
+    {
+        return self::typedRow($con, "
+            SELECT r.report_id, r.issue_type, r.description, r.proof, r.status, r.created_at, r.updated_at,
+                   r.reported_user_id, r.reported_by,
+                   TRIM(CONCAT_WS(' ', ru.firstname, ru.lastname)) AS reported_name, ru.role AS reported_role,
+                   ru.status AS reported_status, rp.profile_image AS reported_photo,
+                   (ru.status = 'blocked' AND ru.email IS NULL) AS reported_deleted,
+                   TRIM(CONCAT_WS(' ', bu.firstname, bu.lastname)) AS reporter_name, bu.role AS reporter_role,
+                   bu.status AS reporter_status, bp.profile_image AS reporter_photo,
+                   (bu.status = 'blocked' AND bu.email IS NULL) AS reporter_deleted
+            FROM reports r
+            JOIN users ru         ON ru.user_id = r.reported_user_id
+            LEFT JOIN profile rp  ON rp.user_id = r.reported_user_id
+            LEFT JOIN users bu    ON bu.user_id = r.reported_by
+            LEFT JOIN profile bp  ON bp.user_id = r.reported_by
+            WHERE r.report_id = ?
+        ", 'i', [$reportId]);
+    }
+
+    /** How many reports are open (pending or urgent). */
+    public static function countOpenReports(mysqli $con): int
+    {
+        return (int)self::value($con, "SELECT COUNT(*) FROM reports WHERE status IN ('pending','urgent')");
     }
 }

@@ -33,11 +33,7 @@ if (!verify_csrf()) {
     $fail(403, 'Security token mismatch.');
 }
 
-$uid  = (int)$_SESSION['user_id'];
-$stmt = $con->prepare("UPDATE notifications SET is_read=1 WHERE user_id=? AND is_read=0");
-$stmt->bind_param("i", $uid);
-$stmt->execute();
-$stmt->close();
+NotificationRepository::markAllRead($con, (int)$_SESSION['user_id']);
 
 if ($wants_json) {
     header('Content-Type: application/json');

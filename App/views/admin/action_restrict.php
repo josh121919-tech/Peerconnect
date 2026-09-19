@@ -32,6 +32,11 @@ $reason    = $field('reason');
 $back      = url('admin-users') . '?tab=restricted';
 $from      = url('admin-users') . '?tab=' . ($report_id ? 'reported' : 'restricted');
 
+// Sent from the Notifications page: back there, to the same report.
+if ($field('return_to') === 'notifications') {
+    $back = $from = url('admin-notifications') . '?report=' . $report_id;
+}
+
 $refuse = function (string $message, string $title = 'Not restricted') use ($from): never {
     pc_flash('error', $message, $title);
     header('Location: ' . $from);
