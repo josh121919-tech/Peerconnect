@@ -25,24 +25,10 @@ require_admin();
 date_default_timezone_set('Asia/Manila');
 
 $me  = (int)($_SESSION['user_id'] ?? 0);
-$uid = (int)($_GET['id'] ?? 0);
+$uid = is_string($_GET['id'] ?? null) ? (int)$_GET['id'] : 0;
 
 /* ── The account ──────────────────────────────────────────────────────── */
-$us = $con->prepare("
-    SELECT u.user_id, u.firstname, u.middlename, u.lastname, u.suffix, u.username,
-           u.role, u.status, u.verified, u.created_at,
-           u.email,
-           p.full_name, p.student_id, p.course, p.year_level, p.section, p.club,
-           p.profile_image, p.phone, p.location, p.bio, p.visibility, p.onboarded_at
-    FROM users u
-    LEFT JOIN profile p ON p.user_id = u.user_id
-    WHERE u.user_id = ?
-    LIMIT 1
-");
-$us->bind_param('i', $uid);
-$us->execute();
-$u = $us->get_result()->fetch_assoc();
-$us->close();
+$u = AdminUserRepository::account($con, $uid);
 
 if (!$u) {
     pc_flash('error', 'That account no longer exists.');
@@ -61,16 +47,12 @@ $role  = $u['role'] ?: 'mentee';
 $stat  = $u['status'] ?: 'active';
 $isMe  = ($uid === $me);
 $csrf  = csrf_token();
+// Deleted by its owner: kept for the record, with nothing left to act on. It
+// used to show as an ordinary blocked account with an Unblock button.
+$deleted = ModerationService::isDeleted($u);
 
 /* ── Verification record ──────────────────────────────────────────────── */
-$vs = $con->prepare("
-    SELECT * FROM user_verifications WHERE user_id = ?
-    ORDER BY verification_id DESC LIMIT 1
-");
-$vs->bind_param('i', $uid);
-$vs->execute();
-$v = $vs->get_result()->fetch_assoc();
-$vs->close();
+$v = VerificationRepository::forUser($con, $uid);
 
 // The profile row is blank for anyone who only ever filled in the
 // verification form, so fall back to what they actually submitted.
@@ -82,121 +64,39 @@ $pick = function (string $key) use ($u, $v) {
 
 /* ── Expertise and interests ──────────────────────────────────────────── */
 $tags = [];
-$ts = $con->prepare("SELECT tag_type, tag FROM user_tags WHERE user_id = ? ORDER BY tag_type, tag");
-$ts->bind_param('i', $uid);
-$ts->execute();
-foreach ($ts->get_result()->fetch_all(MYSQLI_ASSOC) as $t) {
+foreach (AdminUserRepository::tags($con, $uid) as $t) {
     $tags[$t['tag_type']][] = $t['tag'];
 }
-$ts->close();
 
 /* ── Activity ─────────────────────────────────────────────────────────── */
-$scalar = function (string $sql, array $params = []) use ($con) {
-    $st = $con->prepare($sql);
-    if ($params) $st->bind_param(str_repeat('i', count($params)), ...$params);
-    $st->execute();
-    $row = $st->get_result()->fetch_row();
-    $st->close();
-    return $row ? $row[0] : null;
-};
+$figures   = AdminUserRepository::activityFigures($con, $uid, $role === 'mentor');
+$sess_done = $figures['done'];
+$sess_all  = $figures['all'];
+$rating    = $figures['rating'];
+$rating_n  = $figures['rating_n'];
 
-$sess_done  = (int)$scalar("SELECT COUNT(*) FROM session_requests WHERE status='completed' AND (mentee_id = ? OR mentor_id = ?)", [$uid, $uid]);
-$sess_all   = (int)$scalar("SELECT COUNT(*) FROM session_requests WHERE mentee_id = ? OR mentor_id = ?", [$uid, $uid]);
-$rating     = $role === 'mentor'
-    ? $scalar("SELECT AVG(rating) FROM feedback WHERE mentor_id = ?", [$uid])
-    : $scalar("SELECT AVG(rating) FROM mentee_reviews WHERE mentee_id = ?", [$uid]);
-$rating_n   = (int)($role === 'mentor'
-    ? $scalar("SELECT COUNT(*) FROM feedback WHERE mentor_id = ?", [$uid])
-    : $scalar("SELECT COUNT(*) FROM mentee_reviews WHERE mentee_id = ?", [$uid]));
-$rep_open   = (int)$scalar("SELECT COUNT(*) FROM reports WHERE reported_user_id = ? AND status IN ('pending','urgent')", [$uid]);
-$rep_all    = (int)$scalar("SELECT COUNT(*) FROM reports WHERE reported_user_id = ?", [$uid]);
-$rep_filed  = (int)$scalar("SELECT COUNT(*) FROM reports WHERE reported_by = ?", [$uid]);
+$report_figures = ModerationRepository::reportFigures($con, $uid);
+$rep_open  = $report_figures['open'];
+$rep_all   = $report_figures['against'];
+$rep_filed = $report_figures['filed'];
 
-$last_seen = null;
-if (!empty($u['email'])) {
-    $lg = $con->prepare("SELECT log_date FROM logs WHERE email = ? ORDER BY log_date DESC LIMIT 1");
-    $lg->bind_param('s', $u['email']);
-    $lg->execute();
-    $r = $lg->get_result()->fetch_row();
-    $last_seen = $r ? $r[0] : null;
-    $lg->close();
-}
+$last_seen = !empty($u['email']) ? LogRepository::lastSeen($con, $u['email']) : null;
 
 /* Recent sessions, from whichever side of the table this person sits on. */
-$ss = $con->prepare("
-    SELECT sr.request_id, sr.subject, sr.session_date, sr.status,
-           sr.mentee_id, sr.mentor_id,
-           CONCAT_WS(' ', o.firstname, o.lastname) AS other_name, o.role AS other_role
-    FROM session_requests sr
-    JOIN users o ON o.user_id = CASE WHEN sr.mentee_id = ? THEN sr.mentor_id ELSE sr.mentee_id END
-    WHERE sr.mentee_id = ? OR sr.mentor_id = ?
-    ORDER BY sr.session_date DESC
-    LIMIT 6
-");
-$ss->bind_param('iii', $uid, $uid, $uid);
-$ss->execute();
-$sessions = $ss->get_result()->fetch_all(MYSQLI_ASSOC);
-$ss->close();
+$sessions = AdminUserRepository::recentSessions($con, $uid, 6);
 
 /* Ratings written about this person. */
-if ($role === 'mentor') {
-    $fs = $con->prepare("
-        SELECT f.rating, f.comment, f.created_at, CONCAT_WS(' ', w.firstname, w.lastname) AS author
-        FROM feedback f LEFT JOIN users w ON w.user_id = f.mentee_id
-        WHERE f.mentor_id = ? ORDER BY f.created_at DESC LIMIT 4
-    ");
-} else {
-    $fs = $con->prepare("
-        SELECT m.rating, m.comment, m.created_at, CONCAT_WS(' ', w.firstname, w.lastname) AS author
-        FROM mentee_reviews m LEFT JOIN users w ON w.user_id = m.mentor_id
-        WHERE m.mentee_id = ? ORDER BY m.created_at DESC LIMIT 4
-    ");
-}
-$fs->bind_param('i', $uid);
-$fs->execute();
-$reviews = $fs->get_result()->fetch_all(MYSQLI_ASSOC);
-$fs->close();
+$reviews = AdminUserRepository::reviewsAbout($con, $uid, $role === 'mentor', 4);
 
 /* Reports filed against this person. */
-$rs = $con->prepare("
-    SELECT r.report_id, r.issue_type, r.description, r.status, r.created_at,
-           CONCAT_WS(' ', w.firstname, w.lastname) AS reporter
-    FROM reports r LEFT JOIN users w ON w.user_id = r.reported_by
-    WHERE r.reported_user_id = ? ORDER BY r.created_at DESC LIMIT 6
-");
-$rs->bind_param('i', $uid);
-$rs->execute();
-$reports = $rs->get_result()->fetch_all(MYSQLI_ASSOC);
-$rs->close();
+$reports = ModerationRepository::reportsAgainst($con, $uid, 6);
 
-/* Moderation history. */
-$xs = $con->prepare("
-    SELECT reason, restricted_at, start_date, end_date,
-           CONCAT_WS(' ', a.firstname, a.lastname) AS by_name
-    FROM restrictions x LEFT JOIN users a ON a.user_id = x.restricted_by
-    WHERE x.user_id = ? ORDER BY x.restriction_id DESC LIMIT 5
-");
-$xs->bind_param('i', $uid);
-$xs->execute();
-$restrictions = $xs->get_result()->fetch_all(MYSQLI_ASSOC);
-$xs->close();
-
-$bs = $con->prepare("SELECT reason, blocked_at FROM blocks WHERE user_id = ? ORDER BY block_id DESC LIMIT 5");
-$bs->bind_param('i', $uid);
-$bs->execute();
-$blocks = $bs->get_result()->fetch_all(MYSQLI_ASSOC);
-$bs->close();
+/* Moderation history. Rows are kept after a block or restriction ends. */
+$restrictions = ModerationRepository::restrictionsFor($con, $uid, 5);
+$blocks       = ModerationRepository::blocksFor($con, $uid, 5);
 
 /* Badges earned. */
-$gs = $con->prepare("
-    SELECT b.name, b.description, ub.awarded_at
-    FROM user_badges ub JOIN badges b ON b.badge_id = ub.badge_id
-    WHERE ub.user_id = ? ORDER BY ub.awarded_at DESC
-");
-$gs->bind_param('i', $uid);
-$gs->execute();
-$badges = $gs->get_result()->fetch_all(MYSQLI_ASSOC);
-$gs->close();
+$badges = AdminUserRepository::badges($con, $uid);
 
 function uv_date(?string $d, string $fmt = 'M j, Y'): string
 {
@@ -345,7 +245,7 @@ include 'layout.php';
                 <?php else: ?>
                     <span class="uv-chip uv-norole" title="This account has no role, so every dashboard turns it away.">No role</span>
                 <?php endif; ?>
-                <span class="uv-chip uv-<?= htmlspecialchars($stat) ?>"><?= htmlspecialchars(ucfirst($stat)) ?></span>
+                <span class="uv-chip uv-<?= htmlspecialchars($stat) ?>"><?= $deleted ? 'Deleted' : htmlspecialchars(ucfirst($stat)) ?></span>
                 <?php if (!(int)$u['verified']): ?><span class="uv-chip uv-muted">Unverified</span><?php endif; ?>
                 <?php if ($rep_open > 0): ?><span class="uv-chip uv-flagged"><?= $rep_open ?> open report<?= $rep_open === 1 ? '' : 's' ?></span><?php endif; ?>
                 <?php if ($isMe): ?><span class="uv-chip uv-muted">You</span><?php endif; ?>
@@ -373,19 +273,21 @@ include 'layout.php';
         </div>
 
         <div class="uv-acts">
-            <?php if ($raw_role === 'mentor'): ?>
+            <?php if ($raw_role === 'mentor' && !$deleted): ?>
                 <a class="uv-link" target="_blank" rel="noopener" href="<?= htmlspecialchars(url('mentee-view-mentor') . '?id=' . $uid) ?>">
                     <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M14 5h5v5M19 5l-8 8M18 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5" /></svg>
                     Public profile
                 </a>
             <?php endif; ?>
 
-            <a class="uv-link" href="<?= htmlspecialchars(url('messages') . '?chat=' . $uid) ?>">
-                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 12a7 7 0 0 1-7 7H8.5L5 21.5V18A7 7 0 0 1 12 5h1a7 7 0 0 1 7 7Z" /></svg>
-                Message
-            </a>
+            <?php if (!$deleted): ?>
+                <a class="uv-link" href="<?= htmlspecialchars(url('messages') . '?chat=' . $uid) ?>">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M20 12a7 7 0 0 1-7 7H8.5L5 21.5V18A7 7 0 0 1 12 5h1a7 7 0 0 1 7 7Z" /></svg>
+                    Message
+                </a>
+            <?php endif; ?>
 
-            <?php if (!$has_role && !$isMe): ?>
+            <?php if (!$has_role && !$isMe && !$deleted): ?>
                 <form method="post" action="<?= url('admin-action-role') ?>" class="uv-rolefix">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
                     <input type="hidden" name="user_id" value="<?= $uid ?>">
@@ -399,7 +301,7 @@ include 'layout.php';
                 </form>
             <?php endif; ?>
 
-            <?php if (!$isMe): ?>
+            <?php if (!$isMe && !$deleted): ?>
                 <?php if ($stat === 'blocked'): ?>
                     <form method="post" action="<?= url('admin-action-unblock') ?>">
                         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
@@ -410,11 +312,14 @@ include 'layout.php';
                         </button>
                     </form>
                 <?php else: ?>
-                    <button type="button" class="uv-link warn"
-                        onclick="umRestrict(<?= $uid ?>, 0, <?= htmlspecialchars(json_encode($name), ENT_QUOTES) ?>)">
-                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="M12 7.5V12l3 2" /></svg>
-                        <?= $stat === 'restricted' ? 'Change restriction' : 'Restrict' ?>
-                    </button>
+                    <?php // A restriction does not apply to the admin panel, so an admin is never offered one. ?>
+                    <?php if ($raw_role !== 'admin'): ?>
+                        <button type="button" class="uv-link warn"
+                            onclick="umRestrict(<?= $uid ?>, 0, <?= htmlspecialchars(json_encode($name), ENT_QUOTES) ?>)">
+                            <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="M12 7.5V12l3 2" /></svg>
+                            <?= $stat === 'restricted' ? 'Change restriction' : 'Restrict' ?>
+                        </button>
+                    <?php endif; ?>
                     <button type="button" class="uv-link danger"
                         onclick="umBlock(<?= $uid ?>, 0, <?= htmlspecialchars(json_encode($name), ENT_QUOTES) ?>)">
                         <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="m6.5 6.5 11 11" /></svg>
@@ -426,7 +331,16 @@ include 'layout.php';
     </div>
 
     <!-- ══════════ Standing notice ══════════ -->
-    <?php if ($stat === 'blocked'):
+    <?php if ($deleted):
+        $b = $blocks[0] ?? null; ?>
+        <div class="uv-notice bad">
+            <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="m6.5 6.5 11 11" /></svg>
+            <div>
+                <b>This account was deleted by its owner<?= $b ? ' — ' . htmlspecialchars(uv_date($b['blocked_at'])) : '' ?></b>
+                Its name, email address and profile were removed. Its sessions and reviews stay, because they belong to the other people in them too.
+            </div>
+        </div>
+    <?php elseif ($stat === 'blocked'):
         $b = $blocks[0] ?? null; ?>
         <div class="uv-notice bad">
             <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="m6.5 6.5 11 11" /></svg>
@@ -440,7 +354,7 @@ include 'layout.php';
         <div class="uv-notice warn">
             <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="M12 7.5V12l3 2" /></svg>
             <div>
-                <b>Restricted<?= $x && $x['end_date'] ? ' until ' . htmlspecialchars(uv_date($x['end_date'])) : '' ?></b>
+                <b>Restricted<?= $x && $x['end_date'] ? ' until ' . htmlspecialchars(uv_date(ModerationService::liftDay($x['end_date']))) : '' ?></b>
                 They can sign in and read, but cannot book, message or publish.
                 <?= $x && trim((string)$x['reason']) !== '' ? ' Reason: ' . htmlspecialchars($x['reason']) : '' ?>
             </div>
@@ -452,7 +366,7 @@ include 'layout.php';
         <div class="uv-stat">
             <div class="uv-stat-k">Sessions</div>
             <div class="uv-stat-v"><?= $sess_done ?></div>
-            <div class="uv-stat-s"><?= $sess_all === $sess_done ? 'All completed' : $sess_all . ' booked in total' ?></div>
+            <div class="uv-stat-s"><?= $sess_all === 0 ? 'None booked yet' : ($sess_all === $sess_done ? 'All completed' : $sess_all . ' booked in total') ?></div>
         </div>
         <div class="uv-stat">
             <div class="uv-stat-k">Rating</div>
@@ -695,19 +609,25 @@ include 'layout.php';
                 <div class="uv-card">
                     <h2>Moderation history</h2>
                     <div class="uv-rows">
-                        <?php foreach ($blocks as $b): ?>
+                        <?php foreach ($blocks as $i => $b):
+                            // Only the newest block of a blocked account is in force;
+                            // every other one was lifted by an unblock.
+                            $in_force = $i === 0 && $stat === 'blocked'; ?>
                             <div class="uv-row">
                                 <div class="uv-row-main">
-                                    <div class="uv-row-t">Blocked</div>
+                                    <div class="uv-row-t"><?= $in_force ? ($deleted ? 'Account deleted' : 'Blocked') : 'Blocked, since lifted' ?></div>
                                     <div class="uv-row-note"><?= trim((string)$b['reason']) !== '' ? htmlspecialchars($b['reason']) : 'No reason recorded.' ?></div>
                                 </div>
                                 <div class="uv-row-when"><?= uv_date($b['blocked_at']) ?></div>
                             </div>
                         <?php endforeach; ?>
-                        <?php foreach ($restrictions as $x): ?>
+                        <?php foreach ($restrictions as $i => $x):
+                            // A newer restriction that began before this one ran out replaced it.
+                            $newer    = $restrictions[$i - 1] ?? null;
+                            $replaced = $newer && $x['end_date'] && (string)$newer['start_date'] <= (string)$x['end_date']; ?>
                             <div class="uv-row">
                                 <div class="uv-row-main">
-                                    <div class="uv-row-t">Restricted<?= $x['end_date'] ? ' until ' . htmlspecialchars(uv_date($x['end_date'])) : '' ?></div>
+                                    <div class="uv-row-t">Restricted<?= $x['end_date'] ? ' until ' . htmlspecialchars(uv_date(ModerationService::liftDay($x['end_date']))) : '' ?><?= $replaced ? ' — replaced ' . htmlspecialchars(uv_date($newer['start_date'])) : '' ?></div>
                                     <div class="uv-row-s">By <?= htmlspecialchars(trim((string)$x['by_name']) ?: 'an admin') ?></div>
                                     <div class="uv-row-note"><?= trim((string)$x['reason']) !== '' ? htmlspecialchars($x['reason']) : 'No reason recorded.' ?></div>
                                 </div>

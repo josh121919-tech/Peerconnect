@@ -391,14 +391,15 @@ class NotificationService
      * restricted" leaves them with no way to know when it ends or what to do
      * differently, so both are spelled out along with what they can still do.
      *
-     * $end_date is 'Y-m-d'; omit it and the message simply drops the date
-     * rather than inventing one.
+     * $lifts_on is the day the restriction lifts itself, 'Y-m-d' (the day
+     * after its last restricted day); omit it and the message simply drops the
+     * date rather than inventing one.
      */
-    public static function restrictionMessage(string $end_date = '', int $days = 0, string $reason = ''): string
+    public static function restrictionMessage(string $lifts_on = '', int $days = 0, string $reason = ''): string
     {
         $msg = 'Your account is restricted';
 
-        $stamp = $end_date !== '' ? strtotime($end_date) : false;
+        $stamp = $lifts_on !== '' ? strtotime($lifts_on) : false;
         if ($stamp) {
             $msg .= ' until ' . date('F j, Y', $stamp);
             if ($days > 0) {
@@ -415,18 +416,18 @@ class NotificationService
             $msg .= ' Reason: ' . trim($reason) . '.';
         }
 
-        return $msg . ' The restriction lifts itself on the end date.';
+        return $msg . ($stamp ? ' It lifts itself on that date.' : ' It lifts itself when the time is up.');
     }
 
     public static function accountRestricted(
         mysqli $con,
         int    $user_id,
-        string $end_date = '',
+        string $lifts_on = '',
         int    $days = 0,
         string $reason = ''
     ): void {
         self::send($con, $user_id, 'account_restricted', 'Account Restricted',
-            self::restrictionMessage($end_date, $days, $reason));
+            self::restrictionMessage($lifts_on, $days, $reason));
     }
 
     /**

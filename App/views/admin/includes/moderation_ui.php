@@ -96,7 +96,7 @@ $um_ui_done = true;
         <h3>Block <span id="umBlockName">this account</span>?</h3>
         <p>They will be signed out on their next request and cannot sign in again until unblocked.</p>
         <label for="umBlockReason">Reason (kept on the account record)</label>
-        <textarea id="umBlockReason" name="reason" rows="3" required placeholder="e.g. Repeated no-shows after multiple warnings"></textarea>
+        <textarea id="umBlockReason" name="reason" rows="3" required maxlength="<?= ModerationService::REASON_MAX ?>" placeholder="e.g. Repeated no-shows after multiple warnings"></textarea>
         <div class="um-modal-foot">
             <button type="button" class="um-cancel" onclick="umClose()">Cancel</button>
             <button type="submit" class="um-btn um-no" style="border-color:#A6301F;background:#A6301F;color:#fff;">Block account</button>
@@ -110,7 +110,7 @@ $um_ui_done = true;
         <input type="hidden" name="user_id" id="umRestrictUser" value="0">
         <input type="hidden" name="report_id" id="umRestrictReport" value="0">
         <h3>Restrict <span id="umRestrictName">this account</span></h3>
-        <p>They can still sign in and read, but cannot book, message or publish until the restriction expires. It lifts itself on the end date.</p>
+        <p>They can still sign in and read, but cannot book, message or publish until the restriction expires. It lifts itself once the chosen number of days has passed. If they are already restricted, this replaces the current restriction.</p>
         <label for="umDays">Length</label>
         <select id="umDays" name="days">
             <option value="3">3 days</option>
@@ -120,7 +120,7 @@ $um_ui_done = true;
             <option value="90">90 days</option>
         </select>
         <label for="umRestrictReason">Reason (kept on the account record)</label>
-        <textarea id="umRestrictReason" name="reason" rows="3" required placeholder="e.g. Inappropriate language in session chat"></textarea>
+        <textarea id="umRestrictReason" name="reason" rows="3" required maxlength="<?= ModerationService::REASON_MAX ?>" placeholder="e.g. Inappropriate language in session chat"></textarea>
         <div class="um-modal-foot">
             <button type="button" class="um-cancel" onclick="umClose()">Cancel</button>
             <button type="submit" class="um-btn" style="background:#9A7100;color:#fff;">Apply restriction</button>

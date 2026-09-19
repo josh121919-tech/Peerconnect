@@ -25,189 +25,91 @@ date_default_timezone_set('Asia/Manila');
 $me = (int)($_SESSION['user_id'] ?? 0);
 
 /* ── Filters ──────────────────────────────────────────────────────────── */
+// A value sent as a list (?q[]=x) counts as missing.
+$get = fn(string $name): string => is_string($_GET[$name] ?? null) ? $_GET[$name] : '';
+
 $VIEWS = ['all', 'mentee', 'mentor', 'admin', 'pending', 'reported', 'restricted', 'blocked'];
-$view  = in_array($_GET['tab'] ?? '', $VIEWS, true) ? $_GET['tab'] : 'all';
+$view  = in_array($get('tab'), $VIEWS, true) ? $get('tab') : 'all';
 
 // The sidebar links here with ?role=; treat it as the matching tab.
-if (in_array($_GET['role'] ?? '', ['mentee', 'mentor', 'admin'], true)) {
-    $view = $_GET['role'];
+if (in_array($get('role'), AdminUserRepository::ROLE_VIEWS, true)) {
+    $view = $get('role');
 }
 
-$q      = trim((string)($_GET['q'] ?? ''));
-$status = in_array($_GET['status'] ?? '', ['active', 'restricted', 'blocked', 'unverified'], true) ? $_GET['status'] : '';
-$sort   = in_array($_GET['sort'] ?? '', ['newest', 'oldest', 'name', 'role'], true) ? $_GET['sort'] : 'newest';
+$q      = trim($get('q'));
+$status = in_array($get('status'), ['active', 'restricted', 'blocked', 'unverified'], true) ? $get('status') : '';
+$sort   = in_array($get('sort'), ['newest', 'oldest', 'name', 'role'], true) ? $get('sort') : 'newest';
 
 $perPage = 8;
-$page    = max(1, (int)($_GET['page'] ?? 1));
+$page    = max(1, (int)$get('page'));
 
 /* ── Headline counts ──────────────────────────────────────────────────── */
-$one = function (string $sql) use ($con): int {
-    $r = $con->query($sql);
-    return $r ? (int)$r->fetch_row()[0] : 0;
-};
-$c_all     = $one("SELECT COUNT(*) FROM users");
-$c_mentee  = $one("SELECT COUNT(*) FROM users WHERE role = 'mentee'");
-$c_mentor  = $one("SELECT COUNT(*) FROM users WHERE role = 'mentor'");
-$c_admin   = $one("SELECT COUNT(*) FROM users WHERE role = 'admin'");
-$c_pending = $one("SELECT COUNT(*) FROM user_verifications WHERE status = 'pending'");
-$c_report  = $one("SELECT COUNT(*) FROM reports WHERE status IN ('pending','urgent')");
-$c_restr   = $one("SELECT COUNT(*) FROM users WHERE status = 'restricted'");
-$c_block   = $one("SELECT COUNT(*) FROM users WHERE status = 'blocked'");
+$counts    = AdminUserRepository::headlineCounts($con);
+$c_all     = $counts['all_users'];
+$c_mentee  = $counts['mentee'];
+$c_mentor  = $counts['mentor'];
+$c_admin   = $counts['admin'];
+$c_pending = $counts['pending'];
+$c_report  = $counts['reported'];
+$c_restr   = $counts['restricted'];
+$c_block   = $counts['blocked'];
 
-$mstart = "DATE_FORMAT(CURDATE(), '%Y-%m-01')";
-$lstart = "DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01')";
-function um_trend(int $now, int $prev): ?array
-{
-    if ($prev <= 0) return null;
-    $pct = (int)round((($now - $prev) / $prev) * 100);
-    return $pct === 0 ? null : ['up' => $pct > 0, 'label' => ($pct > 0 ? '+' : '') . $pct . '% from last month'];
-}
-$trend = [];
-foreach (['all' => '', 'mentee' => " AND role='mentee'", 'mentor' => " AND role='mentor'", 'admin' => " AND role='admin'"] as $k => $clause) {
-    $trend[$k] = um_trend(
-        $one("SELECT COUNT(*) FROM users WHERE created_at >= $mstart" . $clause),
-        $one("SELECT COUNT(*) FROM users WHERE created_at >= $lstart AND created_at < $mstart" . $clause)
-    );
-}
-
-/* ── The list ─────────────────────────────────────────────────────────────
- * Sessions and rating come from the same tables the mentor and mentee pages
- * use, so a number here always matches what that person sees.
+/*
+ * Under each figure, how many of those accounts joined this month. It used to
+ * read "+100% from last month": this month's sign-ups so far against all of
+ * last month's, printed under a total that it did not describe.
  */
+$joined = [];
+foreach (['all', 'mentee', 'mentor', 'admin'] as $k) {
+    $n = $counts['joined_' . $k];
+    $joined[$k] = $n > 0 ? number_format($n) . ' joined this month' : null;
+}
+
+/* ── The list ─────────────────────────────────────────────────────────── */
 $rows = [];
 $total = 0;
 
 if (in_array($view, ['all', 'mentee', 'mentor', 'admin', 'restricted', 'blocked'], true)) {
-    $clauses = [];
-    $types   = '';
-    $args    = [];
-
-    if (in_array($view, ['mentee', 'mentor', 'admin'], true)) {
-        $clauses[] = 'u.role = ?';
-        $types .= 's';
-        $args[] = $view;
-    } elseif ($view === 'restricted' || $view === 'blocked') {
-        $clauses[] = 'u.status = ?';
-        $types .= 's';
-        $args[] = $view;
-    }
-
-    if ($q !== '') {
-        $clauses[] = "CONCAT_WS(' ', u.firstname, u.lastname, u.username, u.email) LIKE ?";
-        $types .= 's';
-        $args[] = '%' . $q . '%';
-    }
-
-    if ($status === 'unverified') {
-        $clauses[] = 'u.verified = 0';
-    } elseif ($status !== '') {
-        $clauses[] = 'u.status = ?';
-        $types .= 's';
-        $args[] = $status;
-    }
-
-    $where = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
-    $order = [
-        'newest' => 'u.created_at DESC',
-        'oldest' => 'u.created_at ASC',
-        'name'   => 'u.firstname ASC, u.lastname ASC',
-        'role'   => 'u.role ASC, u.created_at DESC',
-    ][$sort];
-
-    $cs = $con->prepare("SELECT COUNT(*) c FROM users u $where");
-    if ($types !== '') $cs->bind_param($types, ...$args);
-    $cs->execute();
-    $total = (int)$cs->get_result()->fetch_assoc()['c'];
-    $cs->close();
-
-    $offset = ($page - 1) * $perPage;
-    $ls = $con->prepare("
-        SELECT u.user_id, u.firstname, u.lastname, u.role, u.status, u.verified, u.created_at,
-               u.email,
-               p.profile_image,
-               -- Course and club are collected twice: once on the verification
-               -- form, once on the member's own profile. The profile row wins
-               -- because the member can keep it current, but it is blank for
-               -- anyone who has only ever filled in the verification form, so
-               -- fall back to what they actually submitted rather than showing
-               -- a dash for a field they did fill in.
-               --
-               -- Subqueries rather than a join: user_verifications.user_id is
-               -- only a plain index, so a second row for one user would
-               -- otherwise duplicate them in this list and make it disagree
-               -- with the count query above.
-               COALESCE(NULLIF(p.course, ''), NULLIF((
-                   SELECT vc.course FROM user_verifications vc
-                    WHERE vc.user_id = u.user_id
-                    ORDER BY vc.verification_id DESC LIMIT 1), '')) AS course,
-               COALESCE(NULLIF(p.club, ''), NULLIF((
-                   SELECT vb.club FROM user_verifications vb
-                    WHERE vb.user_id = u.user_id
-                    ORDER BY vb.verification_id DESC LIMIT 1), '')) AS club,
-               (SELECT COUNT(*) FROM session_requests sr
-                 WHERE sr.status = 'completed'
-                   AND (sr.mentee_id = u.user_id OR sr.mentor_id = u.user_id)) AS sessions,
-               (SELECT AVG(f.rating) FROM feedback f WHERE f.mentor_id = u.user_id)      AS rating_as_mentor,
-               (SELECT AVG(m.rating) FROM mentee_reviews m WHERE m.mentee_id = u.user_id) AS rating_as_mentee
-        FROM users u
-        LEFT JOIN profile p ON p.user_id = u.user_id
-        $where
-        ORDER BY $order
-        LIMIT ? OFFSET ?
-    ");
-    $ls->bind_param($types . 'ii', ...array_merge($args, [$perPage, $offset]));
-    $ls->execute();
-    $rows = $ls->get_result()->fetch_all(MYSQLI_ASSOC);
-    $ls->close();
+    $total = AdminUserRepository::countMatching($con, $view, $q, $status);
+    // A page past the end (an old link, or a filter that now matches fewer)
+    // shows the last page, not "Showing 81–8 of 8".
+    $page = min($page, max(1, (int)ceil($total / $perPage)));
+    $rows = AdminUserRepository::page($con, $view, $q, $status, $sort, $perPage, ($page - 1) * $perPage);
 }
 
 /* Verification queue — the "New User" tab. */
 $verif = [];
 if ($view === 'pending') {
-    $verif = $con->query("
-        SELECT v.*, u.firstname, u.lastname, u.role, u.email, p.profile_image
-        FROM user_verifications v
-        JOIN users u        ON u.user_id = v.user_id
-        LEFT JOIN profile p ON p.user_id = u.user_id
-        WHERE v.status = 'pending'
-        ORDER BY v.submitted_at ASC
-    ")->fetch_all(MYSQLI_ASSOC);
+    $verif = AdminUserRepository::verificationQueue($con);
     $total = count($verif);
 }
 
 /* Report queue. */
 $reports = [];
 if ($view === 'reported') {
-    $reports = $con->query("
-        SELECT r.*,
-               CONCAT(ru.firstname,' ',ru.lastname) AS reported_name, ru.role AS reported_role,
-               ru.status AS reported_status, rp.profile_image,
-               CONCAT(bu.firstname,' ',bu.lastname) AS reporter_name
-        FROM reports r
-        JOIN users ru        ON ru.user_id = r.reported_user_id
-        LEFT JOIN users bu   ON bu.user_id = r.reported_by
-        LEFT JOIN profile rp ON rp.user_id = r.reported_user_id
-        WHERE r.status IN ('pending','urgent')
-        ORDER BY r.created_at DESC
-    ")->fetch_all(MYSQLI_ASSOC);
+    $reports = ModerationRepository::openReports($con);
     $total = count($reports);
 }
 
 $totalPages = max(1, (int)ceil($total / $perPage));
 
-/** Preserve the current filters when building a link. */
-function um_url(array $over = []): string
-{
-    $base = [
-        'tab' => $_GET['tab'] ?? null,
-        'q' => $_GET['q'] ?? null,
-        'status' => $_GET['status'] ?? null,
-        'sort' => $_GET['sort'] ?? null,
-        'page' => $_GET['page'] ?? null
-    ];
-    $p = array_filter(array_merge($base, $over), fn($v) => $v !== null && $v !== '');
+/*
+ * A link to this page with the current filters, and $over applied. Built from
+ * the filters as read rather than the raw query string, so a list reached
+ * from the sidebar's ?role= link keeps its role on page 2 instead of falling
+ * back to all users.
+ */
+$filters = [
+    'tab'    => $view !== 'all' || $get('tab') !== '' ? $view : null,
+    'q'      => $q,
+    'status' => $status,
+    'sort'   => $get('sort') !== '' ? $sort : null,
+    'page'   => $get('page') !== '' ? $page : null,
+];
+$um_url = function (array $over = []) use ($filters): string {
+    $p = array_filter(array_merge($filters, $over), fn($v) => $v !== null && $v !== '');
     return '?' . http_build_query($p);
-}
+};
 
 function um_ago(?string $when): string
 {
@@ -220,7 +122,7 @@ function um_ago(?string $when): string
 // The only thing still arriving in the URL is an ?error= code from a refused
 // action, so translate that into the same queue rather than a second style
 // of banner.
-$err = $_GET['error'] ?? '';
+$err = $get('error');
 if ($err === 'self') {
     pc_flash('error', 'You cannot apply that to your own account.');
 } elseif ($err !== '') {
@@ -349,14 +251,6 @@ include 'layout.php';
 
     .um-up {
         color: #17654B;
-    }
-
-    .um-down {
-        color: #A6301F;
-    }
-
-    .um-flat {
-        color: var(--gray-400);
     }
 
     /* ── Toolbar ── */
@@ -925,7 +819,7 @@ include 'layout.php';
         <h1>User Management</h1>
         <p>View and manage all users in the PeerConnect platform.</p>
     </div>
-    <a class="um-new" href="<?= um_url(['tab' => 'pending', 'page' => null]) ?>">
+    <a class="um-new" href="<?= $um_url(['tab' => 'pending', 'page' => null]) ?>">
 
         Verify User
         <?php if ($c_pending > 0): ?><span class="um-new-n"><?= $c_pending ?></span><?php endif; ?>
@@ -940,7 +834,7 @@ include 'layout.php';
         [
             'Total Users',
             $c_all,
-            $trend['all'],
+            $joined['all'],
             '#EAF2FE',
             '#CBDFF8',
             '#1B6FD1',
@@ -949,7 +843,7 @@ include 'layout.php';
         [
             'Mentees',
             $c_mentee,
-            $trend['mentee'],
+            $joined['mentee'],
             '#E6F5EE',
             '#BFE2D1',
             '#17654B',
@@ -958,7 +852,7 @@ include 'layout.php';
         [
             'Mentors',
             $c_mentor,
-            $trend['mentor'],
+            $joined['mentor'],
             '#EFEDFC',
             '#D6D0F5',
             '#4A3FB8',
@@ -967,7 +861,7 @@ include 'layout.php';
         [
             'Admins',
             $c_admin,
-            $trend['admin'],
+            $joined['admin'],
             '#FBF0D4',
             '#F0DDA4',
             '#9A7100',
@@ -983,8 +877,8 @@ include 'layout.php';
                 <div class="um-stat-k"><?= $label ?></div>
                 <div class="um-stat-v"><?= number_format($value) ?></div>
                 <?php if ($t): ?>
-                    <span class="um-stat-t <?= $t['up'] ? 'um-up' : 'um-down' ?>">
-                        <span style="display:inline-flex;<?= $t['up'] ? '' : 'transform:rotate(180deg);' ?>"><?= $arrow ?></span><?= htmlspecialchars($t['label']) ?>
+                    <span class="um-stat-t um-up">
+                        <span style="display:inline-flex;"><?= $arrow ?></span><?= htmlspecialchars($t) ?>
                     </span>
                 <?php endif; ?>
             </div>
@@ -1008,7 +902,7 @@ include 'layout.php';
         ];
         foreach ($tabs as [$k, $label, $n, $warn]): ?>
             <a class="um-tab <?= $view === $k ? 'active' : '' ?> <?= $warn && $n > 0 ? 'warn' : '' ?>"
-                href="<?= um_url(['tab' => $k, 'page' => null, 'status' => null]) ?>">
+                href="<?= $um_url(['tab' => $k, 'page' => null, 'status' => null]) ?>">
                 <?= $label ?><b><?= $n ?></b>
             </a>
         <?php endforeach; ?>
@@ -1141,7 +1035,12 @@ include 'layout.php';
                 </svg>
                 <p>No open reports.</p>
             </div>
-            <?php else: foreach ($reports as $r): ?>
+            <?php else: foreach ($reports as $r):
+                // A deleted or already-blocked account has nothing left to
+                // block or restrict, and an admin cannot be restricted; the
+                // report can still be dismissed.
+                $r_deleted = !empty($r['reported_deleted']);
+                $r_open    = $r['reported_status'] !== 'blocked'; ?>
                 <div class="um-rcard">
                     <div class="um-vhead">
                         <span class="um-av">
@@ -1152,7 +1051,7 @@ include 'layout.php';
                             <div class="um-name">
                                 <b><?= htmlspecialchars($r['reported_name']) ?></b>
                                 <span class="um-chip um-<?= htmlspecialchars($r['reported_role'] ?: 'mentee') ?>"><?= htmlspecialchars(ucfirst($r['reported_role'] ?: '—')) ?></span>
-                                <span class="um-chip um-<?= htmlspecialchars($r['reported_status']) ?>"><?= htmlspecialchars(ucfirst($r['reported_status'])) ?></span>
+                                <span class="um-chip um-<?= htmlspecialchars($r['reported_status']) ?>"><?= $r_deleted ? 'Deleted' : htmlspecialchars(ucfirst($r['reported_status'])) ?></span>
                             </div>
                             <p class="um-rmeta">
                                 <b><?= htmlspecialchars($r['issue_type']) ?></b> &middot;
@@ -1163,10 +1062,14 @@ include 'layout.php';
                         </div>
                     </div>
                     <div class="um-vact" style="margin-top:14px;">
-                        <button type="button" class="um-btn um-no"
-                            onclick="umBlock(0, <?= (int)$r['report_id'] ?>, <?= htmlspecialchars(json_encode($r['reported_name']), ENT_QUOTES) ?>)">Block user</button>
-                        <button type="button" class="um-btn" style="background:#FBF0D4;color:#9A7100;"
-                            onclick="umRestrict(0, <?= (int)$r['report_id'] ?>, <?= htmlspecialchars(json_encode($r['reported_name']), ENT_QUOTES) ?>)">Restrict</button>
+                        <?php if ($r_open): ?>
+                            <button type="button" class="um-btn um-no"
+                                onclick="umBlock(0, <?= (int)$r['report_id'] ?>, <?= htmlspecialchars(json_encode($r['reported_name']), ENT_QUOTES) ?>)">Block user</button>
+                            <?php if ($r['reported_role'] !== 'admin'): ?>
+                                <button type="button" class="um-btn" style="background:#FBF0D4;color:#9A7100;"
+                                    onclick="umRestrict(0, <?= (int)$r['report_id'] ?>, <?= htmlspecialchars(json_encode($r['reported_name']), ENT_QUOTES) ?>)">Restrict</button>
+                            <?php endif; ?>
+                        <?php endif; ?>
                         <form method="post" action="<?= url('admin-action-resolve') ?>">
                             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
                             <input type="hidden" name="report_id" value="<?= (int)$r['report_id'] ?>">
@@ -1195,6 +1098,8 @@ include 'layout.php';
                 $role   = $u['role'] ?: 'member';
                 $ustat  = $u['status'];
                 $isMe   = $uid === $me;
+                // Deleted by its owner: shown for the record, with nothing to act on.
+                $gone   = ModerationService::isDeleted($u);
                 $rating = $role === 'mentor' ? $u['rating_as_mentor'] : $u['rating_as_mentee'];
                 $rlabel = $role === 'mentor' ? 'from mentees' : 'from mentors';
             ?>
@@ -1208,7 +1113,7 @@ include 'layout.php';
                         <div class="um-name">
                             <b><?= htmlspecialchars($nm) ?></b>
                             <span class="um-chip um-<?= htmlspecialchars($role) ?>"><?= htmlspecialchars(ucfirst($role)) ?></span>
-                            <span class="um-chip um-<?= htmlspecialchars($ustat) ?>"><?= htmlspecialchars(ucfirst($ustat)) ?></span>
+                            <span class="um-chip um-<?= htmlspecialchars($ustat) ?>"><?= $gone ? 'Deleted' : htmlspecialchars(ucfirst($ustat)) ?></span>
                             <?php if (!$u['verified']): ?><span class="um-chip um-unverified">Unverified</span><?php endif; ?>
                             <?php if ($isMe): ?><span class="um-chip um-unverified">You</span><?php endif; ?>
                         </div>
@@ -1274,6 +1179,8 @@ include 'layout.php';
                             <div class="um-menu" role="menu">
                                 <?php if ($isMe): ?>
                                     <button type="button" disabled style="opacity:.5;cursor:default;">This is your account</button>
+                                <?php elseif ($gone): ?>
+                                    <button type="button" disabled style="opacity:.5;cursor:default;">Deleted by its owner</button>
                                 <?php else: ?>
                                     <?php if ($ustat === 'blocked'): ?>
                                         <form method="post" action="<?= url('admin-action-unblock') ?>">
@@ -1288,14 +1195,16 @@ include 'layout.php';
                                             </button>
                                         </form>
                                     <?php else: ?>
-                                        <button type="button" role="menuitem"
-                                            onclick="umRestrict(<?= $uid ?>, 0, <?= htmlspecialchars(json_encode($nm), ENT_QUOTES) ?>)">
-                                            <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                                                <circle cx="12" cy="12" r="9" />
-                                                <path stroke-linecap="round" d="M12 7.5V12l3 2" />
-                                            </svg>
-                                            <?= $ustat === 'restricted' ? 'Change restriction' : 'Restrict for a period' ?>
-                                        </button>
+                                        <?php if ($role !== 'admin'): ?>
+                                            <button type="button" role="menuitem"
+                                                onclick="umRestrict(<?= $uid ?>, 0, <?= htmlspecialchars(json_encode($nm), ENT_QUOTES) ?>)">
+                                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                                    <circle cx="12" cy="12" r="9" />
+                                                    <path stroke-linecap="round" d="M12 7.5V12l3 2" />
+                                                </svg>
+                                                <?= $ustat === 'restricted' ? 'Change restriction' : 'Restrict for a period' ?>
+                                            </button>
+                                        <?php endif; ?>
                                         <button type="button" role="menuitem" class="danger"
                                             onclick="umBlock(<?= $uid ?>, 0, <?= htmlspecialchars(json_encode($nm), ENT_QUOTES) ?>)">
                                             <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
@@ -1307,12 +1216,14 @@ include 'layout.php';
                                     <?php endif; ?>
                                     <hr>
                                 <?php endif; ?>
-                                <a role="menuitem" href="<?= htmlspecialchars(url('messages') . '?chat=' . $uid) ?>">
-                                    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" d="M20 12a7 7 0 0 1-7 7H8.5L5 21.5V18A7 7 0 0 1 12 5h1a7 7 0 0 1 7 7Z" />
-                                    </svg>
-                                    Message
-                                </a>
+                                <?php if (!$gone): ?>
+                                    <a role="menuitem" href="<?= htmlspecialchars(url('messages') . '?chat=' . $uid) ?>">
+                                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M20 12a7 7 0 0 1-7 7H8.5L5 21.5V18A7 7 0 0 1 12 5h1a7 7 0 0 1 7 7Z" />
+                                        </svg>
+                                        Message
+                                    </a>
+                                <?php endif; ?>
                             </div>
                         </div>
                     </div>
@@ -1329,12 +1240,12 @@ include 'layout.php';
         </span>
         <?php if ($totalPages > 1): ?>
             <div class="um-pages">
-                <?php if ($page > 1): ?><a href="<?= um_url(['page' => $page - 1]) ?>">&lsaquo;</a><?php else: ?><span class="off">&lsaquo;</span><?php endif; ?>
+                <?php if ($page > 1): ?><a href="<?= $um_url(['page' => $page - 1]) ?>">&lsaquo;</a><?php else: ?><span class="off">&lsaquo;</span><?php endif; ?>
                 <?php for ($i = 1; $i <= $totalPages; $i++): ?>
                     <?php if ($i === $page): ?><span class="on"><?= $i ?></span>
-                    <?php else: ?><a href="<?= um_url(['page' => $i]) ?>"><?= $i ?></a><?php endif; ?>
+                    <?php else: ?><a href="<?= $um_url(['page' => $i]) ?>"><?= $i ?></a><?php endif; ?>
                 <?php endfor; ?>
-                <?php if ($page < $totalPages): ?><a href="<?= um_url(['page' => $page + 1]) ?>">&rsaquo;</a><?php else: ?><span class="off">&rsaquo;</span><?php endif; ?>
+                <?php if ($page < $totalPages): ?><a href="<?= $um_url(['page' => $page + 1]) ?>">&rsaquo;</a><?php else: ?><span class="off">&rsaquo;</span><?php endif; ?>
             </div>
         <?php endif; ?>
     </div>

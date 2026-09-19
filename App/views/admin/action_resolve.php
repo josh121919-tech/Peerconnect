@@ -1,7 +1,7 @@
 <?php
 /**
- * action_resolve.php
- * SECURITY: Admin-only, POST-only, prepared statement.
+ * action_resolve.php — "Dismiss report" in the Reported queue.
+ * SECURITY: Admin-only, POST-only, CSRF-checked, prepared statements.
  */
 session_start();
 include __DIR__ . '/../db.php';
@@ -15,26 +15,34 @@ if (!verify_csrf()) {
     exit('CSRF token mismatch.');
 }
 
-$report_id = (int)($_POST['report_id'] ?? 0);
+// Back to the Reported queue. This used to send the admin to a "resolved"
+// tab that does not exist, which showed All Users instead.
+$back = url('admin-users') . '?tab=reported';
+
+$raw       = is_string($_POST['report_id'] ?? null) ? trim($_POST['report_id']) : '';
+$report_id = ctype_digit($raw) ? (int)$raw : 0;
 if (!$report_id) {
-    header('Location: ' . url('admin-users') . '?tab=resolved');
+    header('Location: ' . $back);
     exit;
 }
 
-$stmt = $con->prepare("UPDATE reports SET status='resolved', updated_at=NOW() WHERE report_id=?");
-$stmt->bind_param("i", $report_id);
-$stmt->execute();
-$stmt->close();
-
-$who = $con->prepare("SELECT reported_user_id FROM reports WHERE report_id = ?");
-$who->bind_param("i", $report_id);
-$who->execute();
-$reported = $who->get_result()->fetch_row();
-$who->close();
-if ($reported) {
-    pc_admin_log('dismissed report #' . $report_id . ' against ' . pc_user_name($con, (int)$reported[0]));
+$report = ModerationRepository::report($con, $report_id);
+if (!$report) {
+    pc_flash('error', 'That report could not be found, so nothing changed.', 'Not found');
+    header('Location: ' . $back);
+    exit;
 }
 
+// Already resolved (by another admin, or a second click): say so, and do not
+// log it a second time.
+if (ModerationRepository::resolveReport($con, $report_id) < 1) {
+    pc_flash('info', 'That report was already resolved, so nothing changed.', 'Already resolved');
+    header('Location: ' . $back);
+    exit;
+}
+
+pc_admin_log('dismissed report #' . $report_id . ' against ' . pc_user_name($con, (int)$report['reported_user_id']));
+
 pc_flash('success', 'Report dismissed.', 'Resolved');
-header('Location: ' . url('admin-users') . '?tab=resolved');
+header('Location: ' . $back);
 exit;

@@ -28,8 +28,11 @@ if (!verify_csrf()) {
     exit('CSRF token mismatch.');
 }
 
-$user_id = (int)($_POST['user_id'] ?? 0);
-$wanted  = (string)($_POST['role'] ?? '');
+// A field sent as a list counts as missing: (int) of a list is 1, which
+// would have picked account #1.
+$raw     = is_string($_POST['user_id'] ?? null) ? trim($_POST['user_id']) : '';
+$user_id = ctype_digit($raw) ? (int)$raw : 0;
+$wanted  = is_string($_POST['role'] ?? null) ? $_POST['role'] : '';
 $back    = url('admin-user') . '?id=' . $user_id;
 
 if ($user_id < 1 || !in_array($wanted, ['mentee', 'mentor'], true)) {
@@ -45,15 +48,21 @@ if ($user_id === (int)($_SESSION['user_id'] ?? 0)) {
     exit;
 }
 
+$target = UserRepository::moderationTarget($con, $user_id);
+if (!$target) {
+    pc_flash('error', 'That account could not be found, so nothing changed.', 'Role not set');
+    header('Location: ' . url('admin-users'));
+    exit;
+}
+if (ModerationService::isDeleted($target)) {
+    pc_flash('error', 'That account was deleted by its owner, so it was left alone.', 'Role not set');
+    header('Location: ' . $back);
+    exit;
+}
+
 // The WHERE clause is the real guard: an account that already has a role is
 // not matched, so a stale form or a replayed POST cannot overwrite one.
-$st = $con->prepare("UPDATE users SET role = ? WHERE user_id = ? AND (role IS NULL OR role = '')");
-$st->bind_param("si", $wanted, $user_id);
-$st->execute();
-$changed = $st->affected_rows;
-$st->close();
-
-if ($changed < 1) {
+if (UserRepository::claimRole($con, $user_id, $wanted) < 1) {
     pc_flash('error', 'That account already has a role, so it was left alone.', 'Role not set');
     header('Location: ' . $back);
     exit;

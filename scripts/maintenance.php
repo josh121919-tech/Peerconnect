@@ -3,7 +3,7 @@
  * scripts/maintenance.php — the every-30-minutes job.
  *
  *     php scripts/maintenance.php             run it now
- *     php scripts/maintenance.php --dry-run   list what would be closed or removed; write nothing
+ *     php scripts/maintenance.php --dry-run   list what would be closed, removed or lifted; write nothing
  *
  * Windows Task Scheduler runs it every 30 minutes — see scripts/README.md.
  *
@@ -14,13 +14,18 @@
  *    once its start time has passed. Both people are notified, by email too
  *    when it is switched on.
  *
- * 2. Mentor scores. MentorScoreService::refreshAll. Nothing refreshed them on
+ * 2. Restrictions that have run out. ModerationService::liftAllOver sets the
+ *    account active again and tells the member. A restriction used to end only
+ *    when the member next opened a page, so someone who stayed away was listed
+ *    as restricted indefinitely.
+ *
+ * 3. Mentor scores. MentorScoreService::refreshAll. Nothing refreshed them on
  *    a schedule before, so the leaderboard recalculated every mentor's score
  *    itself whenever it was opened more than an hour after the last refresh.
  *    With this running, that fallback has nothing left to do.
  *
  * Output goes to the console and to logs\maintenance.log in the backup folder.
- * Exit code 0 means both steps ran; anything else means something failed.
+ * Exit code 0 means every step ran; anything else means something failed.
  */
 
 if (PHP_SAPI !== 'cli') {
@@ -72,7 +77,18 @@ ob_start();
 require $ROOT . '/App/views/cron/detect_missed_sessions.php';
 maintenance_log((string)ob_get_clean());
 
-/* 2. Mentor scores. */
+/* 2. Restrictions that have run out. */
+if ($dryRun) {
+    $due = ModerationRepository::restrictedAccountsToLift($con);
+    maintenance_log('[' . date('Y-m-d H:i:s') . '] Dry run: ' . count($due) . ' restriction(s) would be lifted'
+        . ($due ? ' (user ' . implode(', ', $due) . ')' : '') . '.' . PHP_EOL);
+} else {
+    $lifted = ModerationService::liftAllOver($con);
+    maintenance_log('[' . date('Y-m-d H:i:s') . '] Lifted ' . count($lifted) . ' restriction(s) that had run out'
+        . ($lifted ? ' (user ' . implode(', ', $lifted) . ')' : '') . '.' . PHP_EOL);
+}
+
+/* 3. Mentor scores. */
 if ($dryRun) {
     maintenance_log('[' . date('Y-m-d H:i:s') . '] Dry run: mentor scores not refreshed.' . PHP_EOL);
 } else {

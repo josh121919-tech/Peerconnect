@@ -227,6 +227,32 @@ class UserRepository extends Repository
         ", 's', [$email]);
     }
 
+    // ── Moderation ──────────────────────────────────────────────────────────
+
+    /**
+     * 'user_id', 'role', 'status' and 'email' of an account an admin is about
+     * to act on, or null when there is no such account. With $lock, the row
+     * stays locked until the surrounding transaction ends, so two admins acting
+     * on one account at once take turns instead of both reading the old status.
+     */
+    public static function moderationTarget(mysqli $con, int $userId, bool $lock = false): ?array
+    {
+        return self::typedRow($con, "SELECT user_id, role, status, email FROM users WHERE user_id = ?" . ($lock ? ' FOR UPDATE' : ''),
+            'i', [$userId]);
+    }
+
+    /** Sets the account's status ('active', 'restricted' or 'blocked'). */
+    public static function setStatus(mysqli $con, int $userId, string $status): void
+    {
+        self::execute($con, "UPDATE users SET status = ? WHERE user_id = ?", 'si', [$status, $userId]);
+    }
+
+    /** Sets the status to $to only while it is still $from. Returns 1 when it changed, else 0. */
+    public static function changeStatus(mysqli $con, int $userId, string $from, string $to): int
+    {
+        return self::execute($con, "UPDATE users SET status = ? WHERE user_id = ? AND status = ?", 'sis', [$to, $userId, $from]);
+    }
+
     /** 'role', 'status' and 'verified': what decides where a signed-in account is sent. */
     public static function signInState(mysqli $con, int $userId): ?array
     {

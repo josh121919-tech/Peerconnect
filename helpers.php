@@ -290,9 +290,10 @@ if (!function_exists('pc_enforce_account_status')) {
      * admin's Block button takes effect on that user's very next page load.
      *
      * 'restricted' is handled too: the restriction is lifted automatically
-     * once its end_date has passed, and while it lasts the account is
-     * read-only — every POST is refused with an explanation, while GETs go
-     * through so the person can still see their own data.
+     * once it has run out, and while it lasts the account is read-only —
+     * every POST is refused with an explanation, while GETs go through so
+     * the person can still see their own data. The newest restriction is the
+     * one in force (see ModerationService).
      */
     function pc_enforce_account_status(mysqli $con): void
     {
@@ -300,53 +301,18 @@ if (!function_exists('pc_enforce_account_status')) {
             return;
         }
 
-        $stmt = $con->prepare("SELECT status FROM users WHERE user_id = ? LIMIT 1");
-        if (!$stmt) {
-            return;
-        }
         $uid = (int) $_SESSION['user_id'];
-        $stmt->bind_param("i", $uid);
-        $stmt->execute();
-        $row = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
+        $row = UserRepository::signInState($con, $uid);
 
         $status = $row['status'] ?? '';
 
         /*
-         * A restriction is a fixed-length penalty, and nothing was ever
-         * lifting it: `restrictions.end_date` was written and then never read
-         * again, so a "7 day" restriction lasted forever. Lift it here, on
-         * the restricted user's own next request, so it needs no cron.
+         * A restriction is a fixed-length penalty. It is lifted here, on the
+         * restricted user's own next request, and by the maintenance job every
+         * 30 minutes for anyone who stays away.
          */
-        if ($status === 'restricted') {
-            $chk = $con->prepare("
-                SELECT COUNT(*) c FROM restrictions
-                WHERE user_id = ? AND end_date >= CURDATE()
-            ");
-            if ($chk) {
-                $chk->bind_param("i", $uid);
-                $chk->execute();
-                $stillRestricted = (int)($chk->get_result()->fetch_assoc()['c'] ?? 0) > 0;
-                $chk->close();
-
-                if (!$stillRestricted) {
-                    $lift = $con->prepare("UPDATE users SET status = 'active' WHERE user_id = ? AND status = 'restricted'");
-                    if ($lift) {
-                        $lift->bind_param("i", $uid);
-                        $lift->execute();
-                        // Only tell them if this request is the one that
-                        // actually lifted it, so the notice is sent once.
-                        $lifted = $lift->affected_rows > 0;
-                        $lift->close();
-
-                        if ($lifted && is_file(__DIR__ . '/App/services/NotificationService.php')) {
-                            require_once __DIR__ . '/App/services/NotificationService.php';
-                            NotificationService::restrictionLifted($con, $uid);
-                        }
-                    }
-                    $status = 'active';
-                }
-            }
+        if ($status === 'restricted' && ModerationService::liftIfOver($con, $uid)) {
+            $status = 'active';
         }
 
         /*
@@ -372,18 +338,9 @@ if (!function_exists('pc_enforce_account_status')) {
              * exactly what produced a column of identical refusals.
              */
             $until = null;
-            $ends = $con->prepare("
-                SELECT MAX(end_date) d FROM restrictions
-                WHERE user_id = ? AND end_date >= CURDATE()
-            ");
-            if ($ends) {
-                $ends->bind_param("i", $uid);
-                $ends->execute();
-                $d = $ends->get_result()->fetch_assoc()['d'] ?? null;
-                $ends->close();
-                if ($d) {
-                    $until = date('F j, Y', strtotime($d));
-                }
+            $liftsOn = ModerationService::liftsOn($con, $uid);
+            if ($liftsOn !== null) {
+                $until = date('F j, Y', strtotime($liftsOn));
             }
 
             $message = $until !== null

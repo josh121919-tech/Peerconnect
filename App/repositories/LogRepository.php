@@ -30,6 +30,12 @@ class LogRepository extends Repository
         return self::typedRows($con, "SELECT activity, log_date FROM logs WHERE email = ? ORDER BY log_date DESC LIMIT ?", 'si', [$email, $limit]);
     }
 
+    /** When anything was last recorded under $email, or null when nothing ever was. */
+    public static function lastSeen(mysqli $con, string $email): ?string
+    {
+        return self::value($con, "SELECT log_date FROM logs WHERE email = ? ORDER BY log_date DESC LIMIT 1", 's', [$email]);
+    }
+
     /** When any of $activities was last recorded under $email, or null when none ever was. */
     public static function lastTime(mysqli $con, string $email, array $activities): ?string
     {

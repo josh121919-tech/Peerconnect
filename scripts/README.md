@@ -6,7 +6,7 @@ Scheduler runs them; both can also be run by hand from the project root.
 | Job | Schedule | What it does |
 |---|---|---|
 | `scripts/backup.php` | Every day at 02:00 | Dumps the whole database with `mysqldump`, and archives `public/uploads` once a week |
-| `scripts/maintenance.php` | Every 30 minutes | Closes sessions that ended over an hour ago (completed, or missed by whoever did not join), removes requests the mentor never answered once their time has passed, then refreshes every mentor's score |
+| `scripts/maintenance.php` | Every 30 minutes | Closes sessions that ended over an hour ago (completed, or missed by whoever did not join), removes requests the mentor never answered once their time has passed, lifts restrictions that have run out, then refreshes every mentor's score |
 
 Everything they write goes to **`C:\PeerConnectBackups`** (set `BACKUP_DIR` in
 `.env` to change it):
@@ -34,7 +34,7 @@ the last attempt failed.
 ```
 php scripts/backup.php                    back up now
 php scripts/backup.php --verify=FILE      check a dump is complete, without restoring it
-php scripts/maintenance.php --dry-run     list what would be closed, and how; writes nothing
+php scripts/maintenance.php --dry-run     list what would be closed or lifted, and how; writes nothing
 php scripts/maintenance.php               run the 30-minute job now
 ```
 
