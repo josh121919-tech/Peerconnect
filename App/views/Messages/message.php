@@ -706,15 +706,12 @@ $active_page = 'messages';
           if (data.success) {
             ta.value = '';
             ta.style.height = 'auto';
-            appendMessage({
-              id: data.message_id || 0,
-              sender_id: MY_ID,
-              content: text,
-              is_read: 0,
-              created_at: data.created_at || new Date().toISOString()
-            });
-            if (data.message_id) lastMsgId = Math.max(lastMsgId, Number(data.message_id));
-            pollMessages();
+            // Drawn by the check for new messages rather than from this
+            // answer. Sending can take a few seconds (an email may go out),
+            // and the check every few seconds had often drawn the message
+            // already, so it appeared twice. Fetching it the same way also
+            // keeps a reply saved just before it, which used to be skipped.
+            pollMessages(true);
           } else {
             // The endpoint says why (too long, too many, not allowed).
             showToast(data.error || 'Failed to send. Try again.');
@@ -729,16 +726,32 @@ $active_page = 'messages';
         });
     }
 
-    let lastRenderedTime = '';
+    // The last time label on the page, so a message in the same minute joins it.
+    let lastRenderedTime = <?= json_encode($lastDate ?? '') ?>;
+
+    // Every message drawn since the page loaded, by id: each is drawn once.
+    const shownIds = new Set();
+
+    // "10:36 pm", as the server writes it, read off the stored time itself so
+    // a browser set to another time zone labels it the same.
+    function timeLabel(when) {
+      const m = /\b(\d{1,2}):(\d{2})/.exec(String(when || '').split(' ')[1] || '');
+      const now = new Date();
+      const h = m ? Number(m[1]) : now.getHours();
+      const min = m ? m[2] : String(now.getMinutes()).padStart(2, '0');
+      return (h % 12 || 12) + ':' + min + ' ' + (h < 12 ? 'am' : 'pm');
+    }
 
     function appendMessage(msg) {
       const area = document.getElementById('msgsArea');
       if (!area) return;
+      const id = Number(msg.id) || 0;
+      if (id) {
+        if (shownIds.has(id)) return;
+        shownIds.add(id);
+      }
       const isMe = msg.sender_id == MY_ID;
-      const timeStr = new Date(msg.created_at).toLocaleTimeString([], {
-        hour: 'numeric',
-        minute: '2-digit'
-      });
+      const timeStr = timeLabel(msg.created_at);
       if (timeStr !== lastRenderedTime) {
         lastRenderedTime = timeStr;
         const lbl = document.createElement('div');
@@ -776,9 +789,17 @@ $active_page = 'messages';
 
     let lastMsgId = <?= !empty($initialMessages) ? end($initialMessages)['id'] : 0 ?>;
     let pollInFlight = false;
+    let pollAgain = false;
 
-    function pollMessages() {
-      if (!CHAT_ID || pollInFlight) return;
+    // Fetches and draws messages newer than the last one fetched. With
+    // `soon`, a check that is already under way is followed by another as
+    // soon as it ends: it may have left before the message just sent was saved.
+    function pollMessages(soon = false) {
+      if (!CHAT_ID) return;
+      if (pollInFlight) {
+        if (soon) pollAgain = true;
+        return;
+      }
       pollInFlight = true;
       fetch(`get_messages.php?chat_id=${CHAT_ID}&last_id=${lastMsgId}`)
         .then(r => r.json())
@@ -793,12 +814,16 @@ $active_page = 'messages';
         .catch(() => {})
         .finally(() => {
           pollInFlight = false;
+          if (pollAgain) {
+            pollAgain = false;
+            pollMessages();
+          }
         });
     }
     if (CHAT_ID) {
       scrollBottom();
       pollMessages();
-      setInterval(pollMessages, 3000);
+      setInterval(() => pollMessages(), 3000);
       document.addEventListener('visibilitychange', () => {
         if (!document.hidden) pollMessages();
       });
