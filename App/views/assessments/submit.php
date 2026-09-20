@@ -1,5 +1,7 @@
 <?php
-// Finalise an attempt: total the per-answer points and lock it.
+// Finalise an attempt: total the per-answer points and lock it. The attempt
+// stays on the record afterwards, so the mentee can take the assessment again
+// and both results are there to compare.
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
@@ -19,19 +21,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
 }
 
 $mentee_id  = (int)$_SESSION['user_id'];
-$attempt_id = (int)($_POST['attempt_id'] ?? 0);
+$attempt_id = is_scalar($_POST['attempt_id'] ?? null) ? (int)$_POST['attempt_id'] : 0;
 
-$stmt = $con->prepare("
-    SELECT at.attempt_id, at.assessment_id, a.title, a.mentor_id
-    FROM assessment_attempts at
-    JOIN assessments a ON a.assessment_id = at.assessment_id
-    WHERE at.attempt_id = ? AND at.mentee_id = ? AND at.status = 'in_progress'
-");
-$stmt->bind_param("ii", $attempt_id, $mentee_id);
-$stmt->execute();
-$attempt = $stmt->get_result()->fetch_assoc();
-$stmt->close();
-
+$attempt = AssessmentRepository::openAttemptWithAssessment($con, $attempt_id, $mentee_id);
 if (!$attempt) {
     echo json_encode(['success' => false, 'error' => 'This attempt has already been submitted.']);
     exit;
@@ -40,40 +32,28 @@ if (!$attempt) {
 $assessment_id = (int)$attempt['assessment_id'];
 
 // Totals come from the stored per-answer scores and the question set.
-$score = (int)($con->query("
-    SELECT COALESCE(SUM(points_earned), 0) c FROM assessment_answers WHERE attempt_id = $attempt_id
-")->fetch_assoc()['c'] ?? 0);
+$totals = AssessmentRepository::attemptTotals($con, $attempt_id, $assessment_id);
+$score  = $totals['score'];
+$total  = $totals['total'];
 
-$total = (int)($con->query("
-    SELECT COALESCE(SUM(points), 0) c FROM assessment_questions WHERE assessment_id = $assessment_id
-")->fetch_assoc()['c'] ?? 0);
-
-$fin = $con->prepare("
-    UPDATE assessment_attempts
-       SET status = 'submitted', submitted_at = NOW(), score = ?, total_points = ?
-     WHERE attempt_id = ? AND mentee_id = ? AND status = 'in_progress'
-");
-$fin->bind_param("iiii", $score, $total, $attempt_id, $mentee_id);
-$fin->execute();
-$changed = $fin->affected_rows;
-$fin->close();
-
-if ($changed < 1) {
+if (AssessmentRepository::submitAttempt($con, $attempt_id, $mentee_id, $score, $total) < 1) {
     echo json_encode(['success' => false, 'error' => 'This attempt has already been submitted.']);
     exit;
 }
 
 // Let the mentor know, reusing the existing notification service.
 try {
-    $nameRow = $con->query("SELECT firstname, lastname FROM users WHERE user_id = $mentee_id")->fetch_assoc();
-    $who = $nameRow ? trim($nameRow['firstname'] . ' ' . $nameRow['lastname']) : 'A mentee';
-    $pct = $total > 0 ? round($score / $total * 100) : 0;
+    $names = UserRepository::names($con, $mentee_id);
+    $who   = $names ? trim($names['firstname'] . ' ' . $names['lastname']) : 'A mentee';
+    $pct   = $total > 0 ? round($score / $total * 100) : 0;
+    $tries = AssessmentRepository::countSubmittedBy($con, $assessment_id, $mentee_id);
     NotificationService::send(
         $con,
         (int)$attempt['mentor_id'],
         'assessment_submitted',
         'Assessment submitted',
-        $who . ' scored ' . $pct . '% on "' . $attempt['title'] . '".',
+        $who . ' scored ' . $pct . '% on "' . $attempt['title'] . '"'
+            . ($tries > 1 ? ' (' . AssessmentService::attemptLabel($tries) . ').' : '.'),
         url('assessment-results') . '?id=' . $assessment_id
     );
 } catch (Throwable $e) {

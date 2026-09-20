@@ -28,163 +28,50 @@ date_default_timezone_set('Asia/Manila');
 $VIEWS = ['all', 'answered', 'unanswered', 'hard', 'flagged'];
 $view  = in_array($_GET['tab'] ?? '', $VIEWS, true) ? $_GET['tab'] : 'all';
 
-$q      = trim((string)($_GET['q'] ?? ''));
-$qtype  = in_array($_GET['type'] ?? '', ['multiple_choice', 'true_false', 'short_answer'], true) ? $_GET['type'] : '';
-$topic  = trim((string)($_GET['topic'] ?? ''));
-$mentor = (int)($_GET['mentor'] ?? 0);
-$sort   = in_array($_GET['sort'] ?? '', ['newest', 'answers', 'hardest', 'points'], true) ? $_GET['sort'] : 'newest';
+$str = fn(string $k) => is_scalar($_GET[$k] ?? null) ? trim((string)$_GET[$k]) : '';
+$q      = $str('q');
+$qtype  = in_array($str('type'), AssessmentService::TYPES, true) ? $str('type') : '';
+$topic  = $str('topic');
+$mentor = (int)$str('mentor');
+$sort   = in_array($str('sort'), ['newest', 'answers', 'hardest', 'points'], true) ? $str('sort') : 'newest';
 
 $perPage = 8;
-$page    = max(1, (int)($_GET['page'] ?? 1));
+$page    = max(1, (int)$str('page'));
 
-/*
- * The answer counts every view needs. Counted only over submitted attempts —
- * an answer inside an attempt somebody abandoned is not a result.
- */
-$stats = "
-    LEFT JOIN (
-        SELECT an.question_id,
-               COUNT(*) answered,
-               SUM(an.is_correct IS NOT NULL) graded,
-               SUM(an.is_correct = 1) correct,
-               SUM(an.is_flagged = 1) flagged
-        FROM assessment_answers an
-        JOIN assessment_attempts t ON t.attempt_id = an.attempt_id AND t.status = 'submitted'
-        GROUP BY an.question_id
-    ) s ON s.question_id = q.question_id
-";
+$filters = ['q' => $q, 'qtype' => $qtype, 'topic' => $topic, 'mentor' => $mentor];
 
-$clauses = [];
-$types   = '';
-$args    = [];
-
-if ($q !== '') {
-    $clauses[] = "CONCAT_WS(' ', q.question_text, q.hint, a.title, a.topic) LIKE ?";
-    $types .= 's';
-    $args[] = '%' . $q . '%';
-}
-if ($qtype !== '')  { $clauses[] = 'q.question_type = ?'; $types .= 's'; $args[] = $qtype; }
-if ($topic !== '')  { $clauses[] = 'a.topic = ?';         $types .= 's'; $args[] = $topic; }
-if ($mentor > 0)    { $clauses[] = 'a.mentor_id = ?';     $types .= 'i'; $args[] = $mentor; }
-
-$viewSql = [
-    'answered'   => 'COALESCE(s.answered, 0) > 0',
-    'unanswered' => 'COALESCE(s.answered, 0) = 0',
-    'hard'       => 'COALESCE(s.graded, 0) > 0 AND (s.correct / s.graded) < 0.6',
-    'flagged'    => 'COALESCE(s.flagged, 0) > 0',
-][$view] ?? '';
-
-$all = $clauses;
-if ($viewSql !== '') $all[] = $viewSql;
-$where = $all ? 'WHERE ' . implode(' AND ', $all) : '';
-
-$base = "
-    FROM assessment_questions q
-    JOIN assessments a ON a.assessment_id = q.assessment_id
-    JOIN users u ON u.user_id = a.mentor_id
-    $stats
-";
-
-/* ── Tab counts ───────────────────────────────────────────────────────── */
-$filterWhere = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
-$cSql = "
-    SELECT COUNT(*) all_c,
-           SUM(COALESCE(s.answered,0) > 0) answered,
-           SUM(COALESCE(s.answered,0) = 0) unanswered,
-           SUM(COALESCE(s.graded,0) > 0 AND (s.correct / s.graded) < 0.6) hard,
-           SUM(COALESCE(s.flagged,0) > 0) flagged
-    $base $filterWhere
-";
-if ($types !== '') {
-    $cs = $con->prepare($cSql);
-    $cs->bind_param($types, ...$args);
-    $cs->execute();
-    $counts = $cs->get_result()->fetch_assoc();
-    $cs->close();
-} else {
-    $counts = $con->query($cSql)->fetch_assoc();
-}
-foreach ($counts as $k => $v) $counts[$k] = (int)$v;
+/* ── Tab counts, under the same filters ───────────────────────────────── */
+$counts = AssessmentAdminRepository::questionTabCounts($con, $filters);
 
 /* ── Headline figures ─────────────────────────────────────────────────── */
-$one = function (string $sql) use ($con) {
-    $r = $con->query($sql);
-    return $r ? $r->fetch_row()[0] : null;
-};
-$qTotal   = (int)$one("SELECT COUNT(*) FROM assessment_questions");
-$aTotal   = (int)$one("SELECT COUNT(DISTINCT assessment_id) FROM assessment_questions");
-$authors  = (int)$one("SELECT COUNT(DISTINCT a.mentor_id) FROM assessment_questions q JOIN assessments a ON a.assessment_id = q.assessment_id");
-$pointsAv = $one("SELECT AVG(points) FROM assessment_questions");
-$pointsAv = $pointsAv !== null ? round((float)$pointsAv, 1) : null;
+$headline = AssessmentAdminRepository::questionHeadline($con);
+$qTotal   = $headline['questions'];
+$aTotal   = $headline['assessments'];
+$authors  = $headline['mentors'];
+$pointsAv = $headline['avg_points'] !== null ? round((float)$headline['avg_points'], 1) : null;
 
-$gradedAll = (int)$one("
-    SELECT COUNT(*) FROM assessment_answers an
-    JOIN assessment_attempts t ON t.attempt_id = an.attempt_id AND t.status='submitted'
-    WHERE an.is_correct IS NOT NULL
-");
-$correctAll = (int)$one("
-    SELECT COUNT(*) FROM assessment_answers an
-    JOIN assessment_attempts t ON t.attempt_id = an.attempt_id AND t.status='submitted'
-    WHERE an.is_correct = 1
-");
-$correctRate = $gradedAll > 0 ? round($correctAll / $gradedAll * 100) : null;
+// Every answer is marked as it is given, so the rate is out of the answers.
+$answers     = AssessmentAdminRepository::answerTotals($con);
+$answeredAll = $answers['answered'];
+$correctAll  = $answers['correct'];
+$correctRate = $answeredAll > 0 ? round($correctAll / $answeredAll * 100) : null;
 
 /* ── The list ─────────────────────────────────────────────────────────── */
-$cs2 = $con->prepare("SELECT COUNT(*) c $base $where");
-if ($types !== '') $cs2->bind_param($types, ...$args);
-$cs2->execute();
-$total = (int)$cs2->get_result()->fetch_assoc()['c'];
-$cs2->close();
-
+$total      = AssessmentAdminRepository::countQuestions($con, $filters, $view);
 $totalPages = max(1, (int)ceil($total / $perPage));
-$page = min($page, $totalPages);
-$offset = ($page - 1) * $perPage;
+$page       = min($page, $totalPages);
+$offset     = ($page - 1) * $perPage;
 
-$order = [
-    'newest'  => 'q.question_id DESC',
-    'answers' => 'COALESCE(s.answered,0) DESC, q.question_id DESC',
-    'hardest' => 'CASE WHEN COALESCE(s.graded,0) > 0 THEN s.correct / s.graded ELSE 2 END ASC, COALESCE(s.answered,0) DESC',
-    'points'  => 'q.points DESC, q.question_id DESC',
-][$sort];
-
-$ls = $con->prepare("
-    SELECT q.question_id, q.assessment_id, q.question_type, q.question_text, q.hint,
-           q.points, q.is_required, q.correct_text, q.question_order,
-           a.title AS assessment_title, a.topic, a.status AS assessment_status,
-           a.mentor_id, CONCAT_WS(' ', u.firstname, u.lastname) AS mentor_name,
-           COALESCE(s.answered, 0) answered, COALESCE(s.graded, 0) graded,
-           COALESCE(s.correct, 0) correct, COALESCE(s.flagged, 0) flagged,
-           (SELECT COUNT(*) FROM assessment_options o WHERE o.question_id = q.question_id) options_n
-    $base $where
-    ORDER BY $order
-    LIMIT ? OFFSET ?
-");
-$ls->bind_param($types . 'ii', ...array_merge($args, [$perPage, $offset]));
-$ls->execute();
-$rows = $ls->get_result()->fetch_all(MYSQLI_ASSOC);
-$ls->close();
+$rows = AssessmentAdminRepository::questionPage($con, $filters, $view, $perPage, $offset, $sort);
 
 /* ── Filter options and rail ──────────────────────────────────────────── */
-$topics = [];
-$tq = $con->query("SELECT DISTINCT a.topic FROM assessments a JOIN assessment_questions q ON q.assessment_id = a.assessment_id WHERE a.topic <> '' ORDER BY a.topic");
-while ($r = $tq->fetch_row()) $topics[] = $r[0];
+$topics     = AssessmentAdminRepository::questionTopics($con);
+$mentorList = AssessmentAdminRepository::questionMentors($con);
+$byType     = AssessmentAdminRepository::questionsByType($con);
+$typeTotal  = array_sum(array_column($byType, 'c'));
+$byTopic    = AssessmentAdminRepository::questionsByTopic($con, 8);
 
-$mentorList = $con->query("
-    SELECT DISTINCT u.user_id, CONCAT_WS(' ', u.firstname, u.lastname) nm
-    FROM assessment_questions q
-    JOIN assessments a ON a.assessment_id = q.assessment_id
-    JOIN users u ON u.user_id = a.mentor_id ORDER BY nm
-")->fetch_all(MYSQLI_ASSOC);
-
-$byType = $con->query("SELECT question_type t, COUNT(*) c FROM assessment_questions GROUP BY question_type ORDER BY c DESC")->fetch_all(MYSQLI_ASSOC);
-$typeTotal = array_sum(array_column($byType, 'c'));
-
-$byTopic = $con->query("
-    SELECT COALESCE(NULLIF(a.topic,''), 'No topic set') t, COUNT(*) c
-    FROM assessment_questions q JOIN assessments a ON a.assessment_id = q.assessment_id
-    GROUP BY t ORDER BY c DESC LIMIT 8
-")->fetch_all(MYSQLI_ASSOC);
-
+/** This page's address with one filter changed. */
 function qb_url(array $over = []): string
 {
     $p = array_merge([
@@ -192,7 +79,7 @@ function qb_url(array $over = []): string
         'topic' => $_GET['topic'] ?? null, 'mentor' => $_GET['mentor'] ?? null,
         'sort' => $_GET['sort'] ?? null, 'page' => $_GET['page'] ?? null,
     ], $over);
-    $p = array_filter($p, fn($v) => $v !== null && $v !== '');
+    $p = array_filter($p, fn($v) => $v !== null && $v !== '' && !is_array($v));
     return url('admin-assessments-questions') . ($p ? '?' . http_build_query($p) : '');
 }
 
@@ -221,7 +108,7 @@ include __DIR__ . '/includes/assessments_ui.php';
     <?php foreach ([
         ['Questions', number_format($qTotal), 'Across ' . $aTotal . ' assessment' . ($aTotal === 1 ? '' : 's'), '#EAF1FB', '#1A5C9A', 'quiz'],
         ['Written by', number_format($authors), 'mentor' . ($authors === 1 ? '' : 's'), '#F3E8FF', '#6B21A8', 'pen'],
-        ['Answered right', $correctRate !== null ? $correctRate . '%' : '—', $gradedAll > 0 ? 'Across ' . $gradedAll . ' marked answer' . ($gradedAll === 1 ? '' : 's') : 'Nothing marked yet', '#E6F5EE', '#17654B', 'target'],
+        ['Answered right', $correctRate !== null ? $correctRate . '%' : '—', $answeredAll > 0 ? 'Across ' . $answeredAll . ' answer' . ($answeredAll === 1 ? '' : 's') : 'Nothing marked yet', '#E6F5EE', '#17654B', 'target'],
         ['Average worth', $pointsAv !== null ? $pointsAv . ' pts' : '—', 'Per question', '#FEF6DC', '#B7791F', 'star'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
@@ -307,7 +194,7 @@ include __DIR__ . '/includes/assessments_ui.php';
             <div class="as-list">
                 <?php foreach ($rows as $r):
                     [$tfg, $tbg] = as_qtype_color($r['question_type']);
-                    $pct = (int)$r['graded'] > 0 ? round($r['correct'] / $r['graded'] * 100) : null;
+                    $pct = (int)$r['answered'] > 0 ? round($r['correct'] / $r['answered'] * 100) : null;
                 ?>
                     <div class="as-q">
                         <span class="as-q-ico" style="background:<?= $tbg ?>;color:<?= $tfg ?>;"><?= as_icon('quiz') ?></span>
@@ -346,7 +233,7 @@ include __DIR__ . '/includes/assessments_ui.php';
                                 <span><?= (int)$r['answered'] > 0 ? (int)$r['answered'] . ' answered, none marked' : 'Never answered' ?></span>
                             <?php else: ?>
                                 <b style="color:<?= $pct >= 60 ? '#17654B' : '#A6301F' ?>;"><?= $pct ?>%</b>
-                                <span>right, from <?= (int)$r['graded'] ?> marked</span>
+                                <span>right, from <?= (int)$r['answered'] ?> answered</span>
                                 <div class="as-q-bar"><i style="width:<?= $pct ?>%;background:<?= $pct >= 60 ? '#17654B' : '#C0392B' ?>"></i></div>
                             <?php endif; ?>
                         </div>

@@ -41,7 +41,7 @@ if ($what === 'assessments') {
         'Attempts', 'Submitted', 'In progress', 'Average score (%)',
         'Created', 'Published', 'Last submission',
     ]);
-    $rows = $con->query(as_select() . " ORDER BY a.created_at DESC")->fetch_all(MYSQLI_ASSOC);
+    $rows = AssessmentAdminRepository::all($con);
     foreach ($rows as $a) {
         CsvExport::row($out, [
             (int)$a['assessment_id'], $a['title'], $a['topic'], $a['mentor_name'], (int)$a['mentor_id'], $a['status'],
@@ -59,19 +59,9 @@ if ($what === 'assessments') {
     CsvExport::row($out, [
         'Question ID', 'Assessment ID', 'Assessment', 'Topic', 'Mentor', 'Order',
         'Type', 'Question', 'Hint', 'Points', 'Required', 'Options', 'Correct answer',
-        'Answered', 'Marked', 'Correct', 'Correct rate (%)', 'Flagged',
+        'Answered', 'Correct', 'Correct rate (%)', 'Flagged',
     ]);
-    $rows = $con->query("
-        SELECT q.*, a.title AS assessment_title, a.topic,
-               CONCAT_WS(' ', u.firstname, u.lastname) AS mentor_name,
-               (SELECT COUNT(*) FROM assessment_options o WHERE o.question_id = q.question_id) options_n,
-               (SELECT GROUP_CONCAT(o.option_text SEPARATOR ' | ')
-                  FROM assessment_options o WHERE o.question_id = q.question_id AND o.is_correct = 1) correct_options
-        FROM assessment_questions q
-        JOIN assessments a ON a.assessment_id = q.assessment_id
-        JOIN users u ON u.user_id = a.mentor_id
-        ORDER BY a.assessment_id, q.question_order, q.question_id
-    ")->fetch_all(MYSQLI_ASSOC);
+    $rows = AssessmentAdminRepository::allQuestions($con);
 
     foreach ($rows as $q) {
         $st = as_question_stats($con, (int)$q['question_id']);
@@ -80,7 +70,7 @@ if ($what === 'assessments') {
             (int)$q['question_order'], as_qtype_label($q['question_type']), $q['question_text'], $q['hint'],
             (int)$q['points'], (int)$q['is_required'] ? 'Yes' : 'No', (int)$q['options_n'],
             $q['correct_options'] ?: $q['correct_text'],
-            $st['answered'], $st['graded'], $st['correct'],
+            $st['answered'], $st['correct'],
             $st['pct'] !== null ? $st['pct'] : '',
             $st['flagged'],
         ]);
@@ -89,30 +79,11 @@ if ($what === 'assessments') {
 } else {
     CsvExport::row($out, [
         'Attempt ID', 'Assessment ID', 'Assessment', 'Topic', 'Mentor',
-        'Mentee', 'Mentee ID', 'Status', 'Score', 'Total points', 'Score (%)',
+        'Mentee', 'Mentee ID', 'Attempt', 'Attempts by them', 'Status', 'Score', 'Total points', 'Score (%)',
         'Started', 'Submitted', 'Minutes taken',
     ]);
 
-    $sql = "
-        SELECT t.*, a.title, a.topic, a.assessment_id,
-               CONCAT_WS(' ', mo.firstname, mo.lastname) AS mentor_name,
-               CONCAT_WS(' ', me.firstname, me.lastname) AS mentee_name
-        FROM assessment_attempts t
-        JOIN assessments a ON a.assessment_id = t.assessment_id
-        JOIN users mo ON mo.user_id = a.mentor_id
-        JOIN users me ON me.user_id = t.mentee_id
-    ";
-    if ($from && $to) {
-        $sql .= " WHERE DATE(t.started_at) BETWEEN ? AND ? ";
-        $sql .= " ORDER BY COALESCE(t.submitted_at, t.started_at) DESC";
-        $st = $con->prepare($sql);
-        $st->bind_param('ss', $from, $to);
-        $st->execute();
-        $rows = $st->get_result()->fetch_all(MYSQLI_ASSOC);
-        $st->close();
-    } else {
-        $rows = $con->query($sql . " ORDER BY COALESCE(t.submitted_at, t.started_at) DESC")->fetch_all(MYSQLI_ASSOC);
-    }
+    $rows = AssessmentAdminRepository::allAttempts($con, ['from' => $from && $to ? $from : null, 'to' => $to]);
 
     foreach ($rows as $t) {
         $mins = ($t['submitted_at'] && $t['started_at'])
@@ -123,7 +94,7 @@ if ($what === 'assessments') {
             : '';
         CsvExport::row($out, [
             (int)$t['attempt_id'], (int)$t['assessment_id'], $t['title'], $t['topic'], $t['mentor_name'],
-            $t['mentee_name'], (int)$t['mentee_id'],
+            $t['mentee_name'], (int)$t['mentee_id'], (int)$t['attempt_no'], (int)$t['attempts_by_them'],
             $t['status'] === 'submitted' ? 'Submitted' : 'Unfinished',
             $t['status'] === 'submitted' ? (int)$t['score'] : '',
             (int)$t['total_points'], $pct,

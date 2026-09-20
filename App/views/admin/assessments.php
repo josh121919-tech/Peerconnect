@@ -27,184 +27,73 @@ date_default_timezone_set('Asia/Manila');
 $VIEWS = ['all', 'published', 'draft', 'attempted', 'untouched'];
 $view  = in_array($_GET['tab'] ?? '', $VIEWS, true) ? $_GET['tab'] : 'all';
 
-$q      = trim((string)($_GET['q'] ?? ''));
-$topic  = trim((string)($_GET['topic'] ?? ''));
-$mentor = (int)($_GET['mentor'] ?? 0);
-$sort   = in_array($_GET['sort'] ?? '', ['newest', 'oldest', 'attempts', 'score', 'title'], true) ? $_GET['sort'] : 'newest';
-$open   = (int)($_GET['open'] ?? 0);
+$str = fn(string $k) => is_scalar($_GET[$k] ?? null) ? trim((string)$_GET[$k]) : '';
+$q      = $str('q');
+$topic  = $str('topic');
+$mentor = (int)$str('mentor');
+$sort   = in_array($str('sort'), ['newest', 'oldest', 'attempts', 'score', 'title'], true) ? $str('sort') : 'newest';
+$open   = (int)$str('open');
 
 $perPage = 8;
-$page    = max(1, (int)($_GET['page'] ?? 1));
+$page    = max(1, (int)$str('page'));
 
-$clauses = [];
-$types   = '';
-$args    = [];
-
-if ($q !== '') {
-    $clauses[] = "CONCAT_WS(' ', a.title, a.topic, u.firstname, u.lastname) LIKE ?";
-    $types .= 's';
-    $args[] = '%' . $q . '%';
-}
-if ($topic !== '') {
-    $clauses[] = 'a.topic = ?';
-    $types .= 's';
-    $args[] = $topic;
-}
-if ($mentor > 0) {
-    $clauses[] = 'a.mentor_id = ?';
-    $types .= 'i';
-    $args[] = $mentor;
-}
-
-$attemptExists = "EXISTS (SELECT 1 FROM assessment_attempts t WHERE t.assessment_id = a.assessment_id)";
-$viewSql = [
-    'published' => "a.status = 'published'",
-    'draft'     => "a.status = 'draft'",
-    'attempted' => $attemptExists,
-    'untouched' => "NOT $attemptExists",
-][$view] ?? '';
-
-$all = $clauses;
-if ($viewSql !== '') $all[] = $viewSql;
-$where = $all ? 'WHERE ' . implode(' AND ', $all) : '';
+$filters = ['q' => $q, 'topic' => $topic, 'mentor' => $mentor];
 
 /* ── Tab counts, under the same filters ───────────────────────────────── */
-$filterWhere = $clauses ? 'WHERE ' . implode(' AND ', $clauses) : '';
-$cSql = "
-    SELECT COUNT(*) AS all_c,
-           SUM(a.status = 'published') AS published,
-           SUM(a.status = 'draft') AS draft,
-           SUM($attemptExists) AS attempted,
-           SUM(NOT $attemptExists) AS untouched
-    FROM assessments a JOIN users u ON u.user_id = a.mentor_id
-    $filterWhere
-";
-if ($types !== '') {
-    $cs = $con->prepare($cSql);
-    $cs->bind_param($types, ...$args);
-    $cs->execute();
-    $counts = $cs->get_result()->fetch_assoc();
-    $cs->close();
-} else {
-    $counts = $con->query($cSql)->fetch_assoc();
-}
-foreach ($counts as $k => $v) $counts[$k] = (int)$v;
+$counts = AssessmentAdminRepository::listTabCounts($con, $filters);
 
 /* ── Headline figures, across everything ──────────────────────────────── */
-$one = function (string $sql) use ($con) {
-    $r = $con->query($sql);
-    return $r ? $r->fetch_row()[0] : null;
-};
-$totalAll   = (int)$one("SELECT COUNT(*) FROM assessments");
-$pubAll     = (int)$one("SELECT COUNT(*) FROM assessments WHERE status = 'published'");
-$draftAll   = (int)$one("SELECT COUNT(*) FROM assessments WHERE status = 'draft'");
-$attSub     = (int)$one("SELECT COUNT(*) FROM assessment_attempts WHERE status = 'submitted'");
-$attOpen    = (int)$one("SELECT COUNT(*) FROM assessment_attempts WHERE status = 'in_progress'");
+$figures    = AssessmentAdminRepository::headline($con);
+$totalAll   = $figures['assessments'];
+$pubAll     = $figures['published'];
+$draftAll   = $figures['draft'];
+$attSub     = $figures['submitted'];
+$attOpen    = $figures['in_progress'];
 $attTotal   = $attSub + $attOpen;
-$mentorsAll = (int)$one("SELECT COUNT(DISTINCT mentor_id) FROM assessments");
-$menteesAll = (int)$one("SELECT COUNT(DISTINCT mentee_id) FROM assessment_attempts");
+$menteesAll = $figures['mentees'];
+$mentorsAll = count(AssessmentAdminRepository::mentors($con));
 
 // Averaged per attempt as a percentage of that attempt's own total.
-$avgPct = $one("SELECT AVG(score / NULLIF(total_points,0) * 100) FROM assessment_attempts WHERE status = 'submitted'");
-$avgPct = $avgPct !== null ? round((float)$avgPct) : null;
+$avgAll = AssessmentAdminRepository::attemptFigures($con, null, null);
+$avgPct = $avgAll['avg_pct'] !== null ? round((float)$avgAll['avg_pct']) : null;
 
 // Started and then abandoned — the closest honest thing to the reference's
 // "overdue", and something an admin would actually want to chase.
 $finishRate = $attTotal > 0 ? round($attSub / $attTotal * 100) : null;
 
 /* ── The list ─────────────────────────────────────────────────────────── */
-$countSql = "SELECT COUNT(*) c FROM assessments a JOIN users u ON u.user_id = a.mentor_id $where";
-$cs2 = $con->prepare($countSql);
-if ($types !== '') $cs2->bind_param($types, ...$args);
-$cs2->execute();
-$total = (int)$cs2->get_result()->fetch_assoc()['c'];
-$cs2->close();
-
+$total      = AssessmentAdminRepository::countMatching($con, $filters, $view);
 $totalPages = max(1, (int)ceil($total / $perPage));
 $page       = min($page, $totalPages);
 $offset     = ($page - 1) * $perPage;
 
-$order = [
-    'newest'   => 'a.created_at DESC',
-    'oldest'   => 'a.created_at ASC',
-    'attempts' => 'attempts DESC, a.created_at DESC',
-    'score'    => 'avg_pct DESC, a.created_at DESC',
-    'title'    => 'a.title ASC',
-][$sort];
-
-$ls = $con->prepare(as_select() . " $where ORDER BY $order LIMIT ? OFFSET ?");
-$ls->bind_param($types . 'ii', ...array_merge($args, [$perPage, $offset]));
-$ls->execute();
-$rows = $ls->get_result()->fetch_all(MYSQLI_ASSOC);
-$ls->close();
+$rows = AssessmentAdminRepository::page($con, $filters, $view, $sort, $perPage, $offset);
 
 /* ── Filter options ───────────────────────────────────────────────────── */
-$topics = [];
-$tq = $con->query("SELECT DISTINCT topic FROM assessments WHERE topic <> '' ORDER BY topic");
-while ($r = $tq->fetch_row()) $topics[] = $r[0];
-
-$mentorList = $con->query("
-    SELECT DISTINCT u.user_id, CONCAT_WS(' ', u.firstname, u.lastname) nm
-    FROM assessments a JOIN users u ON u.user_id = a.mentor_id ORDER BY nm
-")->fetch_all(MYSQLI_ASSOC);
+$topics     = AssessmentAdminRepository::topics($con);
+$mentorList = AssessmentAdminRepository::mentors($con);
 
 /* ── Topic breakdown for the rail ─────────────────────────────────────── */
-$byTopic = $con->query("
-    SELECT COALESCE(NULLIF(topic, ''), 'No topic set') t, COUNT(*) c
-    FROM assessments GROUP BY t ORDER BY c DESC LIMIT 6
-")->fetch_all(MYSQLI_ASSOC);
+$byTopic = AssessmentAdminRepository::byTopic($con, 6);
 
 /* ── Recent activity ──────────────────────────────────────────────────── */
-$recent = $con->query("
-    SELECT t.attempt_id, t.submitted_at, t.started_at, t.status, t.score, t.total_points,
-           a.title, a.assessment_id,
-           CONCAT_WS(' ', u.firstname, u.lastname) AS mentee_name
-    FROM assessment_attempts t
-    JOIN assessments a ON a.assessment_id = t.assessment_id
-    JOIN users u ON u.user_id = t.mentee_id
-    ORDER BY COALESCE(t.submitted_at, t.started_at) DESC
-    LIMIT 6
-")->fetch_all(MYSQLI_ASSOC);
+$recent = AssessmentAdminRepository::recentAttempts($con, 6);
 
 /* ── The assessment in the panel ──────────────────────────────────────── */
 $detail = null;
 $detailQuestions = [];
 $detailAttempts = [];
 if ($open > 0) {
-    $ds = $con->prepare(as_select() . " WHERE a.assessment_id = ? LIMIT 1");
-    $ds->bind_param('i', $open);
-    $ds->execute();
-    $detail = $ds->get_result()->fetch_assoc() ?: null;
-    $ds->close();
-
+    $detail = AssessmentAdminRepository::detail($con, $open);
     if ($detail) {
-        $qs = $con->prepare("
-            SELECT * FROM assessment_questions
-            WHERE assessment_id = ? ORDER BY question_order ASC, question_id ASC
-        ");
-        $qs->bind_param('i', $open);
-        $qs->execute();
-        $detailQuestions = $qs->get_result()->fetch_all(MYSQLI_ASSOC);
-        $qs->close();
-
-        $as = $con->prepare("
-            SELECT t.attempt_id, t.mentee_id, t.status, t.score, t.total_points,
-                   t.started_at, t.submitted_at,
-                   CONCAT_WS(' ', u.firstname, u.lastname) AS mentee_name,
-                   p.profile_image
-            FROM assessment_attempts t
-            JOIN users u ON u.user_id = t.mentee_id
-            LEFT JOIN profile p ON p.user_id = t.mentee_id
-            WHERE t.assessment_id = ?
-            ORDER BY COALESCE(t.submitted_at, t.started_at) DESC
-        ");
-        $as->bind_param('i', $open);
-        $as->execute();
-        $detailAttempts = $as->get_result()->fetch_all(MYSQLI_ASSOC);
-        $as->close();
+        $detailQuestions = AssessmentRepository::questionsWithOptions($con, $open);
+        // Every attempt, newest activity first: an assessment can be taken
+        // again, so one mentee may appear more than once.
+        $detailAttempts = AssessmentAdminRepository::attemptPage($con, ['assessment' => $open], 200, 0);
     }
 }
 
+/** This page's address with one filter changed. */
 function ab_url(array $over = []): string
 {
     $p = array_merge([
@@ -212,11 +101,12 @@ function ab_url(array $over = []): string
         'mentor' => $_GET['mentor'] ?? null, 'sort' => $_GET['sort'] ?? null,
         'page' => $_GET['page'] ?? null, 'open' => $_GET['open'] ?? null,
     ], $over);
-    $p = array_filter($p, fn($v) => $v !== null && $v !== '');
+    $p = array_filter($p, fn($v) => $v !== null && $v !== '' && !is_array($v));
     return url('admin-assessments') . ($p ? '?' . http_build_query($p) : '');
 }
 
 $hasFilter = ($q !== '' || $topic !== '' || $mentor > 0);
+
 $csrf = csrf_token();
 $backHere = ab_url();
 
@@ -499,20 +389,14 @@ include __DIR__ . '/includes/assessments_ui.php';
                         </div>
                         <p class="ss-fb-txt" style="font-weight:600;color:var(--gray-800);"><?= htmlspecialchars($qq['question_text']) ?></p>
 
-                        <?php
-                        $ops = $con->prepare("SELECT option_text, is_correct FROM assessment_options WHERE question_id = ? ORDER BY option_order ASC, option_id ASC");
-                        $ops->bind_param('i', $qq['question_id']);
-                        $ops->execute();
-                        $opts = $ops->get_result()->fetch_all(MYSQLI_ASSOC);
-                        $ops->close();
-                        foreach ($opts as $oi => $o): ?>
+                        <?php foreach ($qq['options'] as $oi => $o): ?>
                             <div class="as-opt<?= (int)$o['is_correct'] ? ' right' : '' ?>">
                                 <span class="as-opt-k"><?= chr(65 + $oi) ?></span>
                                 <?= htmlspecialchars($o['option_text']) ?>
                                 <?php if ((int)$o['is_correct']): ?><span style="margin-left:auto;font-size:11px;">Correct</span><?php endif; ?>
                             </div>
                         <?php endforeach; ?>
-                        <?php if (!$opts && trim((string)$qq['correct_text']) !== ''): ?>
+                        <?php if (!$qq['options'] && trim((string)$qq['correct_text']) !== ''): ?>
                             <div class="as-opt right"><span class="as-opt-k">✓</span><?= htmlspecialchars($qq['correct_text']) ?></div>
                         <?php endif; ?>
 
@@ -523,7 +407,6 @@ include __DIR__ . '/includes/assessments_ui.php';
                         </div>
                         <div class="ss-fb-by">
                             <?= $st['answered'] ?> answer<?= $st['answered'] === 1 ? '' : 's' ?>
-                            <?= $st['graded'] < $st['answered'] ? ' · ' . ($st['answered'] - $st['graded']) . ' not marked yet' : '' ?>
                             <?= $st['flagged'] > 0 ? ' · ' . $st['flagged'] . ' flagged for review' : '' ?>
                         </div>
                     </div>

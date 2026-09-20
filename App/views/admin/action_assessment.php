@@ -24,9 +24,9 @@ if (!verify_csrf()) {
     exit('CSRF token mismatch.');
 }
 
-$id     = (int)($_POST['assessment_id'] ?? 0);
-$action = $_POST['action'] ?? '';
-$back   = $_POST['back'] ?? '';
+$id     = is_scalar($_POST['assessment_id'] ?? null) ? (int)$_POST['assessment_id'] : 0;
+$action = is_scalar($_POST['action'] ?? null) ? (string)$_POST['action'] : '';
+$back   = is_scalar($_POST['back'] ?? null) ? (string)$_POST['back'] : '';
 
 if ($back === '' || strpos($back, BASE_URL . '/') !== 0) {
     $back = url('admin-assessments');
@@ -38,15 +38,10 @@ if (!$id || !in_array($action, ['publish', 'unpublish'], true)) {
     exit;
 }
 
-$st = $con->prepare("
-    SELECT a.assessment_id, a.title, a.status, a.mentor_id,
-           (SELECT COUNT(*) FROM assessment_questions q WHERE q.assessment_id = a.assessment_id) AS questions
-    FROM assessments a WHERE a.assessment_id = ? LIMIT 1
-");
-$st->bind_param('i', $id);
-$st->execute();
-$a = $st->get_result()->fetch_assoc();
-$st->close();
+$a = AssessmentRepository::byId($con, $id);
+if ($a) {
+    $a['questions'] = count(AssessmentRepository::questionsWithOptions($con, $id));
+}
 
 if (!$a) {
     pc_flash('error', 'That assessment no longer exists.');
@@ -69,11 +64,7 @@ if ($action === 'publish') {
         exit;
     }
 
-    $up = $con->prepare("UPDATE assessments SET status = 'published', published_at = COALESCE(published_at, NOW()) WHERE assessment_id = ?");
-    $up->bind_param('i', $id);
-    $up->execute();
-    $ok = $up->affected_rows > 0;
-    $up->close();
+    $ok = AssessmentRepository::setStatus($con, $id, 'published') > 0;
 
     if ($ok) {
         NotificationService::send($con, (int)$a['mentor_id'], 'assessment_published',
@@ -92,11 +83,7 @@ if ($action === 'publish') {
         exit;
     }
 
-    $up = $con->prepare("UPDATE assessments SET status = 'draft' WHERE assessment_id = ?");
-    $up->bind_param('i', $id);
-    $up->execute();
-    $ok = $up->affected_rows > 0;
-    $up->close();
+    $ok = AssessmentRepository::setStatus($con, $id, 'draft') > 0;
 
     if ($ok) {
         NotificationService::send($con, (int)$a['mentor_id'], 'assessment_unpublished',

@@ -12,82 +12,77 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'mentee') {
 }
 
 $mentee_id     = (int)$_SESSION['user_id'];
-$assessment_id = (int)($_GET['id'] ?? 0);
+$assessment_id = is_scalar($_GET['id'] ?? null) ? (int)$_GET['id'] : 0;
+// ?attempt= opens one of this mentee's earlier attempts; ?again=1 starts a
+// fresh one, which is how an assessment gets used a second time.
+$view_attempt  = is_scalar($_GET['attempt'] ?? null) ? (int)$_GET['attempt'] : 0;
+$start_again   = (is_scalar($_GET['again'] ?? null) ? (string)$_GET['again'] : '') === '1';
 
-// The mentee must actually have a session history with this mentor.
-$stmt = $con->prepare("
-    SELECT a.*, u.firstname, u.lastname, u.user_id AS mentor_user_id
-    FROM assessments a
-    JOIN users u ON u.user_id = a.mentor_id
-    WHERE a.assessment_id = ?
-      AND a.status = 'published'
-      AND EXISTS (
-          SELECT 1 FROM session_requests sr
-           WHERE sr.mentor_id = a.mentor_id AND sr.mentee_id = ?
-             AND sr.status IN ('approved','completed')
-      )
-");
-$stmt->bind_param("ii", $assessment_id, $mentee_id);
-$stmt->execute();
-$assessment = $stmt->get_result()->fetch_assoc();
-$stmt->close();
-
-if (!$assessment) {
-    pc_flash('error', 'That assessment is not available to you.');
+$leave = function (string $message) {
+    pc_flash('error', $message);
     header("Location: " . url('assessments'));
     exit;
+};
+
+// An earlier attempt of their own can always be read back, even if the
+// mentor has since unpublished the assessment.
+$attempt = null;
+if ($view_attempt) {
+    $attempt = AssessmentRepository::attemptOf($con, $view_attempt, $mentee_id);
+    if (!$attempt) {
+        $leave('That attempt could not be found.');
+    }
+    $assessment_id = (int)$attempt['assessment_id'];
+    $assessment    = AssessmentRepository::withMentor($con, $assessment_id);
+} else {
+    // Starting or resuming: the assessment must be published, by a mentor this
+    // mentee actually has sessions with.
+    $assessment = AssessmentRepository::openToMentee($con, $assessment_id, $mentee_id);
+}
+
+if (!$assessment) {
+    $leave('That assessment is not available to you.');
 }
 
 // Questions + options
-$questions = [];
-$qres = $con->query("SELECT * FROM assessment_questions WHERE assessment_id = $assessment_id ORDER BY question_order ASC");
-while ($q = $qres->fetch_assoc()) {
-    $q['options'] = $con->query(
-        "SELECT option_id, option_text FROM assessment_options WHERE question_id = " . (int)$q['question_id'] . " ORDER BY option_order ASC"
-    )->fetch_all(MYSQLI_ASSOC);
-    $questions[] = $q;
-}
+$questions = AssessmentRepository::questionsWithOptions($con, $assessment_id);
 
 if (empty($questions)) {
-    pc_flash('error', 'That assessment has no questions yet.');
-    header("Location: " . url('assessments'));
-    exit;
+    $leave('That assessment has no questions yet.');
 }
 
 $total_points = array_sum(array_column($questions, 'points'));
 
-// Attempt: resume, or start a fresh one.
-$att = $con->prepare("SELECT * FROM assessment_attempts WHERE assessment_id = ? AND mentee_id = ?");
-$att->bind_param("ii", $assessment_id, $mentee_id);
-$att->execute();
-$attempt = $att->get_result()->fetch_assoc();
-$att->close();
-
 if (!$attempt) {
-    $ins = $con->prepare("INSERT INTO assessment_attempts (assessment_id, mentee_id, total_points) VALUES (?, ?, ?)");
-    $ins->bind_param("iii", $assessment_id, $mentee_id, $total_points);
-    $ins->execute();
-    $attempt_id = (int)$con->insert_id;
-    $ins->close();
-    $attempt = [
-        'attempt_id' => $attempt_id,
-        'status' => 'in_progress',
-        'started_at' => date('Y-m-d H:i:s'),
-        'score' => 0,
-        'total_points' => $total_points,
-        'submitted_at' => null,
-    ];
+    // Resume whatever is open. Otherwise the latest attempt is shown as a
+    // review, and a new one starts only when the mentee asks for it.
+    $attempt = AssessmentService::currentAttempt($con, $assessment_id, $mentee_id, false);
+    if (!$attempt) {
+        $latest = AssessmentRepository::latestAttempt($con, $assessment_id, $mentee_id);
+        $attempt = ($latest && !$start_again)
+            ? $latest
+            : AssessmentService::currentAttempt($con, $assessment_id, $mentee_id, true);
+    }
+    if (!$attempt) {
+        $leave('That assessment could not be started. Please try again.');
+    }
 }
 
 $attempt_id = (int)$attempt['attempt_id'];
 $is_review  = $attempt['status'] === 'submitted';
 
-// Saved answers, keyed by question
-$saved = [];
-$ares = $con->query("SELECT * FROM assessment_answers WHERE attempt_id = $attempt_id");
-while ($r = $ares->fetch_assoc()) {
-    $saved[(int)$r['question_id']] = $r;
+// Every attempt this mentee has made at it, newest first, so they can look
+// back at how they did before.
+$history = AssessmentRepository::attemptHistory($con, $assessment_id, $mentee_id);
+$attempt_no = 0;
+foreach (array_reverse($history) as $i => $h) {
+    if ((int)$h['attempt_id'] === $attempt_id) {
+        $attempt_no = $i + 1;
+    }
 }
+
+// Saved answers, keyed by question
+$saved = AssessmentRepository::answersFor($con, $attempt_id);
 
 // Remaining time, computed from the server's start timestamp so the clock
 // can't be extended by reloading.
@@ -96,34 +91,14 @@ while ($r = $ares->fetch_assoc()) {
 // mixing time() with strtotime() on that column skews the clock by hours.
 $seconds_left = null;
 if (!$is_review && !empty($assessment['time_limit_minutes'])) {
-    $el = $con->prepare("SELECT TIMESTAMPDIFF(SECOND, started_at, NOW()) e FROM assessment_attempts WHERE attempt_id = ?");
-    $el->bind_param("i", $attempt_id);
-    $el->execute();
-    $elapsed = (int)($el->get_result()->fetch_assoc()['e'] ?? 0);
-    $el->close();
-    $seconds_left = max(0, ((int)$assessment['time_limit_minutes'] * 60) - $elapsed);
+    $seconds_left = AssessmentService::secondsLeft(
+        (int)$assessment['time_limit_minutes'],
+        AssessmentRepository::elapsedSeconds($con, $attempt_id)
+    );
 }
 
 // For review mode, the correct answers so results can be shown.
-$correct_map = [];
-if ($is_review) {
-    $cres = $con->query("
-        SELECT q.question_id, q.correct_text, o.option_id, o.option_text, o.is_correct
-        FROM assessment_questions q
-        LEFT JOIN assessment_options o ON o.question_id = q.question_id
-        WHERE q.assessment_id = $assessment_id
-    ");
-    while ($r = $cres->fetch_assoc()) {
-        $qid = (int)$r['question_id'];
-        if (!isset($correct_map[$qid])) {
-            $correct_map[$qid] = ['text' => $r['correct_text'], 'option_id' => null, 'option_text' => null];
-        }
-        if ((int)$r['is_correct'] === 1) {
-            $correct_map[$qid]['option_id']   = (int)$r['option_id'];
-            $correct_map[$qid]['option_text'] = $r['option_text'];
-        }
-    }
-}
+$correct_map = $is_review ? AssessmentRepository::correctAnswers($con, $assessment_id) : [];
 
 $mentor_name = trim($assessment['firstname'] . ' ' . $assessment['lastname']);
 $active_page = 'assessments';
@@ -524,7 +499,7 @@ $active_page = 'assessments';
                         </div>
                     <?php else: ?>
                         <div class="tk-nav">
-                            <span style="font-size:13px;color:var(--gray-500);">Reviewing your submitted answers.</span>
+                            <span style="font-size:13px;color:var(--gray-500);">Reviewing your submitted answers<?= $attempt_no > 0 && count($history) > 1 ? ' (' . htmlspecialchars(AssessmentService::attemptLabel($attempt_no)) . ')' : '' ?>.</span>
                             <div style="display:flex;gap:10px;">
                                 <button type="button" class="btn btn-ghost" onclick="goQuestion(currentQ - 1)">Previous</button>
                                 <button type="button" class="btn btn-primary" onclick="goQuestion(currentQ + 1)">Next</button>
@@ -545,8 +520,39 @@ $active_page = 'assessments';
                             </div>
                             <div class="ac-side-row" style="margin-top:14px;font-size:12.5px;color:var(--gray-500);text-align:center;">
                                 Submitted <?= date('M j, Y g:i A', strtotime($attempt['submitted_at'])) ?>
+                                <?php if ($attempt_no > 0 && count($history) > 1): ?>
+                                    <br><?= htmlspecialchars(AssessmentService::attemptLabel($attempt_no)) ?> of <?= count($history) ?>
+                                <?php endif; ?>
                             </div>
+                            <?php if ($assessment['status'] === 'published'): ?>
+                                <a class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px;"
+                                   href="<?= htmlspecialchars(url('assessment-take')) ?>?id=<?= (int)$assessment_id ?>&amp;again=1">Take again</a>
+                            <?php endif; ?>
                         </div>
+
+                        <?php if (count($history) > 1): ?>
+                            <div class="tk-side" style="margin-top:14px;">
+                                <div class="tk-side-title">Your attempts</div>
+                                <?php foreach ($history as $h):
+                                    $h_id   = (int)$h['attempt_id'];
+                                    $h_open = $h['status'] !== 'submitted';
+                                    $h_pct  = (int)$h['total_points'] > 0 ? round($h['score'] / $h['total_points'] * 100) : 0;
+                                    $h_no   = 0;
+                                    foreach (array_reverse($history) as $i => $e) {
+                                        if ((int)$e['attempt_id'] === $h_id) $h_no = $i + 1;
+                                    }
+                                ?>
+                                    <a href="<?= htmlspecialchars(url('assessment-take')) ?>?attempt=<?= $h_id ?>"
+                                       style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;font-size:12.5px;color:var(--gray-600);text-decoration:none;border-bottom:1px solid var(--gray-100);">
+                                        <span>
+                                            <b style="color:<?= $h_id === $attempt_id ? 'var(--mint)' : 'var(--forest)' ?>;"><?= htmlspecialchars(AssessmentService::attemptLabel($h_no)) ?></b><br>
+                                            <?= $h_open ? 'In progress' : date('M j, Y', strtotime($h['submitted_at'])) ?>
+                                        </span>
+                                        <b style="color:var(--forest);"><?= $h_open ? '—' : $h_pct . '%' ?></b>
+                                    </a>
+                                <?php endforeach; ?>
+                            </div>
+                        <?php endif; ?>
                     <?php else: ?>
                         <div class="tk-side">
                             <div class="tk-side-title">Assessment Progress</div>

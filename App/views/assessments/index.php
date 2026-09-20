@@ -18,44 +18,17 @@ $is_mentor = $role === 'mentor';
 
 
 if ($is_mentor) {
-    // Everything this mentor wrote, with how many mentees have finished it.
-    $rows = $con->query("
-        SELECT a.*,
-               (SELECT COUNT(*) FROM assessment_questions q WHERE q.assessment_id = a.assessment_id) AS question_count,
-               (SELECT COALESCE(SUM(q2.points),0) FROM assessment_questions q2 WHERE q2.assessment_id = a.assessment_id) AS total_points,
-               (SELECT COUNT(*) FROM assessment_attempts at WHERE at.assessment_id = a.assessment_id AND at.status = 'submitted') AS submissions,
-               (SELECT ROUND(AVG(at2.score / NULLIF(at2.total_points,0) * 100))
-                  FROM assessment_attempts at2
-                 WHERE at2.assessment_id = a.assessment_id AND at2.status = 'submitted') AS avg_percent
-        FROM assessments a
-        WHERE a.mentor_id = $user_id
-        ORDER BY a.created_at DESC
-    ")->fetch_all(MYSQLI_ASSOC);
+    // Everything this mentor wrote, with how it has been used.
+    $rows = AssessmentRepository::forMentor($con, $user_id);
 
     $published = array_filter($rows, fn($r) => $r['status'] === 'published');
     $drafts    = array_filter($rows, fn($r) => $r['status'] === 'draft');
     $total_submissions = array_sum(array_column($rows, 'submissions'));
 } else {
-    // Published assessments from mentors this mentee has worked with.
-    $rows = $con->query("
-        SELECT a.*,
-               u.firstname, u.lastname,
-               (SELECT COUNT(*) FROM assessment_questions q WHERE q.assessment_id = a.assessment_id) AS question_count,
-               (SELECT COALESCE(SUM(q2.points),0) FROM assessment_questions q2 WHERE q2.assessment_id = a.assessment_id) AS total_points,
-               at.attempt_id, at.status AS attempt_status, at.score, at.total_points AS scored_out_of, at.submitted_at
-        FROM assessments a
-        JOIN users u ON u.user_id = a.mentor_id
-        LEFT JOIN assessment_attempts at
-               ON at.assessment_id = a.assessment_id AND at.mentee_id = $user_id
-        WHERE a.status = 'published'
-          AND EXISTS (
-              SELECT 1 FROM session_requests sr
-               WHERE sr.mentor_id = a.mentor_id
-                 AND sr.mentee_id = $user_id
-                 AND sr.status IN ('approved','completed')
-          )
-        ORDER BY (at.attempt_id IS NOT NULL AND at.status = 'submitted'), a.published_at DESC
-    ")->fetch_all(MYSQLI_ASSOC);
+    // Published assessments from mentors this mentee has worked with, each
+    // with their latest attempt — an assessment can be taken again, so the
+    // latest is what the card shows and the rest are history.
+    $rows = AssessmentRepository::forMentee($con, $user_id);
 
     $todo = array_filter($rows, fn($r) => ($r['attempt_status'] ?? '') !== 'submitted');
     $done = array_filter($rows, fn($r) => ($r['attempt_status'] ?? '') === 'submitted');
@@ -293,7 +266,7 @@ $active_page = 'assessments';
                                     <?php endif; ?>
                                     <?php if ((int)$a['submissions'] > 0): ?>
                                         <span style="color:var(--success);font-weight:600;">
-                                            <?= (int)$a['submissions'] ?> submitted · avg <?= (int)$a['avg_percent'] ?>%
+                                            <?= (int)$a['submissions'] ?> submitted<?= (int)$a['mentees_done'] > 0 ? ' by ' . (int)$a['mentees_done'] . ' mentee' . ((int)$a['mentees_done'] === 1 ? '' : 's') : '' ?> · avg <?= (int)$a['avg_percent'] ?>%
                                         </span>
                                     <?php endif; ?>
                                 </div>
@@ -304,7 +277,12 @@ $active_page = 'assessments';
                                     <?php endif; ?>
                                     <a href="<?= htmlspecialchars(url('assessment-create')) ?>?id=<?= (int)$a['assessment_id'] ?>" class="btn btn-ghost">Edit</a>
                                     <form method="POST" action="<?= htmlspecialchars(url('assessment-delete')) ?>" style="flex:1;display:flex;"
-                                        onsubmit="return confirm('Delete this assessment and all its questions?');">
+                                        onsubmit="return confirm(<?= htmlspecialchars(json_encode(
+                                            (int)$a['submissions'] > 0
+                                                ? 'Delete this assessment, its questions and ' . (int)$a['submissions'] . ' submitted result'
+                                                    . ((int)$a['submissions'] === 1 ? '' : 's') . '? The mentees who took it will no longer see their score.'
+                                                : 'Delete this assessment and all its questions?'
+                                        ), ENT_QUOTES) ?>);">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="assessment_id" value="<?= (int)$a['assessment_id'] ?>">
                                         <button type="submit" class="btn btn-ghost" style="flex:1;justify-content:center;font-size:12.5px;color:var(--danger);">Delete</button>
@@ -345,6 +323,9 @@ $active_page = 'assessments';
                                         <?php if (($a['attempt_status'] ?? '') === 'in_progress'): ?>
                                             <span style="color:var(--warning);font-weight:600;">In progress</span>
                                         <?php endif; ?>
+                                        <?php if ((int)$a['my_attempts'] > 1): ?>
+                                            <span><?= (int)$a['my_attempts'] - 1 ?> earlier attempt<?= (int)$a['my_attempts'] === 2 ? '' : 's' ?></span>
+                                        <?php endif; ?>
                                     </div>
                                     <div class="as-actions">
                                         <a href="<?= htmlspecialchars(url('assessment-take')) ?>?id=<?= (int)$a['assessment_id'] ?>" class="btn btn-primary">
@@ -372,9 +353,13 @@ $active_page = 'assessments';
                                     <div class="as-meta">
                                         <span>Mentor: <?= htmlspecialchars(trim($a['firstname'] . ' ' . $a['lastname'])) ?></span>
                                         <span>Submitted <?= date('M j, Y', strtotime($a['submitted_at'])) ?></span>
+                                        <?php if ((int)$a['my_attempts'] > 1): ?>
+                                            <span><?= (int)$a['my_attempts'] ?> attempts</span>
+                                        <?php endif; ?>
                                     </div>
                                     <div class="as-actions">
                                         <a href="<?= htmlspecialchars(url('assessment-take')) ?>?id=<?= (int)$a['assessment_id'] ?>" class="btn btn-ghost">Review answers</a>
+                                        <a href="<?= htmlspecialchars(url('assessment-take')) ?>?id=<?= (int)$a['assessment_id'] ?>&amp;again=1" class="btn btn-primary">Take again</a>
                                     </div>
                                 </div>
                             <?php endforeach; ?>

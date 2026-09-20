@@ -1,5 +1,7 @@
 <?php
-// Delete an assessment you wrote, along with its questions, options and attempts.
+// Delete an assessment you wrote, along with its questions, options and every
+// attempt made at it. The mentee-facing results go with it, so the page asks
+// for confirmation with that count in it first.
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
@@ -16,41 +18,30 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
 }
 
 $mentor_id     = (int)$_SESSION['user_id'];
-$assessment_id = (int)($_POST['assessment_id'] ?? 0);
+$assessment_id = is_scalar($_POST['assessment_id'] ?? null) ? (int)$_POST['assessment_id'] : 0;
 
-$own = $con->prepare("SELECT title FROM assessments WHERE assessment_id = ? AND mentor_id = ?");
-$own->bind_param("ii", $assessment_id, $mentor_id);
-$own->execute();
-$row = $own->get_result()->fetch_assoc();
-$own->close();
-
-if (!$row) {
+$assessment = AssessmentRepository::ownedBy($con, $assessment_id, $mentor_id);
+if (!$assessment) {
     pc_flash('error', 'You can only delete assessments you created.');
     header("Location: " . url('assessments'));
     exit;
 }
 
-$con->begin_transaction();
-try {
-    // Answers → attempts → options → questions → assessment.
-    $con->query("DELETE FROM assessment_answers WHERE attempt_id IN
-                 (SELECT attempt_id FROM assessment_attempts WHERE assessment_id = $assessment_id)");
-    $con->query("DELETE FROM assessment_attempts WHERE assessment_id = $assessment_id");
-    $con->query("DELETE FROM assessment_options WHERE question_id IN
-                 (SELECT question_id FROM assessment_questions WHERE assessment_id = $assessment_id)");
-    $con->query("DELETE FROM assessment_questions WHERE assessment_id = $assessment_id");
+// Said plainly in the toast as well as the dialog, because this is the point
+// at which the results stop existing.
+$submitted = AssessmentRepository::countSubmitted($con, $assessment_id);
 
-    $del = $con->prepare("DELETE FROM assessments WHERE assessment_id = ? AND mentor_id = ?");
-    $del->bind_param("ii", $assessment_id, $mentor_id);
-    $del->execute();
-    $del->close();
-
-    $con->commit();
-    pc_flash('success', '"' . $row['title'] . '" was deleted.');
-} catch (Throwable $e) {
-    $con->rollback();
+// Questions, options, attempts and answers all hang off this row, and the
+// database removes them with it.
+if (AssessmentRepository::deleteOwned($con, $assessment_id, $mentor_id) < 1) {
     pc_flash('error', 'The assessment could not be deleted.');
+    header("Location: " . url('assessments'));
+    exit;
 }
 
+pc_flash('success', '"' . $assessment['title'] . '" was deleted'
+    . ($submitted > 0
+        ? ', along with ' . $submitted . ' submitted result' . ($submitted === 1 ? '' : 's') . '.'
+        : '.'));
 header("Location: " . url('assessments'));
 exit;

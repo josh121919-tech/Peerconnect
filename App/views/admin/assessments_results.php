@@ -38,34 +38,20 @@ $rangeLabel = $from ? date('M j, Y', strtotime($from)) . ' – ' . date('M j, Y'
 
 // Attempts are dated by when they were started, which is the only date every
 // attempt has — an unfinished one has no submitted_at at all.
-$tw  = $from ? "WHERE DATE(t.started_at) BETWEEN '$from' AND '$to'" : '';
-$twA = $from ? "AND DATE(t.started_at) BETWEEN '$from' AND '$to'" : '';
-
-$one = function (string $sql) use ($con) {
-    $r = $con->query($sql);
-    return $r ? $r->fetch_row()[0] : null;
-};
 
 /* ── Headline figures ─────────────────────────────────────────────────── */
-$attTotal = (int)$one("SELECT COUNT(*) FROM assessment_attempts t $tw");
-$attDone  = (int)$one("SELECT COUNT(*) FROM assessment_attempts t " . ($tw ? "$tw AND" : 'WHERE') . " t.status = 'submitted'");
+$figures  = AssessmentAdminRepository::attemptFigures($con, $from, $to);
+$attTotal = $figures['attempts'];
+$attDone  = $figures['submitted'];
 $attOpen  = $attTotal - $attDone;
 $finish   = $attTotal > 0 ? round($attDone / $attTotal * 100, 1) : null;
-
-$avgPct = $one("SELECT AVG(t.score / NULLIF(t.total_points,0) * 100) FROM assessment_attempts t " . ($tw ? "$tw AND" : 'WHERE') . " t.status='submitted'");
-$avgPct = $attDone > 0 && $avgPct !== null ? round((float)$avgPct, 1) : null;
-
-$menteeN = (int)$one("SELECT COUNT(DISTINCT t.mentee_id) FROM assessment_attempts t $tw");
-$liveN   = (int)$one("SELECT COUNT(*) FROM assessments WHERE status = 'published'");
+$avgPct   = $attDone > 0 && $figures['avg_pct'] !== null ? round((float)$figures['avg_pct'], 1) : null;
+$menteeN  = $figures['mentees'];
+$liveN    = AssessmentAdminRepository::headline($con)['published'];
 
 /* ── Score distribution ───────────────────────────────────────────────── */
 $bands = ['90–100%' => 0, '75–89%' => 0, '60–74%' => 0, '40–59%' => 0, 'Under 40%' => 0];
-$bq = $con->query("
-    SELECT ROUND(t.score / NULLIF(t.total_points,0) * 100) pct
-    FROM assessment_attempts t " . ($tw ? "$tw AND" : 'WHERE') . " t.status='submitted' AND t.total_points > 0
-");
-while ($r = $bq->fetch_assoc()) {
-    $p = (int)$r['pct'];
+foreach (AssessmentAdminRepository::scorePercents($con, $from, $to) as $p) {
     if ($p >= 90)      $bands['90–100%']++;
     elseif ($p >= 75)  $bands['75–89%']++;
     elseif ($p >= 60)  $bands['60–74%']++;
@@ -75,113 +61,44 @@ while ($r = $bq->fetch_assoc()) {
 $bandTotal = array_sum($bands);
 
 /* ── Per-assessment performance ───────────────────────────────────────── */
-$perAssessment = $con->query("
-    SELECT a.assessment_id, a.title, a.topic, a.status,
-           CONCAT_WS(' ', u.firstname, u.lastname) mentor_name,
-           COUNT(t.attempt_id) attempts,
-           SUM(t.status = 'submitted') submitted,
-           AVG(CASE WHEN t.status = 'submitted' THEN t.score / NULLIF(t.total_points,0) * 100 END) avg_pct
-    FROM assessments a
-    JOIN users u ON u.user_id = a.mentor_id
-    LEFT JOIN assessment_attempts t ON t.assessment_id = a.assessment_id $twA
-    GROUP BY a.assessment_id, a.title, a.topic, a.status, mentor_name
-    ORDER BY attempts DESC, a.created_at DESC
-    LIMIT 8
-")->fetch_all(MYSQLI_ASSOC);
+$perAssessment = array_slice(AssessmentAdminRepository::perAssessment($con, $from, $to), 0, 8);
 
 /* ── Question difficulty ──────────────────────────────────────────────── */
-// Only questions somebody has actually been marked on can be ranked; the
-// rest have no difficulty to report yet.
-$hardest = $con->query("
-    SELECT q.question_id, q.question_text, q.question_type, q.points,
-           a.assessment_id, a.title,
-           COUNT(an.answer_id) answered,
-           SUM(an.is_correct IS NOT NULL) graded,
-           SUM(an.is_correct = 1) correct
-    FROM assessment_questions q
-    JOIN assessments a ON a.assessment_id = q.assessment_id
-    JOIN assessment_answers an ON an.question_id = q.question_id
-    JOIN assessment_attempts t ON t.attempt_id = an.attempt_id AND t.status = 'submitted' $twA
-    GROUP BY q.question_id, q.question_text, q.question_type, q.points, a.assessment_id, a.title
-    HAVING graded > 0
-    -- MySQL will not let ORDER BY reference an aggregate's alias, so the
-    -- ratio is spelled out again rather than reusing `correct / graded`.
-    ORDER BY (SUM(an.is_correct = 1) / SUM(an.is_correct IS NOT NULL)) ASC,
-             COUNT(an.answer_id) DESC
-    LIMIT 6
-")->fetch_all(MYSQLI_ASSOC);
+// Only questions somebody has actually answered can be ranked; the rest have
+// no difficulty to report yet.
+$hardest = AssessmentAdminRepository::hardestQuestions($con, $from, $to, 6);
 
 /* ── Attempts, the list at the bottom ─────────────────────────────────── */
-$fStatus = in_array($_GET['status'] ?? '', ['submitted', 'in_progress'], true) ? $_GET['status'] : '';
-$fq      = trim((string)($_GET['q'] ?? ''));
+$str     = fn(string $k) => is_scalar($_GET[$k] ?? null) ? trim((string)$_GET[$k]) : '';
+$fStatus = in_array($str('status'), ['submitted', 'in_progress'], true) ? $str('status') : '';
+$fq      = $str('q');
 
-$aClauses = [];
-$aTypes = '';
-$aArgs = [];
-if ($from) { $aClauses[] = "DATE(t.started_at) BETWEEN ? AND ?"; $aTypes .= 'ss'; $aArgs[] = $from; $aArgs[] = $to; }
-if ($fStatus !== '') { $aClauses[] = 't.status = ?'; $aTypes .= 's'; $aArgs[] = $fStatus; }
-if ($fq !== '') {
-    $aClauses[] = "CONCAT_WS(' ', u.firstname, u.lastname, a.title, a.topic) LIKE ?";
-    $aTypes .= 's';
-    $aArgs[] = '%' . $fq . '%';
-}
-$aWhere = $aClauses ? 'WHERE ' . implode(' AND ', $aClauses) : '';
+$attemptFilters = ['from' => $from, 'to' => $to, 'status' => $fStatus, 'q' => $fq];
 
 $perPage = 8;
-$page = max(1, (int)($_GET['page'] ?? 1));
+$page    = max(1, (int)$str('page'));
 
-$cSql = "SELECT COUNT(*) c FROM assessment_attempts t
-         JOIN assessments a ON a.assessment_id = t.assessment_id
-         JOIN users u ON u.user_id = t.mentee_id $aWhere";
-if ($aTypes !== '') {
-    $cs = $con->prepare($cSql);
-    $cs->bind_param($aTypes, ...$aArgs);
-    $cs->execute();
-    $listTotal = (int)$cs->get_result()->fetch_assoc()['c'];
-    $cs->close();
-} else {
-    $listTotal = (int)$con->query($cSql)->fetch_assoc()['c'];
-}
+$listTotal = AssessmentAdminRepository::countAttempts($con, $attemptFilters);
 $listPages = max(1, (int)ceil($listTotal / $perPage));
-$page = min($page, $listPages);
-$offset = ($page - 1) * $perPage;
+$page      = min($page, $listPages);
+$offset    = ($page - 1) * $perPage;
 
-$ls = $con->prepare("
-    SELECT t.attempt_id, t.mentee_id, t.status, t.score, t.total_points, t.started_at, t.submitted_at,
-           a.assessment_id, a.title, a.topic,
-           CONCAT_WS(' ', u.firstname, u.lastname) mentee_name, p.profile_image,
-           u.role
-    FROM assessment_attempts t
-    JOIN assessments a ON a.assessment_id = t.assessment_id
-    JOIN users u ON u.user_id = t.mentee_id
-    LEFT JOIN profile p ON p.user_id = t.mentee_id
-    $aWhere
-    ORDER BY COALESCE(t.submitted_at, t.started_at) DESC
-    LIMIT ? OFFSET ?
-");
-$ls->bind_param($aTypes . 'ii', ...array_merge($aArgs, [$perPage, $offset]));
-$ls->execute();
-$attempts = $ls->get_result()->fetch_all(MYSQLI_ASSOC);
-$ls->close();
+$attempts = AssessmentAdminRepository::attemptPage($con, $attemptFilters, $perPage, $offset);
 
-/* ── Completion by role ───────────────────────────────────────────────── */
-// Only mentees take assessments in this app; the split the reference showed
-// between mentee and mentor completion has no second half here, so the card
-// reports the one that exists.
-$menteesWithAccess = (int)$one("
-    SELECT COUNT(DISTINCT sr.mentee_id) FROM session_requests sr
-    JOIN assessments a ON a.mentor_id = sr.mentor_id AND a.status = 'published'
-");
-$menteesAttempted = (int)$one("SELECT COUNT(DISTINCT mentee_id) FROM assessment_attempts");
-$reach = $menteesWithAccess > 0 ? round($menteesAttempted / $menteesWithAccess * 100) : null;
+/* ── Reach ────────────────────────────────────────────────────────────── */
+$menteeReach      = AssessmentAdminRepository::menteeReach($con);
+$menteesWithAccess = $menteeReach['reachable'];
+$menteesAttempted = $menteeReach['attempted'];
+$reach            = $menteesWithAccess > 0 ? round($menteesAttempted / $menteesWithAccess * 100) : null;
 
+/** This page's address with one filter changed. */
 function ar_url(array $over = []): string
 {
     $p = array_merge([
         'range' => $_GET['range'] ?? null, 'status' => $_GET['status'] ?? null,
         'q' => $_GET['q'] ?? null, 'page' => $_GET['page'] ?? null,
     ], $over);
-    $p = array_filter($p, fn($v) => $v !== null && $v !== '');
+    $p = array_filter($p, fn($v) => $v !== null && $v !== '' && !is_array($v));
     return url('admin-assessments-results') . ($p ? '?' . http_build_query($p) : '');
 }
 
@@ -269,12 +186,12 @@ include __DIR__ . '/includes/assessments_ui.php';
                 <?php if (!$hardest): ?>
                     <p class="ss-none">No question has been marked yet, so there is no difficulty to report.</p>
                 <?php else: foreach ($hardest as $i => $h):
-                    $pct = (int)$h['graded'] > 0 ? round($h['correct'] / $h['graded'] * 100) : null; ?>
+                    $pct = (int)$h['answered'] > 0 ? round($h['correct'] / $h['answered'] * 100) : null; ?>
                     <a class="ar-rank" href="<?= url('admin-assessments') ?>?open=<?= (int)$h['assessment_id'] ?>#panel">
                         <span class="ar-rank-n"><?= $i + 1 ?></span>
                         <span class="ar-rank-b">
                             <b><?= htmlspecialchars($h['question_text']) ?></b>
-                            <span><?= htmlspecialchars($h['title']) ?> · <?= as_qtype_label($h['question_type']) ?> · <?= (int)$h['graded'] ?> marked</span>
+                            <span><?= htmlspecialchars($h['title']) ?> · <?= as_qtype_label($h['question_type']) ?> · <?= (int)$h['answered'] ?> answered</span>
                         </span>
                         <span class="ar-rank-v" style="color:<?= $pct !== null && $pct < 60 ? '#A6301F' : '#17654B' ?>;"><?= $pct !== null ? $pct . '%' : '—' ?></span>
                     </a>
@@ -439,9 +356,7 @@ include __DIR__ . '/includes/assessments_ui.php';
         <div class="ss-card">
             <h2>Question types in use</h2>
             <?php
-            $types = $con->query("
-                SELECT q.question_type t, COUNT(*) c FROM assessment_questions q GROUP BY q.question_type ORDER BY c DESC
-            ")->fetch_all(MYSQLI_ASSOC);
+            $types = AssessmentAdminRepository::questionsByType($con);
             $tTotal = array_sum(array_column($types, 'c'));
             ?>
             <?php if (!$types): ?>

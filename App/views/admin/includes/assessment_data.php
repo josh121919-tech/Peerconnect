@@ -14,31 +14,6 @@
  * what "completed" or "average score" means.
  */
 
-/** The columns every assessment list needs, with its live counts. */
-function as_select(): string
-{
-    return "
-        SELECT a.assessment_id, a.title, a.topic, a.instructions, a.status,
-               a.time_limit_minutes, a.created_at, a.published_at, a.mentor_id,
-               CONCAT_WS(' ', u.firstname, u.lastname) AS mentor_name,
-               p.profile_image AS mentor_pic,
-               (SELECT COUNT(*) FROM assessment_questions q WHERE q.assessment_id = a.assessment_id) AS questions,
-               (SELECT COALESCE(SUM(q.points), 0) FROM assessment_questions q WHERE q.assessment_id = a.assessment_id) AS total_points,
-               (SELECT COUNT(*) FROM assessment_attempts t WHERE t.assessment_id = a.assessment_id) AS attempts,
-               (SELECT COUNT(*) FROM assessment_attempts t WHERE t.assessment_id = a.assessment_id AND t.status = 'submitted') AS submitted,
-               (SELECT COUNT(*) FROM assessment_attempts t WHERE t.assessment_id = a.assessment_id AND t.status = 'in_progress') AS in_progress,
-               (SELECT MAX(t.submitted_at) FROM assessment_attempts t WHERE t.assessment_id = a.assessment_id) AS last_submitted,
-               -- Averaged as a percentage of each attempt's own total, so an
-               -- assessment worth 14 points and one worth 100 compare properly.
-               (SELECT AVG(t.score / NULLIF(t.total_points, 0) * 100)
-                  FROM assessment_attempts t
-                 WHERE t.assessment_id = a.assessment_id AND t.status = 'submitted') AS avg_pct
-        FROM assessments a
-        JOIN users u ON u.user_id = a.mentor_id
-        LEFT JOIN profile p ON p.user_id = a.mentor_id
-    ";
-}
-
 /** Label and colour for an assessment's state. */
 function as_status_chip(string $status): array
 {
@@ -77,31 +52,7 @@ function as_qtype_color(string $t): array
  */
 function as_question_stats(mysqli $con, int $question_id): array
 {
-    $st = $con->prepare("
-        SELECT COUNT(*) AS answered,
-               SUM(an.is_correct IS NOT NULL) AS graded,
-               SUM(an.is_correct = 1) AS correct,
-               SUM(an.is_flagged = 1) AS flagged
-        FROM assessment_answers an
-        JOIN assessment_attempts t ON t.attempt_id = an.attempt_id
-        WHERE an.question_id = ? AND t.status = 'submitted'
-    ");
-    $st->bind_param('i', $question_id);
-    $st->execute();
-    $r = $st->get_result()->fetch_assoc() ?: [];
-    $st->close();
-
-    $answered = (int)($r['answered'] ?? 0);
-    $graded   = (int)($r['graded'] ?? 0);
-    $correct  = (int)($r['correct'] ?? 0);
-
-    return [
-        'answered' => $answered,
-        'graded'   => $graded,
-        'correct'  => $correct,
-        'flagged'  => (int)($r['flagged'] ?? 0),
-        'pct'      => $graded > 0 ? round($correct / $graded * 100) : null,
-    ];
+    return AssessmentAdminRepository::questionStats($con, $question_id);
 }
 
 /** "45 min", or an honest blank when the mentor set no limit. */

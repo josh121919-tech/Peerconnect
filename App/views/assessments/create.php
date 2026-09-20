@@ -13,16 +13,13 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'mentor') {
 }
 
 $mentor_id     = (int)$_SESSION['user_id'];
-$assessment_id = (int)($_GET['id'] ?? 0);
+$assessment_id = is_scalar($_GET['id'] ?? null) ? (int)$_GET['id'] : 0;
 $assessment    = null;
 $questions     = [];
+$submitted_count = 0;
 
 if ($assessment_id) {
-    $stmt = $con->prepare("SELECT * FROM assessments WHERE assessment_id = ? AND mentor_id = ?");
-    $stmt->bind_param("ii", $assessment_id, $mentor_id);
-    $stmt->execute();
-    $assessment = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
+    $assessment = AssessmentRepository::ownedBy($con, $assessment_id, $mentor_id);
 
     if (!$assessment) {
         pc_flash('error', 'That assessment could not be found.');
@@ -30,21 +27,13 @@ if ($assessment_id) {
         exit;
     }
 
-    $qres = $con->query("SELECT * FROM assessment_questions WHERE assessment_id = $assessment_id ORDER BY question_order ASC");
-    while ($q = $qres->fetch_assoc()) {
-        $opts = $con->query("SELECT * FROM assessment_options WHERE question_id = " . (int)$q['question_id'] . " ORDER BY option_order ASC")
-            ->fetch_all(MYSQLI_ASSOC);
-        $q['options'] = $opts;
-        $questions[] = $q;
-    }
+    $questions = AssessmentRepository::questionsWithOptions($con, $assessment_id);
 
     // Once a mentee has submitted, the questions are part of a graded record —
     // rewriting them would leave the stored answers pointing at questions that
-    // no longer exist. Details stay editable; the question set locks.
-    $submitted_count = (int)($con->query("
-        SELECT COUNT(*) c FROM assessment_attempts
-        WHERE assessment_id = $assessment_id AND status = 'submitted'
-    ")->fetch_assoc()['c'] ?? 0);
+    // no longer exist, and the assessment can be taken again by anyone else.
+    // Details stay editable; the question set locks.
+    $submitted_count = AssessmentRepository::countSubmitted($con, $assessment_id);
 }
 $questions_locked = !empty($submitted_count);
 

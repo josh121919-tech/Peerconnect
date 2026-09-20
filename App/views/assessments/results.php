@@ -11,13 +11,9 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'mentor') {
 }
 
 $mentor_id     = (int)$_SESSION['user_id'];
-$assessment_id = (int)($_GET['id'] ?? 0);
+$assessment_id = is_scalar($_GET['id'] ?? null) ? (int)$_GET['id'] : 0;
 
-$stmt = $con->prepare("SELECT * FROM assessments WHERE assessment_id = ? AND mentor_id = ?");
-$stmt->bind_param("ii", $assessment_id, $mentor_id);
-$stmt->execute();
-$assessment = $stmt->get_result()->fetch_assoc();
-$stmt->close();
+$assessment = AssessmentRepository::ownedBy($con, $assessment_id, $mentor_id);
 
 if (!$assessment) {
     pc_flash('error', 'That assessment could not be found.');
@@ -25,27 +21,13 @@ if (!$assessment) {
     exit;
 }
 
-$attempts = $con->query("
-    SELECT at.*, u.firstname, u.lastname
-    FROM assessment_attempts at
-    JOIN users u ON u.user_id = at.mentee_id
-    WHERE at.assessment_id = $assessment_id AND at.status = 'submitted'
-    ORDER BY at.submitted_at DESC
-")->fetch_all(MYSQLI_ASSOC);
+// Every submitted attempt, newest first. A mentee can take an assessment
+// again, so each row says which of their attempts it was.
+$attempts = AssessmentRepository::submittedAttempts($con, $assessment_id);
+$mentees  = count(array_unique(array_column($attempts, 'mentee_id')));
 
 // Per-question accuracy across everyone who submitted.
-$per_question = $con->query("
-    SELECT q.question_id, q.question_order, q.question_text, q.points,
-           COUNT(ans.answer_id) AS answered,
-           SUM(ans.is_correct)  AS correct
-    FROM assessment_questions q
-    LEFT JOIN assessment_answers ans ON ans.question_id = q.question_id
-         AND ans.attempt_id IN (SELECT attempt_id FROM assessment_attempts
-                                 WHERE assessment_id = $assessment_id AND status = 'submitted')
-    WHERE q.assessment_id = $assessment_id
-    GROUP BY q.question_id, q.question_order, q.question_text, q.points
-    ORDER BY q.question_order ASC
-")->fetch_all(MYSQLI_ASSOC);
+$per_question = AssessmentRepository::questionResults($con, $assessment_id);
 
 $avg_percent = 0;
 if ($attempts) {
@@ -154,7 +136,11 @@ $active_page = 'assessments';
                                 </div>
                                 <div style="flex:1;min-width:0;">
                                     <div style="font-size:13.5px;font-weight:700;color:var(--gray-900);"><?= htmlspecialchars($name) ?></div>
-                                    <div style="font-size:11.5px;color:var(--gray-400);">Submitted <?= date('M j, Y g:i A', strtotime($a['submitted_at'])) ?></div>
+                                    <div style="font-size:11.5px;color:var(--gray-400);">
+                                        Submitted <?= date('M j, Y g:i A', strtotime($a['submitted_at'])) ?><?= (int)$a['attempts_by_them'] > 1
+                                            ? ' · ' . htmlspecialchars(AssessmentService::attemptLabel((int)$a['attempt_no'])) . ' of ' . (int)$a['attempts_by_them']
+                                            : '' ?>
+                                    </div>
                                 </div>
                                 <div style="text-align:right;flex-shrink:0;">
                                     <div style="font-size:17px;font-weight:700;color:<?= $pct >= 70 ? 'var(--success)' : ($pct >= 40 ? 'var(--warning)' : 'var(--danger)') ?>;"><?= $pct ?>%</div>
