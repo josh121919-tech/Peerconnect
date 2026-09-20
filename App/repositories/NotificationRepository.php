@@ -32,6 +32,16 @@ class NotificationRepository extends Repository
         ", 'ii', [$userId, $limit]);
     }
 
+    /** The user's notifications for the admin bell: unread ones first, then newest first. */
+    public static function unreadFirst(mysqli $con, int $userId, int $limit): array
+    {
+        return self::typedRows($con, "
+            SELECT notification_id, title, message, link, is_read, created_at
+            FROM notifications WHERE user_id = ?
+            ORDER BY is_read ASC, created_at DESC LIMIT ?
+        ", 'ii', [$userId, $limit]);
+    }
+
     /** How many of the user's notifications are unread. */
     public static function countUnread(mysqli $con, int $userId): int
     {

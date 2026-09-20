@@ -212,4 +212,18 @@ class ModerationRepository extends Repository
     {
         return (int)self::value($con, "SELECT COUNT(*) FROM reports WHERE status IN ('pending','urgent')");
     }
+
+    /** The newest open reports, for the admin bell: report_id, issue_type, created_at, status, 'target' (the reported member's name). */
+    public static function newestOpenReports(mysqli $con, int $limit): array
+    {
+        return self::rows($con, "
+            SELECT r.report_id, r.issue_type, r.created_at, r.status,
+                   CONCAT_WS(' ', t.firstname, t.lastname) AS target
+            FROM reports r
+            LEFT JOIN users t ON t.user_id = r.reported_user_id
+            WHERE r.status IN ('pending', 'urgent')
+            ORDER BY r.created_at DESC
+            LIMIT ?
+        ", 'i', [$limit]);
+    }
 }

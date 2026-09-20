@@ -148,6 +148,34 @@ class AdminUserRepository extends Repository
         ");
     }
 
+    /**
+     * The two queues waiting on an admin, as ints: 'verifications' (pending
+     * applications) and 'reports' (pending or urgent reports).
+     */
+    public static function queueCounts(mysqli $con): array
+    {
+        $row = self::row($con, "
+            SELECT (SELECT COUNT(*) FROM user_verifications WHERE status = 'pending')     AS verifications,
+                   (SELECT COUNT(*) FROM reports WHERE status IN ('pending','urgent'))    AS reports
+        ");
+        return ['verifications' => (int)$row['verifications'], 'reports' => (int)$row['reports']];
+    }
+
+    /** The oldest applications waiting, for the admin bell: verification_id, submitted_at, 'who', role. */
+    public static function oldestPendingVerifications(mysqli $con, int $limit): array
+    {
+        return self::rows($con, "
+            SELECT v.verification_id, v.submitted_at,
+                   COALESCE(NULLIF(v.full_name, ''), CONCAT_WS(' ', u.firstname, u.lastname)) AS who,
+                   u.role
+            FROM user_verifications v
+            JOIN users u ON u.user_id = v.user_id
+            WHERE v.status = 'pending'
+            ORDER BY v.submitted_at ASC
+            LIMIT ?
+        ", 'i', [$limit]);
+    }
+
     // ── One account ─────────────────────────────────────────────────────────
 
     /** The account with its profile row, or null when there is no such account. */

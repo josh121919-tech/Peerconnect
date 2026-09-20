@@ -279,16 +279,7 @@ if (empty($current_page)) {
         $adm_me_name = 'Admin';
         $adm_me_mail = $_SESSION['email'] ?? '';
         if ($adm_me_id) {
-            $meq = $con->prepare("
-                SELECT u.firstname, u.lastname, u.email, p.profile_image
-                FROM users u
-                LEFT JOIN profile p ON p.user_id = u.user_id
-                WHERE u.user_id = ? LIMIT 1
-            ");
-            $meq->bind_param("i", $adm_me_id);
-            $meq->execute();
-            $adm_me = $meq->get_result()->fetch_assoc() ?: [];
-            $meq->close();
+            $adm_me = UserRepository::namesAndPhoto($con, $adm_me_id) ?? [];
             $n = trim(($adm_me['firstname'] ?? '') . ' ' . ($adm_me['lastname'] ?? ''));
             if ($n !== '') $adm_me_name = $n;
             if (!empty($adm_me['email'])) $adm_me_mail = $adm_me['email'];
@@ -362,48 +353,18 @@ if (empty($current_page)) {
                  * anything later addressed to an admin turns up without this
                  * needing to change.
                  */
-                $adm_verif_rows = $con->query("
-                    SELECT v.verification_id, v.submitted_at,
-                           COALESCE(NULLIF(v.full_name, ''), CONCAT_WS(' ', u.firstname, u.lastname)) AS who,
-                           u.role
-                    FROM user_verifications v
-                    JOIN users u ON u.user_id = v.user_id
-                    WHERE v.status = 'pending'
-                    ORDER BY v.submitted_at ASC
-                    LIMIT 6
-                ")->fetch_all(MYSQLI_ASSOC);
+                $adm_verif_rows  = AdminUserRepository::oldestPendingVerifications($con, 6);
+                $adm_report_rows = ModerationRepository::newestOpenReports($con, 6);
 
-                $adm_report_rows = $con->query("
-                    SELECT r.report_id, r.issue_type, r.created_at, r.status,
-                           CONCAT_WS(' ', t.firstname, t.lastname) AS target
-                    FROM reports r
-                    LEFT JOIN users t ON t.user_id = r.reported_user_id
-                    WHERE r.status IN ('pending', 'urgent')
-                    ORDER BY r.created_at DESC
-                    LIMIT 6
-                ")->fetch_all(MYSQLI_ASSOC);
-
-                $adm_pending_verif = (int)($con->query("SELECT COUNT(*) c FROM user_verifications WHERE status = 'pending'")->fetch_assoc()['c'] ?? 0);
-                $adm_open_reports  = (int)($con->query("SELECT COUNT(*) c FROM reports WHERE status IN ('pending','urgent')")->fetch_assoc()['c'] ?? 0);
+                $adm_counts        = AdminUserRepository::queueCounts($con);
+                $adm_pending_verif = $adm_counts['verifications'];
+                $adm_open_reports  = $adm_counts['reports'];
 
                 $adm_notif_rows = [];
                 $adm_unread     = 0;
                 if (!empty($_SESSION['user_id'])) {
-                    $ns = $con->prepare("
-                        SELECT notification_id, title, message, link, is_read, created_at
-                        FROM notifications WHERE user_id = ?
-                        ORDER BY is_read ASC, created_at DESC LIMIT 8
-                    ");
-                    $ns->bind_param('i', $_SESSION['user_id']);
-                    $ns->execute();
-                    $adm_notif_rows = $ns->get_result()->fetch_all(MYSQLI_ASSOC);
-                    $ns->close();
-
-                    $nc = $con->prepare("SELECT COUNT(*) c FROM notifications WHERE user_id = ? AND is_read = 0");
-                    $nc->bind_param('i', $_SESSION['user_id']);
-                    $nc->execute();
-                    $adm_unread = (int)($nc->get_result()->fetch_assoc()['c'] ?? 0);
-                    $nc->close();
+                    $adm_notif_rows = NotificationRepository::unreadFirst($con, (int)$_SESSION['user_id'], 8);
+                    $adm_unread     = NotificationRepository::countUnread($con, (int)$_SESSION['user_id']);
                 }
 
                 $adm_queue = $adm_pending_verif + $adm_open_reports;

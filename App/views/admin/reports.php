@@ -39,33 +39,21 @@ if ($R['key'] === 'custom') { $qs['from'] = $from; $qs['to'] = $to; }
 $exportQs = http_build_query($qs);
 
 /* ── Platform totals, all time — the range does not apply to these ────── */
-$totalMembers = rp_int($con, "SELECT COUNT(*) FROM users WHERE role <> 'admin'");
-$roleMix = [];
-$rm = $con->query("SELECT IF(role = '' OR role IS NULL, 'unassigned', role) AS r, COUNT(*) n FROM users GROUP BY r ORDER BY n DESC");
-while ($row = $rm->fetch_assoc()) $roleMix[$row['r']] = (int)$row['n'];
+$totalMembers = PlatformStatsRepository::accountFigures($con)['members'];
+$roleMix      = SummaryRepository::roleMix($con);
 
 /* ── Member growth: cumulative, by role, across the range ─────────────── */
-$B    = rp_buckets($from, $to);
-$expr = rp_bucket_expr($B, 'created_at');
+$B = rp_buckets($from, $to);
 
 $growth = [];
 foreach (array_keys($B['keys']) as $k) $growth[$k] = ['mentee' => 0, 'mentor' => 0];
-
-$g = $con->query("
-    SELECT $expr AS k, role, COUNT(*) n
-      FROM users
-     WHERE role IN ('mentee','mentor') AND DATE(created_at) BETWEEN '$from' AND '$to'
-     GROUP BY k, role
-");
-while ($row = $g->fetch_assoc()) {
+foreach (SummaryRepository::joinsPerBucket($con, $B['unit'], $from, $to) as $row) {
     if (isset($growth[$row['k']])) $growth[$row['k']][$row['role']] = (int)$row['n'];
 }
 
 // Everyone who was already registered before the range starts, so the line
 // begins where the platform actually stood rather than at zero.
-$base = ['mentee' => 0, 'mentor' => 0];
-$bq = $con->query("SELECT role, COUNT(*) n FROM users WHERE role IN ('mentee','mentor') AND DATE(created_at) < '$from' GROUP BY role");
-while ($row = $bq->fetch_assoc()) $base[$row['role']] = (int)$row['n'];
+$base = SummaryRepository::membersBefore($con, $from);
 
 $cum = [];
 $runM = $base['mentee'];
@@ -77,81 +65,56 @@ foreach ($growth as $k => $v) {
 }
 
 /* ── Sessions per bucket ──────────────────────────────────────────────── */
-$sExpr = rp_bucket_expr($B, 'session_date');
 $sessSeries = [];
 foreach (array_keys($B['keys']) as $k) $sessSeries[$k] = ['completed' => 0, 'other' => 0];
-
-$sq = $con->query("
-    SELECT $sExpr AS k,
-           SUM(status = 'completed') AS done,
-           SUM(status <> 'completed') AS rest
-      FROM session_requests
-     WHERE DATE(session_date) BETWEEN '$from' AND '$to'
-     GROUP BY k
-");
-while ($row = $sq->fetch_assoc()) {
+foreach (SummaryRepository::sessionsPerBucket($con, $B['unit'], $from, $to) as $row) {
     if (isset($sessSeries[$row['k']])) {
         $sessSeries[$row['k']] = ['completed' => (int)$row['done'], 'other' => (int)$row['rest']];
     }
 }
 
 /* ── Where the activity is ────────────────────────────────────────────── */
-$areas    = rp_areas($con, $from, $to);
+$areas    = rp_areas($now);
 $areaTotal = array_sum(array_column($areas, 1));
 
 /* ── Busiest subjects ─────────────────────────────────────────────────── */
-$subjects = $con->query("
-    SELECT subject, COUNT(*) n
-      FROM session_requests
-     WHERE subject IS NOT NULL AND subject <> ''
-       AND DATE(session_date) BETWEEN '$from' AND '$to'
-     GROUP BY subject ORDER BY n DESC LIMIT 6
-")->fetch_all(MYSQLI_ASSOC);
+$subjects = SummaryRepository::subjects($con, $from, $to, 6);
 $subjectPeak = $subjects ? max(array_column($subjects, 'n')) : 1;
 
 /* ── Engagement ───────────────────────────────────────────────────────── */
-$signedIn = rp_int($con, "
-    SELECT COUNT(DISTINCT u.user_id) FROM users u JOIN logs l ON l.email = u.email
-     WHERE l.activity LIKE '%login%' AND l.log_date >= '$from 00:00:00' AND l.log_date < '$to' + INTERVAL 1 DAY");
-
+// Members only, as "Active members" is: an admin signing in is staff at work.
+$people   = SummaryRepository::signInPeople($con, $from, $to);
+$signedIn = $people['people'];
 // Came back on a second day — the only "retention" this data can support.
-$returned = rp_int($con, "
-    SELECT COUNT(*) FROM (
-        SELECT u.user_id FROM users u JOIN logs l ON l.email = u.email
-         WHERE l.activity LIKE '%login%' AND l.log_date >= '$from 00:00:00' AND l.log_date < '$to' + INTERVAL 1 DAY
-         GROUP BY u.user_id HAVING COUNT(DISTINCT DATE(l.log_date)) > 1
-    ) t");
+$returned = $people['returned'];
 
-$bookingMentees = rp_int($con, "
-    SELECT COUNT(DISTINCT mentee_id) FROM session_requests
-     WHERE DATE(session_date) BETWEEN '$from' AND '$to'");
+$bookingMentees = SummaryRepository::bookingMentees($con, $from, $to);
 
-$ratingRow = $con->query("
-    SELECT AVG(rating) a, COUNT(*) n FROM feedback
-     WHERE rating > 0 AND DATE(created_at) BETWEEN '$from' AND '$to'")->fetch_assoc();
+$ratingRow = SummaryRepository::ratings($con, $from, $to);
 $avgRating = ((int)$ratingRow['n']) > 0 ? round((float)$ratingRow['a'], 1) : null;
 
-$concluded  = rp_int($con, "SELECT COUNT(*) FROM session_requests WHERE status IN ('completed','cancelled','rejected','missed') AND DATE(session_date) BETWEEN '$from' AND '$to'");
+$concluded  = SummaryRepository::concluded($con, $from, $to);
 $completion = $concluded > 0 ? round($now['completed'] / $concluded * 100) : null;
 
 /* ── Platform health ──────────────────────────────────────────────────── */
-$dbBytes = (int)rp_one($con, "SELECT SUM(data_length + index_length) FROM information_schema.TABLES WHERE table_schema = DATABASE()");
+$dbBytes = SummaryRepository::databaseBytes($con);
 
-$upN = 0; $upB = 0;
-if (is_dir(PUBLIC_PATH . '/uploads')) {
-    $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(PUBLIC_PATH . '/uploads', FilesystemIterator::SKIP_DOTS));
-    foreach ($it as $f) if ($f->isFile()) { $upN++; $upB += $f->getSize(); }
-}
+[$upN, $upB] = rp_files_in([PUBLIC_PATH . '/uploads']);
+// Verification documents and report images, kept where the web server will
+// not hand them out. They are files the platform holds all the same.
+[$privN, $privB] = rp_files_in([VerificationFiles::dir(), ReportService::proofDir()]);
 
 $mail = ['sent' => 0, 'failed' => 0, 'pending' => 0, 'skipped' => 0];
-$mq = $con->query("SELECT email_status, COUNT(*) n FROM notifications WHERE DATE(created_at) BETWEEN '$from' AND '$to' GROUP BY email_status");
-while ($row = $mq->fetch_assoc()) $mail[$row['email_status']] = (int)$row['n'];
+foreach (SummaryRepository::emailStatuses($con, $from, $to) as $status => $n) $mail[$status] = $n;
 $mailTotal = array_sum($mail);
 
+// Open reports are pending or urgent, as the bell, User Management and
+// Notifications count them, and they are handled on Notifications.
+$waitingFor = AdminUserRepository::queueCounts($con);
 $queue = [
-    ['Verifications waiting', rp_int($con, "SELECT COUNT(*) FROM user_verifications WHERE status = 'pending'"), url('admin-users') . '?tab=pending'],
-    ['Session requests waiting', rp_int($con, "SELECT COUNT(*) FROM session_requests WHERE status = 'pending'"), url('admin-sessions') . '?tab=pending'],
-    ['Reports unresolved', rp_int($con, "SELECT COUNT(*) FROM reports WHERE status <> 'resolved'"), url('admin-users') . '?tab=reported'],
+    ['Verifications waiting', $waitingFor['verifications'], url('admin-users') . '?tab=pending'],
+    ['Session requests waiting', PlatformStatsRepository::sessionFigures($con)['pending'], url('admin-sessions') . '?tab=pending'],
+    ['Open reports', $waitingFor['reports'], url('admin-notifications') . '?tab=reports'],
 ];
 
 /* ── Feed ─────────────────────────────────────────────────────────────── */
@@ -497,11 +460,11 @@ require_once __DIR__ . '/includes/sessions_ui.php';
                 <h2>Engagement</h2>
                 <p class="rs-sub">Measured from sign-in records and the work people did.</p>
                 <div class="rs-kv">
-                    <span class="k">Sign-ins<small>Every successful sign-in, repeats included</small></span>
+                    <span class="k">Sign-ins<small>Every sign-in by a member, repeats included</small></span>
                     <b><?= number_format($now['signins']) ?></b>
                 </div>
                 <div class="rs-kv">
-                    <span class="k">People who signed in<small>Distinct accounts</small></span>
+                    <span class="k">Members who signed in<small>Distinct accounts, admins left out</small></span>
                     <b><?= number_format($signedIn) ?></b>
                 </div>
                 <div class="rs-kv">
@@ -684,6 +647,10 @@ require_once __DIR__ . '/includes/sessions_ui.php';
             <div class="rs-kv">
                 <span class="k">Uploaded files<small><?= number_format($upN) ?> file<?= $upN === 1 ? '' : 's' ?> in public/uploads</small></span>
                 <b><?= rp_size($upB) ?></b>
+            </div>
+            <div class="rs-kv">
+                <span class="k">Private files<small><?= number_format($privN) ?> file<?= $privN === 1 ? '' : 's' ?> in storage — verification documents and report images</small></span>
+                <b><?= rp_size($privB) ?></b>
             </div>
             <div class="rs-kv">
                 <span class="k">Notification email<small><?= $mailTotal > 0

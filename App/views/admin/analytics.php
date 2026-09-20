@@ -32,115 +32,68 @@ $active_page = 'admin-analytics';
 // 'admin-' prefix, so this is 'analytics' — see the Reports group in layout.php.
 $current_page = 'analytics';
 
-// ── Helper: safe int query ─────────────────────────────────────────────────
-function db_stat(mysqli $con, string $sql, array $params = []): int
-{
-    if (empty($params)) {
-        $r = $con->query($sql);
-        return $r ? (int)$r->fetch_row()[0] : 0;
-    }
-    [$types, $vals] = $params;
-    $st = $con->prepare($sql);
-    $st->bind_param($types, ...$vals);
-    $st->execute();
-    return (int)$st->get_result()->fetch_row()[0];
-}
-
 // ── Core platform stats ───────────────────────────────────────────────────
-$total_mentors    = db_stat($con, "SELECT COUNT(*) FROM users WHERE role='mentor'");
-$total_mentees    = db_stat($con, "SELECT COUNT(*) FROM users WHERE role='mentee'");
-$active_mentors   = db_stat($con, "SELECT COUNT(*) FROM users WHERE role='mentor' AND status='active' AND verified=1");
-$active_mentees   = db_stat($con, "SELECT COUNT(*) FROM users WHERE role='mentee' AND status='active'");
-$verified_mentors = db_stat($con, "SELECT COUNT(*) FROM users WHERE role='mentor' AND verified=1");
+$acc  = PlatformStatsRepository::accountFigures($con);
+$sess = PlatformStatsRepository::sessionFigures($con);
+
+$total_mentors    = $acc['mentors'];
+$total_mentees    = $acc['mentees'];
+$active_mentors   = $acc['active_mentors'];
+$active_mentees   = $acc['active_mentees'];
+$verified_mentors = $acc['verified_mentors'];
 
 // ── Session stats ─────────────────────────────────────────────────────────
-$today        = date('Y-m-d');
-$week_start   = date('Y-m-d', strtotime('monday this week'));
-
-$sessions_today    = db_stat($con, "SELECT COUNT(*) FROM session_requests WHERE DATE(session_date)=? AND status IN ('approved','completed')", ['s', [$today]]);
-$sessions_week     = db_stat($con, "SELECT COUNT(*) FROM session_requests WHERE session_date >= ? AND status IN ('approved','completed')", ['s', [$week_start]]);
-$sessions_total    = db_stat($con, "SELECT COUNT(*) FROM session_requests WHERE status='completed'");
-$sessions_pending  = db_stat($con, "SELECT COUNT(*) FROM session_requests WHERE status='pending'");
-$sessions_missed   = db_stat($con, "SELECT COUNT(*) FROM session_requests WHERE status='missed'");
-$sessions_cancelled = db_stat($con, "SELECT COUNT(*) FROM session_requests WHERE status='cancelled'");
-$sessions_rejected = db_stat($con, "SELECT COUNT(*) FROM session_requests WHERE status='rejected'");
+// "This week" is Monday to Sunday. It used to run from Monday on with no end,
+// so every session booked for a later week counted as this week's.
+$sessions_today     = $sess['today'];
+$sessions_week      = $sess['this_week'];
+$sessions_total     = $sess['completed'];
+$sessions_pending   = $sess['pending'];
+$sessions_missed    = $sess['missed'];
+$sessions_cancelled = $sess['cancelled'];
+$sessions_rejected  = $sess['rejected'];
 
 // ── Completion rate ───────────────────────────────────────────────────────
-$sessions_closed   = db_stat($con, "SELECT COUNT(*) FROM session_requests WHERE status IN ('completed','missed','cancelled')");
+$sessions_closed   = $sess['closed'];
 $completion_rate   = $sessions_closed > 0 ? round($sessions_total / $sessions_closed * 100) : 0;
 
 // ── Avg platform rating ───────────────────────────────────────────────────
-$avg_rating_row = $con->query("SELECT ROUND(AVG(rating),2) as r, COUNT(*) as c FROM feedback WHERE rating > 0")->fetch_assoc();
-$platform_rating = (float)($avg_rating_row['r'] ?? 0);
-$total_reviews   = (int)($avg_rating_row['c'] ?? 0);
+$rated           = PlatformStatsRepository::ratingFigures($con);
+$platform_rating = (float)($rated['avg2'] ?? 0);
+$total_reviews   = $rated['n'];
 
 // ── Monthly registrations — 12 months ─────────────────────────────────────
-// Each statement is executed, fetched and freed before the next runs: two
-// prepared statements sharing one connection otherwise give "commands out of
-// sync" the moment a result is left hanging.
+// Stepped from the first of each month: "-1 month" from the 31st lands on the
+// 1st of the same month when the month before is shorter, which showed one
+// month twice and skipped another on the last days of a month.
+$months = [];
+for ($i = 11; $i >= 0; $i--) {
+    $months[] = strtotime("first day of -{$i} months");
+}
+$first_month = date('Y-m-01', $months[0]);
+$joins_by_month = PlatformStatsRepository::joinsPerMonth($con, $first_month);
+$done_by_month  = PlatformStatsRepository::completedPerMonth($con, $first_month);
+
 $reg_data  = [];
 $sess_data = [];
-$reg_stmt  = $con->prepare("SELECT COUNT(*) FROM users WHERE role <> 'admin' AND DATE_FORMAT(created_at,'%Y-%m')=?");
-$sess_stmt = $con->prepare("SELECT COUNT(*) FROM session_requests WHERE status='completed' AND DATE_FORMAT(session_date,'%Y-%m')=?");
-for ($i = 11; $i >= 0; $i--) {
-    $ym    = date('Y-m', strtotime("-{$i} months"));
-    $label = date('M', strtotime("-{$i} months"));
-
-    $reg_stmt->bind_param("s", $ym);
-    $reg_stmt->execute();
-    $reg_res = $reg_stmt->get_result();
-    $reg_count = (int)($reg_res->fetch_row()[0] ?? 0);
-    $reg_res->free();
-    $reg_data[] = ['label' => $label, 'full' => date('M Y', strtotime("-{$i} months")), 'count' => $reg_count];
-
-    $sess_stmt->bind_param("s", $ym);
-    $sess_stmt->execute();
-    $sess_res = $sess_stmt->get_result();
-    $sess_count = (int)($sess_res->fetch_row()[0] ?? 0);
-    $sess_res->free();
-    $sess_data[] = ['label' => $label, 'full' => date('M Y', strtotime("-{$i} months")), 'count' => $sess_count];
+foreach ($months as $m) {
+    $ym    = date('Y-m', $m);
+    $label = date('M', $m);
+    $reg_data[]  = ['label' => $label, 'full' => date('M Y', $m), 'count' => $joins_by_month[$ym] ?? 0];
+    $sess_data[] = ['label' => $label, 'full' => date('M Y', $m), 'count' => $done_by_month[$ym] ?? 0];
 }
-$reg_stmt->close();
-$sess_stmt->close();
 
 // ── Popular subjects (top 8) ───────────────────────────────────────────────
-$pop_subjects = $con->query("
-    SELECT subject, COUNT(*) as cnt
-    FROM session_requests
-    WHERE subject IS NOT NULL AND subject != ''
-    GROUP BY subject
-    ORDER BY cnt DESC
-    LIMIT 8
-")->fetch_all(MYSQLI_ASSOC);
+$pop_subjects = PlatformStatsRepository::subjectCounts($con, 8);
 
 // ── Mentor scores ─────────────────────────────────────────────────────────
-$top_mentors = $con->query("
-    SELECT
-        u.user_id, u.firstname, u.lastname,
-        pr.profile_image,
-        ms.last_calculated,
-        COALESCE(ms.avg_rating, 0)           AS avg_rating,
-        COALESCE(ms.total_sessions, 0)       AS total_sessions,
-        COALESCE(ms.completion_rate, 0)      AS completion_rate,
-        COALESCE(ms.effectiveness_score, 0)  AS effectiveness_score,
-        COALESCE(ms.recommendation_score, 0) AS rec_score,
-        (SELECT COUNT(*) FROM feedback f WHERE f.mentor_id = u.user_id) AS review_count
-    FROM users u
-    LEFT JOIN mentor_scores ms ON ms.mentor_id = u.user_id
-    LEFT JOIN profile pr       ON pr.user_id   = u.user_id
-    WHERE u.role = 'mentor' AND u.status = 'active'
-    ORDER BY rec_score DESC, avg_rating DESC
-    LIMIT 10
-")->fetch_all(MYSQLI_ASSOC);
+$top_mentors = PlatformStatsRepository::topMentors($con, 10);
 
 // When the scores were last worked out, and who has none. A score that was
 // computed before this week's sessions is stale, and silently showing it as
 // current is the kind of thing that gets acted on.
-$scores_at = $con->query("SELECT MAX(last_calculated) FROM mentor_scores")->fetch_row()[0] ?? null;
-$unscored  = db_stat($con, "
-    SELECT COUNT(*) FROM users u
-     WHERE u.role='mentor' AND u.status='active' AND u.verified=1
-       AND NOT EXISTS (SELECT 1 FROM mentor_scores ms WHERE ms.mentor_id = u.user_id)");
+$scores_at = PlatformStatsRepository::scoresUpdatedAt($con);
+$unscored  = PlatformStatsRepository::unscoredMentors($con);
 
 // The weights the score is actually built from, read off MentorScoreService.
 $score_weights = [
@@ -152,49 +105,33 @@ $score_weights = [
 ];
 
 // ── Missed session breakdown ───────────────────────────────────────────────
-$missed_mentors = $con->query("
-    SELECT u.user_id, u.firstname, u.lastname, COUNT(*) as cnt
-    FROM session_requests sr
-    JOIN users u ON u.user_id = sr.mentor_id
-    WHERE sr.status = 'missed'
-    GROUP BY sr.mentor_id
-    ORDER BY cnt DESC
-    LIMIT 5
-")->fetch_all(MYSQLI_ASSOC);
+$missed_mentors = PlatformStatsRepository::mostMissedByMentor($con, 5);
 
 // Who was actually absent, which is not the same question as which sessions
 // were marked missed — either side, or both, can fail to show up.
-$missed_by = [];
-$mb = $con->query("SELECT missed_by, COUNT(*) n FROM session_requests WHERE status='missed' GROUP BY missed_by");
-while ($row = $mb->fetch_assoc()) $missed_by[$row['missed_by'] ?: 'none'] = (int)$row['n'];
+$missed_by = PlatformStatsRepository::missedByWho($con);
 
 // ── Account standing ──────────────────────────────────────────────────────
 // users.status is an enum of exactly these three. An earlier version of this
 // card also drew a "Pending" row, which the column cannot hold, so it reported
 // zero for ever regardless of how many people were waiting.
 $status_data = [
-    'Active'     => db_stat($con, "SELECT COUNT(*) FROM users WHERE status='active' AND role <> 'admin'"),
-    'Restricted' => db_stat($con, "SELECT COUNT(*) FROM users WHERE status='restricted' AND role <> 'admin'"),
-    'Blocked'    => db_stat($con, "SELECT COUNT(*) FROM users WHERE status='blocked' AND role <> 'admin'"),
+    'Active'     => $acc['member_active'],
+    'Restricted' => $acc['member_restricted'],
+    'Blocked'    => $acc['member_blocked'],
 ];
 $verif_data = [
-    'Verified'     => db_stat($con, "SELECT COUNT(*) FROM users WHERE verified=1 AND role <> 'admin'"),
-    'Not verified' => db_stat($con, "SELECT COUNT(*) FROM users WHERE (verified=0 OR verified IS NULL) AND role <> 'admin'"),
+    'Verified'     => $acc['member_verified'],
+    'Not verified' => $acc['member_unverified'],
 ];
-$verif_waiting = db_stat($con, "SELECT COUNT(*) FROM user_verifications WHERE status='pending'");
+$verif_waiting = AdminUserRepository::queueCounts($con)['verifications'];
 
 // ── Badge stats ────────────────────────────────────────────────────────────
-$total_badges_awarded = db_stat($con, "SELECT COUNT(*) FROM user_badges");
-$auto_badges_awarded  = db_stat($con, "SELECT COUNT(*) FROM user_badges WHERE awarded_by IS NULL");
+$badge_figures        = PlatformStatsRepository::badgeFigures($con);
+$total_badges_awarded = $badge_figures['total'];
+$auto_badges_awarded  = $badge_figures['automatic'];
 
-$badge_rows = $con->query("
-    SELECT b.badge_id, b.name, b.criteria_type, b.criteria_value, b.is_active,
-           COUNT(ub.user_badge_id) AS cnt
-    FROM badges b
-    LEFT JOIN user_badges ub ON ub.badge_id = b.badge_id
-    GROUP BY b.badge_id
-    ORDER BY cnt DESC, b.badge_id
-")->fetch_all(MYSQLI_ASSOC);
+$badge_rows = PlatformStatsRepository::badgesByHolders($con);
 
 /** What a badge's rule actually says, in words. */
 function an_criteria(array $b): string
@@ -388,7 +325,7 @@ require_once __DIR__ . '/includes/report_data.php';
     <?php foreach ([
         ['Active mentors', $active_mentors, $verified_mentors . ' verified of ' . $total_mentors . ' total', '#E6F5EE', '#17654B', 'users'],
         ['Active mentees', $active_mentees, $total_mentees . ' registered', '#EAF1FB', '#1A5C9A', 'users'],
-        ['Sessions today', $sessions_today, $sessions_week . ' so far this week', '#EAF6FB', '#0087CF', 'cal'],
+        ['Sessions today', $sessions_today, $sessions_week . ' this week', '#EAF6FB', '#0087CF', 'cal'],
         ['Completed sessions', $sessions_total, $sessions_closed > 0 ? $completion_rate . '% of the ' . $sessions_closed . ' that closed' : 'None have closed yet', '#F1ECFA', '#5A3E96', 'check'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
@@ -601,12 +538,12 @@ require_once __DIR__ . '/includes/report_data.php';
         <?php if (empty($pop_subjects)): ?>
             <p class="an-empty">No sessions have been booked yet.</p>
         <?php else:
-            $sub_max = max(array_column($pop_subjects, 'cnt'));
+            $sub_max = max(array_column($pop_subjects, 'n'));
             foreach ($pop_subjects as $s): ?>
                 <div class="an-bar">
                     <b title="<?= htmlspecialchars($s['subject']) ?>"><?= htmlspecialchars($s['subject']) ?></b>
-                    <span class="an-bar-t"><i style="width:<?= round($s['cnt'] / $sub_max * 100) ?>%;background:#1B6FD1"></i></span>
-                    <span class="an-bar-n"><?= (int)$s['cnt'] ?></span>
+                    <span class="an-bar-t"><i style="width:<?= round($s['n'] / $sub_max * 100) ?>%;background:#1B6FD1"></i></span>
+                    <span class="an-bar-n"><?= (int)$s['n'] ?></span>
                 </div>
         <?php endforeach; endif; ?>
     </div>

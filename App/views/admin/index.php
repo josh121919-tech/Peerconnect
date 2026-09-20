@@ -22,49 +22,50 @@ require_admin();
 date_default_timezone_set('Asia/Manila');
 
 /* ── Range ────────────────────────────────────────────────────────────────
- * The reference design's date picker. These are the ranges the data can
- * actually answer for; "all" is the honest default for a young database.
+ * The date picker on the User Growth card. It sets the days that chart
+ * draws, and nothing else: the cards count everything, with this month
+ * against last, and the other panels are all time or what is ahead.
  */
 $RANGES = [
-    'month' => ['This month',    "DATE_FORMAT(CURDATE(), '%Y-%m-01')", 'this month'],
-    '30'    => ['Last 30 days',  "CURDATE() - INTERVAL 30 DAY",        'in 30 days'],
-    'year'  => ['This year',     "DATE_FORMAT(CURDATE(), '%Y-01-01')", 'this year'],
-    'all'   => ['All time',      null,                                  'in total'],
+    'month' => 'This month',
+    '30'    => 'Last 30 days',
+    'year'  => 'This year',
+    'all'   => 'All time',
 ];
-$range = isset($_GET['range'], $RANGES[$_GET['range']]) ? $_GET['range'] : 'all';
-$since = $RANGES[$range][1];
-$rangeNote = $RANGES[$range][2];
+$range = is_string($_GET['range'] ?? null) && isset($RANGES[$_GET['range']]) ? $_GET['range'] : 'all';
 
-/** WHERE fragment for a date column, or '' when the range is all-time. */
-function adm_since(string $col, ?string $since): string
-{
-    return $since === null ? '' : " AND $col >= $since";
+$today = date('Y-m-d');
+switch ($range) {
+    case 'month': $growth_from = date('Y-m-01'); break;
+    case '30':    $growth_from = date('Y-m-d', strtotime('-29 days')); break;
+    case 'year':  $growth_from = date('Y-01-01'); break;
+    default:      $growth_from = PlatformStatsRepository::firstAccountDate($con) ?? $today;
+}
+// A line needs two days to draw. On the 1st, "This month" is one day long,
+// so the chart starts the day before.
+if ($growth_from >= $today) {
+    $growth_from = date('Y-m-d', strtotime('-1 day'));
 }
 
-$one = function (string $sql) use ($con): int {
-    $r = $con->query($sql);
-    return $r ? (int)$r->fetch_row()[0] : 0;
-};
-
 /* ── Headline counts ─────────────────────────────────────────────────── */
-$total_users   = $one("SELECT COUNT(*) FROM users");
-$total_mentees = $one("SELECT COUNT(*) FROM users WHERE role = 'mentee'");
-$total_mentors = $one("SELECT COUNT(*) FROM users WHERE role = 'mentor'");
-$total_admins  = $one("SELECT COUNT(*) FROM users WHERE role = 'admin'");
-$total_sessions = $one("SELECT COUNT(*) FROM session_requests WHERE status = 'completed'");
+$acc   = PlatformStatsRepository::accountFigures($con);
+$sess  = PlatformStatsRepository::sessionFigures($con);
+$rated = PlatformStatsRepository::ratingFigures($con);
 
-$rating_row = $con->query("SELECT AVG(rating) a, COUNT(*) n FROM feedback")->fetch_assoc();
-$avg_rating = (float)($rating_row['a'] ?? 0);
-$rating_n   = (int)($rating_row['n'] ?? 0);
+$total_users    = $acc['total'];
+$total_mentees  = $acc['mentees'];
+$total_mentors  = $acc['mentors'];
+$total_admins   = $acc['admins'];
+$total_sessions = $sess['completed'];
+
+$avg_rating = (float)($rated['avg'] ?? 0);
+$rating_n   = $rated['n'];
 
 /* ── Month-over-month movement ────────────────────────────────────────────
  * Each card's trend compares this calendar month with last. A trend is only
  * shown when the previous month had something to compare against, so a young
  * database shows the figure and no arrow rather than a meaningless "+100%".
  */
-$mstart = "DATE_FORMAT(CURDATE(), '%Y-%m-01')";
-$lstart = "DATE_FORMAT(CURDATE() - INTERVAL 1 MONTH, '%Y-%m-01')";
-
 function adm_trend(int $now, int $prev): ?array
 {
     if ($prev <= 0) return null;
@@ -73,24 +74,13 @@ function adm_trend(int $now, int $prev): ?array
     return ['up' => $pct > 0, 'label' => ($pct > 0 ? '+' : '') . $pct . '% from last month'];
 }
 
-$u_now  = $one("SELECT COUNT(*) FROM users WHERE created_at >= $mstart");
-$u_prev = $one("SELECT COUNT(*) FROM users WHERE created_at >= $lstart AND created_at < $mstart");
-$t_users = adm_trend($u_now, $u_prev);
+$t_users    = adm_trend($acc['joined_now'], $acc['joined_prev']);
+$t_mentees  = adm_trend($acc['mentee_now'], $acc['mentee_prev']);
+$t_mentors  = adm_trend($acc['mentor_now'], $acc['mentor_prev']);
+$t_sessions = adm_trend($sess['completed_now'], $sess['completed_prev']);
 
-$me_now  = $one("SELECT COUNT(*) FROM users WHERE role='mentee' AND created_at >= $mstart");
-$me_prev = $one("SELECT COUNT(*) FROM users WHERE role='mentee' AND created_at >= $lstart AND created_at < $mstart");
-$t_mentees = adm_trend($me_now, $me_prev);
-
-$mo_now  = $one("SELECT COUNT(*) FROM users WHERE role='mentor' AND created_at >= $mstart");
-$mo_prev = $one("SELECT COUNT(*) FROM users WHERE role='mentor' AND created_at >= $lstart AND created_at < $mstart");
-$t_mentors = adm_trend($mo_now, $mo_prev);
-
-$s_now  = $one("SELECT COUNT(*) FROM session_requests WHERE status='completed' AND session_date >= $mstart");
-$s_prev = $one("SELECT COUNT(*) FROM session_requests WHERE status='completed' AND session_date >= $lstart AND session_date < $mstart");
-$t_sessions = adm_trend($s_now, $s_prev);
-
-$r_now  = $con->query("SELECT AVG(rating) a FROM feedback WHERE created_at >= $mstart")->fetch_assoc()['a'];
-$r_prev = $con->query("SELECT AVG(rating) a FROM feedback WHERE created_at >= $lstart AND created_at < $mstart")->fetch_assoc()['a'];
+$r_now  = $rated['avg_now'];
+$r_prev = $rated['avg_prev'];
 $t_rating = null;
 if ($r_now !== null && $r_prev !== null) {
     $d = (float)$r_now - (float)$r_prev;
@@ -100,23 +90,16 @@ if ($r_now !== null && $r_prev !== null) {
 }
 
 /* ── User growth, day by day across the selected range ────────────────── */
-$growth_days = $range === 'year' ? 365 : ($range === 'all' ? 90 : 30);
 $growth = [];
-$g = $con->query("
-    SELECT DATE(created_at) d, role, COUNT(*) c
-    FROM users
-    WHERE created_at >= CURDATE() - INTERVAL $growth_days DAY
-    GROUP BY d, role
-");
-while ($row = $g->fetch_assoc()) {
+foreach (PlatformStatsRepository::joinsPerDay($con, $growth_from) as $row) {
     $d = $row['d'];
     $growth[$d] ??= ['mentee' => 0, 'mentor' => 0];
     if (isset($growth[$d][$row['role']])) $growth[$d][$row['role']] = (int)$row['c'];
 }
 // Fill every day so the line has an even x axis.
 $series = [];
-for ($i = $growth_days; $i >= 0; $i--) {
-    $d = date('Y-m-d', strtotime("-$i days"));
+for ($t = strtotime($growth_from); date('Y-m-d', $t) <= $today; $t = strtotime('+1 day', $t)) {
+    $d = date('Y-m-d', $t);
     $series[] = [
         'date'   => $d,
         'mentee' => $growth[$d]['mentee'] ?? 0,
@@ -130,17 +113,7 @@ for ($i = $growth_days; $i >= 0; $i--) {
  * rather than being folded into one of the real ones.
  */
 $dist = ['1v1' => 0, 'group' => 0, 'untyped' => 0];
-$dq = $con->query("
-    SELECT COALESCE(a.session_type, '') t, COUNT(*) c
-    FROM session_requests sr
-    LEFT JOIN availability a
-           ON a.mentor_id = sr.mentor_id AND a.subject = sr.subject
-          AND DATE(a.date) = DATE(sr.session_date)
-          AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE sr.status IN ('approved','completed')
-    GROUP BY t
-");
-while ($row = $dq->fetch_assoc()) {
+foreach (PlatformStatsRepository::sessionTypes($con) as $row) {
     $t = $row['t'];
     if ($t === '1v1') $dist['1v1'] += (int)$row['c'];
     elseif ($t === 'group') $dist['group'] += (int)$row['c'];
@@ -153,66 +126,34 @@ $dist_total = array_sum($dist);
  * waiting on an admin, which is a different thing from a live account.
  */
 $st = [
-    'active'     => $one("SELECT COUNT(*) FROM users WHERE status='active' AND verified=1"),
-    'pending'    => $one("SELECT COUNT(*) FROM users WHERE status='active' AND verified=0"),
-    'restricted' => $one("SELECT COUNT(*) FROM users WHERE status='restricted'"),
-    'blocked'    => $one("SELECT COUNT(*) FROM users WHERE status='blocked'"),
+    'active'     => $acc['status_active'],
+    'pending'    => $acc['status_pending'],
+    'restricted' => $acc['status_restricted'],
+    'blocked'    => $acc['status_blocked'],
 ];
 $st_total = array_sum($st);
 
 /* ── Lists ────────────────────────────────────────────────────────────── */
-$recent = $con->query("
-    SELECT u.user_id, u.firstname, u.lastname, u.role, u.created_at,
-           u.email, p.profile_image
-    FROM users u
-    LEFT JOIN profile p ON p.user_id = u.user_id
-    ORDER BY u.created_at DESC
-    LIMIT 6
-")->fetch_all(MYSQLI_ASSOC);
-
-$upcoming = $con->query("
-    SELECT sr.request_id, sr.subject, sr.session_date,
-           CONCAT(mu.firstname,' ',mu.lastname) AS mentor_name,
-           CONCAT(eu.firstname,' ',eu.lastname) AS mentee_name,
-           COALESCE(a.session_type,'') AS stype,
-           COALESCE(a.duration, 60)    AS duration
-    FROM session_requests sr
-    JOIN users mu ON mu.user_id = sr.mentor_id
-    JOIN users eu ON eu.user_id = sr.mentee_id
-    LEFT JOIN availability a
-           ON a.mentor_id = sr.mentor_id AND a.subject = sr.subject
-          AND DATE(a.date) = DATE(sr.session_date)
-          AND TIME(a.start_time) = TIME(sr.session_date)
-    WHERE sr.session_date >= NOW() AND sr.status IN ('pending','approved')
-    ORDER BY sr.session_date ASC
-    LIMIT 6
-")->fetch_all(MYSQLI_ASSOC);
+$recent   = PlatformStatsRepository::recentAccounts($con, 6);
+$upcoming = PlatformStatsRepository::upcomingSessions($con, 6);
 
 /* System activity, assembled from the events the app actually records. */
 $activity = [];
-foreach ($con->query("SELECT firstname, lastname, role, created_at FROM users ORDER BY created_at DESC LIMIT 5")->fetch_all(MYSQLI_ASSOC) as $r) {
-    $activity[] = ['at' => $r['created_at'], 'kind' => 'join', 'title' => 'New ' . $r['role'] . ' registration',
-        'body' => trim($r['firstname'] . ' ' . $r['lastname']) . ' joined as a ' . $r['role']];
+foreach (PlatformStatsRepository::recentJoins($con, 5) as $r) {
+    $name = trim($r['firstname'] . ' ' . $r['lastname']);
+    $activity[] = (string)$r['role'] === ''
+        ? ['at' => $r['created_at'], 'kind' => 'join', 'title' => 'New account', 'body' => $name . ' joined and has not chosen a role yet']
+        : ['at' => $r['created_at'], 'kind' => 'join', 'title' => 'New ' . $r['role'] . ' registration', 'body' => $name . ' joined as a ' . $r['role']];
 }
-foreach ($con->query("
-    SELECT sr.subject, sr.completed_at, CONCAT(eu.firstname,' ',eu.lastname) AS who
-    FROM session_requests sr JOIN users eu ON eu.user_id = sr.mentee_id
-    WHERE sr.status='completed' AND sr.completed_at IS NOT NULL
-    ORDER BY sr.completed_at DESC LIMIT 5")->fetch_all(MYSQLI_ASSOC) as $r) {
+foreach (PlatformStatsRepository::recentCompletions($con, 5) as $r) {
     $activity[] = ['at' => $r['completed_at'], 'kind' => 'session', 'title' => 'Session completed',
         'body' => $r['subject'] . ' session with ' . $r['who']];
 }
-foreach ($con->query("
-    SELECT f.rating, f.created_at, CONCAT(u.firstname,' ',u.lastname) AS who
-    FROM feedback f JOIN users u ON u.user_id = f.mentee_id
-    ORDER BY f.created_at DESC LIMIT 5")->fetch_all(MYSQLI_ASSOC) as $r) {
+foreach (PlatformStatsRepository::recentReviews($con, 5) as $r) {
     $activity[] = ['at' => $r['created_at'], 'kind' => 'star', 'title' => 'Feedback received',
         'body' => $r['who'] . ' gave a ' . rtrim(rtrim(number_format((float)$r['rating'], 1), '0'), '.') . '-star rating'];
 }
-foreach ($con->query("
-    SELECT b.name, ub.awarded_at, CONCAT(u.firstname,' ',u.lastname) AS who
-    FROM user_badges ub JOIN badges b ON b.badge_id = ub.badge_id JOIN users u ON u.user_id = ub.user_id
-    ORDER BY ub.awarded_at DESC LIMIT 3")->fetch_all(MYSQLI_ASSOC) as $r) {
+foreach (PlatformStatsRepository::recentBadges($con, 3) as $r) {
     $activity[] = ['at' => $r['awarded_at'], 'kind' => 'badge', 'title' => 'Badge awarded',
         'body' => $r['who'] . ' earned "' . $r['name'] . '"'];
 }
@@ -220,21 +161,13 @@ usort($activity, fn($a, $b) => strtotime($b['at']) <=> strtotime($a['at']));
 $activity = array_slice($activity, 0, 7);
 
 /* Top subjects, as a share of all booked sessions. */
-$subjects = $con->query("
-    SELECT subject, COUNT(*) c FROM session_requests
-    WHERE subject <> '' GROUP BY subject ORDER BY c DESC LIMIT 5
-")->fetch_all(MYSQLI_ASSOC);
-$subject_total = $one("SELECT COUNT(*) FROM session_requests WHERE subject <> ''");
+$subjects      = PlatformStatsRepository::subjectCounts($con, 5);
+$subject_total = PlatformStatsRepository::sessionsWithSubject($con);
 
 /* Rating distribution. */
-$stars = [5 => 0, 4 => 0, 3 => 0, 2 => 0, 1 => 0];
-foreach ($con->query("SELECT ROUND(rating) r, COUNT(*) c FROM feedback GROUP BY r")->fetch_all(MYSQLI_ASSOC) as $r) {
-    $k = (int)$r['r'];
-    if (isset($stars[$k])) $stars[$k] = (int)$r['c'];
-}
+$stars = $rated['stars'];
 
-$pending_verif = $one("SELECT COUNT(*) FROM user_verifications WHERE status = 'pending'");
-$open_reports  = $one("SELECT COUNT(*) FROM reports WHERE status = 'pending'");
+$pending_verif = AdminUserRepository::queueCounts($con)['verifications'];
 
 /** "2 mins ago" from a datetime. */
 function adm_ago(?string $when): string
@@ -286,28 +219,21 @@ include 'layout.php';
     .ad-hd h1 { font-size: 25px; font-weight: 700; color: var(--forest); letter-spacing: -.02em; margin: 0; }
     .ad-hd p { margin: 2px 0 0; font-size: 13px; color: var(--gray-400); }
 
-    .ad-range {
-        display: inline-flex;
-        align-items: center;
-        gap: 9px;
-        padding: 8px 12px;
-        border: 1px solid var(--gray-200);
-        border-radius: 10px;
-        background: #fff;
-    }
-
-    .ad-range svg { width: 16px; height: 16px; color: var(--gray-400); }
+    .ad-range { display: inline-flex; margin-left: 10px; }
 
     .ad-range select {
-        border: none;
-        background: none;
+        padding: 3px 8px;
+        border: 1px solid var(--gray-200);
+        border-radius: 8px;
+        background: #fff;
         font-family: inherit;
-        font-size: 13.5px;
+        font-size: 11.5px;
         font-weight: 500;
-        color: var(--gray-800);
+        color: var(--gray-700);
         cursor: pointer;
-        outline: none;
     }
+
+    .ad-range select:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
 
     /* ── Stat row ── */
     .ad-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
@@ -463,18 +389,6 @@ include 'layout.php';
         <h1>Admin Dashboard</h1>
         <p>Overview of your PeerConnect community</p>
     </div>
-    <form method="get" class="ad-range">
-        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="4" y="5" width="16" height="16" rx="3" />
-            <path stroke-linecap="round" d="M8 3v4M16 3v4M4 10h16" />
-        </svg>
-        <label for="ad-range" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">Date range</label>
-        <select id="ad-range" name="range" onchange="this.form.submit()">
-            <?php foreach ($RANGES as $key => $r): ?>
-                <option value="<?= $key ?>" <?= $range === $key ? 'selected' : '' ?>><?= htmlspecialchars($r[0]) ?></option>
-            <?php endforeach; ?>
-        </select>
-    </form>
 </div>
 
 <!-- ══════════ Stat row ══════════ -->
@@ -489,7 +403,7 @@ include 'layout.php';
             '<path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/>'],
         ['Mentors', number_format($total_mentors), $t_mentors, '#EFEDFC', '#D6D0F5', '#4A3FB8',
             '<path stroke-linecap="round" stroke-linejoin="round" d="m12 4 9 5-9 5-9-5 9-5Z"/><path stroke-linecap="round" d="M7 11.5V16c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5v-4.5"/>'],
-        ['Total Sessions', number_format($total_sessions), $t_sessions, '#FBF0D4', '#F0DDA4', '#9A7100',
+        ['Completed Sessions', number_format($total_sessions), $t_sessions, '#FBF0D4', '#F0DDA4', '#9A7100',
             '<rect x="4" y="5" width="16" height="16" rx="3"/><path stroke-linecap="round" d="M8 3v4M16 3v4M4 10h16"/>'],
         ['Average Rating', $rating_n ? number_format($avg_rating, 2) : '—', $t_rating, '#FBE5E1', '#F3C9C0', '#A6301F',
             '<path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.6Z"/>'],
@@ -529,6 +443,15 @@ include 'layout.php';
                 <span style="display:inline-flex;align-items:center;gap:5px;"><i class="ad-dot" style="background:#1B6FD1;"></i>Mentees</span>
                 <span style="display:inline-flex;align-items:center;gap:5px;"><i class="ad-dot" style="background:#17654B;"></i>Mentors</span>
             </span>
+            <form method="get" class="ad-range">
+                <label for="ad-range" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">Days to show</label>
+                <select id="ad-range" name="range" onchange="this.form.submit()">
+                    <?php foreach ($RANGES as $range_key => $range_label): ?>
+                        <option value="<?= $range_key ?>" <?= $range === $range_key ? 'selected' : '' ?>><?= htmlspecialchars($range_label) ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <noscript><button type="submit">Show</button></noscript>
+            </form>
         </div>
         <div class="ad-body" style="overflow:hidden;">
             <?php
@@ -547,7 +470,7 @@ include 'layout.php';
             $area = fn(string $key) => $line($key) . ' L' . $px($n) . ' ' . ($H - 20) . ' L' . $px(0) . ' ' . ($H - 20) . ' Z';
             ?>
             <svg viewBox="0 0 <?= $W ?> <?= $H ?>" preserveAspectRatio="none" style="width:100%;height:100%;" role="img"
-                aria-label="New mentee and mentor registrations per day">
+                aria-label="New mentee and mentor registrations per day, <?= htmlspecialchars(strtolower($RANGES[$range])) ?>">
                 <?php for ($i = 0; $i <= 3; $i++):
                     $v = round($maxY * $i / 3);
                     $y = $py($v); ?>
@@ -558,12 +481,11 @@ include 'layout.php';
                 <path d="<?= $line('mentee') ?>" fill="none" stroke="#1B6FD1" stroke-width="2" stroke-linejoin="round" />
                 <path d="<?= $line('mentor') ?>" fill="none" stroke="#17654B" stroke-width="2" stroke-linejoin="round" />
                 <?php
-                $ticks = 5;
-                for ($t = 0; $t < $ticks; $t++):
-                    $i = (int)round($t * $n / ($ticks - 1));
+                $ticks = array_unique(array_map(fn($t) => (int)round($t * $n / 4), range(0, 4)));
+                foreach ($ticks as $i):
                     $lbl = date('M j', strtotime($series[$i]['date'])); ?>
                     <text x="<?= $px($i) ?>" y="<?= $H - 5 ?>" text-anchor="middle" font-size="9" fill="#9A9EA6"><?= $lbl ?></text>
-                <?php endfor; ?>
+                <?php endforeach; ?>
             </svg>
         </div>
     </div>
@@ -722,7 +644,7 @@ include 'layout.php';
             <?php else:
                 $palette = ['#1B6FD1', '#17654B', '#4A3FB8', '#9A7100', '#A6301F'];
                 foreach ($subjects as $i => $s):
-                    $pct = $subject_total ? round($s['c'] / $subject_total * 100) : 0; ?>
+                    $pct = $subject_total ? round($s['n'] / $subject_total * 100) : 0; ?>
                     <div class="ad-bar-row">
                         <span class="ad-bar-label" title="<?= htmlspecialchars($s['subject']) ?>"><?= htmlspecialchars($s['subject']) ?></span>
                         <span class="ad-bar-track"><i class="ad-bar-fill" style="display:block;width:<?= $pct ?>%;background:<?= $palette[$i % 5] ?>;"></i></span>

@@ -67,6 +67,17 @@ class UserRepository extends Repository
         return self::row($con, "SELECT firstname, lastname FROM users WHERE user_id = ?", 'i', [$userId]);
     }
 
+    /** The account's names, email and profile photo, or null when there is no such account. */
+    public static function namesAndPhoto(mysqli $con, int $userId): ?array
+    {
+        return self::typedRow($con, "
+            SELECT u.firstname, u.lastname, u.email, p.profile_image
+            FROM users u
+            LEFT JOIN profile p ON p.user_id = u.user_id
+            WHERE u.user_id = ? LIMIT 1
+        ", 'i', [$userId]);
+    }
+
     /** The email address of each of $userIds that exists ('user_id', 'email'). */
     public static function emailsFor(mysqli $con, array $userIds): array
     {

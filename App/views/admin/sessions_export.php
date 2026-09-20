@@ -60,7 +60,7 @@ $out = fopen('php://output', 'w');
 // without this, a name with an accent in it arrives mangled.
 fwrite($out, "\xEF\xBB\xBF");
 
-fputcsv($out, [
+CsvExport::row($out, [
     'Reference', 'Session ID', 'Subject', 'Topics', 'Type', 'Date', 'Start', 'End',
     'Duration (minutes)', 'State', 'Raw status', 'Mentor', 'Mentor ID', 'Mentee', 'Mentee ID',
     'Missed by', 'Closed at', 'Reason given', 'Mentee rated mentor', 'Mentor rated mentee',
@@ -72,7 +72,7 @@ foreach ($rows as $s) {
     $start = strtotime($s['session_date']);
     $state = ad_session_state($s);
 
-    fputcsv($out, [
+    CsvExport::row($out, [
         ad_session_ref($id, $s['session_date']),
         $id,
         $s['subject'],

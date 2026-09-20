@@ -4,7 +4,8 @@
  * report_data.php — the figures behind Reports & Analytics.
  *
  * The summary page and its CSV export have to agree to the last digit, so
- * every number is computed here once and both read the same array.
+ * both read their figures from SummaryRepository, and what is worked out from
+ * those figures is worked out here, once.
  *
  * The rule this file follows: a figure appears only if a table in this
  * database can answer it. There is no page-view tracking, no uptime monitor
@@ -39,9 +40,10 @@ function rp_presets(): array
  */
 function rp_range(mysqli $con, array $get): array
 {
-    $key = (string)($get['range'] ?? '30d');
-    $cf  = trim((string)($get['from'] ?? ''));
-    $ct  = trim((string)($get['to'] ?? ''));
+    $str = fn(string $k) => is_string($get[$k] ?? null) ? trim($get[$k]) : '';
+    $key = $str('range') !== '' ? $str('range') : '30d';
+    $cf  = $str('from');
+    $ct  = $str('to');
 
     // A custom range wins, but only when both ends parse — a half-filled form
     // should fall back to a preset rather than to a silently open-ended query.
@@ -59,9 +61,7 @@ function rp_range(mysqli $con, array $get): array
             case 'year':  $from = date('Y-01-01');                      $to = date('Y-m-d'); break;
             case 'all':
                 // "All time" still needs real edges to draw a chart against.
-                $r = $con->query("SELECT MIN(DATE(created_at)) FROM users");
-                $v = $r ? $r->fetch_row() : null;
-                $from = ($v && $v[0]) ? $v[0] : date('Y-m-d');
+                $from = PlatformStatsRepository::firstAccountDate($con) ?? date('Y-m-d');
                 $to   = date('Y-m-d');
                 break;
             default:      $from = date('Y-m-d', strtotime('-29 days')); $to = date('Y-m-d'); $key = '30d';
@@ -100,13 +100,10 @@ function rp_buckets(string $from, string $to): array
 
     if ($days <= 45) {
         $unit = 'day';
-        $sql  = 'DATE(%1$s)';
     } elseif ($days <= 220) {
         $unit = 'week';
-        $sql  = 'DATE(DATE_SUB(%1$s, INTERVAL WEEKDAY(%1$s) DAY))';
     } else {
         $unit = 'month';
-        $sql  = "DATE_FORMAT(%1\$s, '%%Y-%%m-01')";
     }
 
     // Every bucket in the range, empty ones included, so a quiet week draws as
@@ -125,27 +122,7 @@ function rp_buckets(string $from, string $to): array
         $cur = date('Y-m-d', strtotime($cur . ' ' . $step));
     }
 
-    return ['unit' => $unit, 'sql' => $sql, 'keys' => $keys];
-}
-
-/** The bucket expression for one column, e.g. rp_bucket_expr($b, 'u.created_at'). */
-function rp_bucket_expr(array $b, string $col): string
-{
-    return sprintf($b['sql'], $col);
-}
-
-/** One scalar, or null when the query could not run. */
-function rp_one(mysqli $con, string $sql)
-{
-    $r = $con->query($sql);
-    if (!$r) return null;
-    $row = $r->fetch_row();
-    return $row ? $row[0] : null;
-}
-
-function rp_int(mysqli $con, string $sql): int
-{
-    return (int)rp_one($con, $sql);
+    return ['unit' => $unit, 'keys' => $keys];
 }
 
 /**
@@ -173,61 +150,15 @@ function rp_delta_text(?array $d, string $label): string
 }
 
 /**
- * The distinct members who did anything at all in a window.
- *
- * "Active" here means they left a trace: signed in, sat in a session, sent a
- * message, submitted an assessment or wrote feedback. It is not a guess at
- * who opened the app.
- */
-function rp_active_sql(string $from, string $to): string
-{
-    return "
-        SELECT COUNT(*) FROM (
-            SELECT u.user_id FROM users u
-              JOIN logs l ON l.email = u.email
-             WHERE l.activity LIKE '%login%' AND l.log_date >= '$from 00:00:00' AND l.log_date < '$to' + INTERVAL 1 DAY
-            UNION
-            SELECT mentee_id FROM session_requests WHERE DATE(session_date) BETWEEN '$from' AND '$to'
-            UNION
-            SELECT mentor_id FROM session_requests WHERE DATE(session_date) BETWEEN '$from' AND '$to'
-            UNION
-            SELECT sender_id FROM messages WHERE DATE(created_at) BETWEEN '$from' AND '$to'
-            UNION
-            SELECT mentee_id FROM assessment_attempts
-             WHERE submitted_at IS NOT NULL AND DATE(submitted_at) BETWEEN '$from' AND '$to'
-            UNION
-            SELECT mentee_id FROM feedback WHERE DATE(created_at) BETWEEN '$from' AND '$to'
-        ) t
-        JOIN users mu ON mu.user_id = t.user_id
-        -- Admins are staff, not members, and their sign-ins would inflate the
-        -- figure on a small platform. The join also drops ids left behind by
-        -- deleted accounts, so this counts accounts that still exist.
-        WHERE mu.role <> 'admin'";
-}
-
-/**
  * Every headline figure, for one window.
  *
- * Kept separate so the previous window is measured by exactly the same
- * queries, rather than a second hand-written set that might count something
- * slightly differently and make the comparison meaningless.
+ * The previous window is measured by exactly the same queries, rather than a
+ * second hand-written set that might count something slightly differently
+ * and make the comparison meaningless.
  */
 function rp_window(mysqli $con, string $from, string $to): array
 {
-    return [
-        // Admins are staff. Counting a new admin account as a new member
-        // would make the headline figure disagree with the growth chart and
-        // with the member total on the storage card.
-        'joined'      => rp_int($con, "SELECT COUNT(*) FROM users WHERE role <> 'admin' AND DATE(created_at) BETWEEN '$from' AND '$to'"),
-        'active'      => rp_int($con, rp_active_sql($from, $to)),
-        'sessions'    => rp_int($con, "SELECT COUNT(*) FROM session_requests WHERE DATE(session_date) BETWEEN '$from' AND '$to'"),
-        'completed'   => rp_int($con, "SELECT COUNT(*) FROM session_requests WHERE status='completed' AND DATE(session_date) BETWEEN '$from' AND '$to'"),
-        'assessments' => rp_int($con, "SELECT COUNT(*) FROM assessment_attempts WHERE status='submitted' AND DATE(submitted_at) BETWEEN '$from' AND '$to'"),
-        'messages'    => rp_int($con, "SELECT COUNT(*) FROM messages WHERE DATE(created_at) BETWEEN '$from' AND '$to'"),
-        'feedback'    => rp_int($con, "SELECT COUNT(*) FROM feedback WHERE DATE(created_at) BETWEEN '$from' AND '$to'"),
-        'resources'   => rp_int($con, "SELECT COUNT(*) FROM resources WHERE DATE(created_at) BETWEEN '$from' AND '$to'"),
-        'signins'     => rp_int($con, "SELECT COUNT(*) FROM logs WHERE activity LIKE '%login%' AND log_date >= '$from 00:00:00' AND log_date < '$to' + INTERVAL 1 DAY"),
-    ];
+    return SummaryRepository::window($con, $from, $to);
 }
 
 /**
@@ -237,19 +168,19 @@ function rp_window(mysqli $con, string $from, string $to): array
  * records a page view, so a "most used features" chart would be invented; a
  * count of the things people made is the closest measurement the data can
  * honestly support, and it is labelled as that.
+ *
+ * Each count is one the window already has (rp_window()), so this asks the
+ * database nothing further.
  */
-function rp_areas(mysqli $con, string $from, string $to): array
+function rp_areas(array $window): array
 {
-    $w = fn(string $t, string $c, string $extra = '') =>
-        rp_int($con, "SELECT COUNT(*) FROM `$t` WHERE DATE(`$c`) BETWEEN '$from' AND '$to'" . ($extra !== '' ? " AND $extra" : ''));
-
     $areas = [
-        ['Sessions booked',    $w('session_requests', 'session_date'),                        '#1B6FD1'],
-        ['Messages sent',      $w('messages', 'created_at'),                                  '#17654B'],
-        ['Feedback written',   $w('feedback', 'created_at'),                                  '#B7791F'],
-        ['Assessments taken',  $w('assessment_attempts', 'submitted_at', "status='submitted'"), '#6B4FA8'],
-        ['Resources uploaded', $w('resources', 'created_at'),                                 '#0087CF'],
-        ['Members joined',     $w('users', 'created_at', "role <> 'admin'"),                 '#A6301F'],
+        ['Sessions booked',    $window['sessions'],    '#1B6FD1'],
+        ['Messages sent',      $window['messages'],    '#17654B'],
+        ['Feedback written',   $window['feedback'],    '#B7791F'],
+        ['Assessments taken',  $window['assessments'], '#6B4FA8'],
+        ['Resources uploaded', $window['resources'],   '#0087CF'],
+        ['Members joined',     $window['joined'],      '#A6301F'],
     ];
 
     usort($areas, fn($a, $b) => $b[1] <=> $a[1]);
@@ -257,90 +188,14 @@ function rp_areas(mysqli $con, string $from, string $to): array
 }
 
 /**
- * The recent activity feed.
- *
- * Real rows from six tables, unioned on the timestamp each one already
- * carries. Sign-ins are deliberately left out: there are hundreds of them and
- * they would push everything else off the list — the full sign-in trail is
- * the Activity Logs page.
+ * The recent activity feed: real rows from seven tables, newest first.
+ * Sign-ins are deliberately left out: there are hundreds of them and they
+ * would push everything else off the list. The full sign-in trail is the
+ * Activity Logs page.
  */
 function rp_feed(mysqli $con, string $from, string $to, int $limit = 12): array
 {
-    $limit = max(1, min(50, $limit));
-    $sql = "
-        SELECT * FROM (
-            -- An admin account being created is real activity, but it is not
-            -- a new member: the headline figure excludes staff, so the feed
-            -- labels them apart rather than contradicting the tile.
-            SELECT IF(u.role = 'admin', 'staff', 'member') AS kind, u.created_at AS ts,
-                   CONCAT_WS(' ', u.firstname, u.lastname) AS who,
-                   CONCAT('Joined as ', IF(u.role = '', 'no role yet', u.role)) AS detail
-              FROM users u
-             WHERE DATE(u.created_at) BETWEEN '$from' AND '$to'
-
-            UNION ALL
-            SELECT 'session', sr.session_date,
-                   CONCAT_WS(' ', me.firstname, me.lastname),
-                   CONCAT(sr.subject, ' with ', COALESCE(mo.firstname, 'a mentor'), ' — ', sr.status)
-              FROM session_requests sr
-              LEFT JOIN users me ON me.user_id = sr.mentee_id
-              LEFT JOIN users mo ON mo.user_id = sr.mentor_id
-             WHERE DATE(sr.session_date) BETWEEN '$from' AND '$to'
-               -- A session booked for next week has not happened yet, so it is
-               -- not activity. Upcoming ones belong on the Sessions calendar.
-               AND sr.session_date <= NOW()
-
-            UNION ALL
-            SELECT 'assessment', a.submitted_at,
-                   CONCAT_WS(' ', me.firstname, me.lastname),
-                   CONCAT(COALESCE(asm.title, 'An assessment'), ' — ',
-                          COALESCE(a.score, 0), '/', COALESCE(a.total_points, 0))
-              FROM assessment_attempts a
-              LEFT JOIN users me        ON me.user_id = a.mentee_id
-              LEFT JOIN assessments asm ON asm.assessment_id = a.assessment_id
-             WHERE a.status = 'submitted' AND DATE(a.submitted_at) BETWEEN '$from' AND '$to'
-
-            UNION ALL
-            SELECT 'message', m.created_at,
-                   CONCAT_WS(' ', s.firstname, s.lastname),
-                   CONCAT('Sent to ', COALESCE(r.firstname, 'a member'))
-              FROM messages m
-              LEFT JOIN users s ON s.user_id = m.sender_id
-              LEFT JOIN users r ON r.user_id = m.receiver_id
-             WHERE DATE(m.created_at) BETWEEN '$from' AND '$to'
-
-            UNION ALL
-            SELECT 'feedback', f.created_at,
-                   CONCAT_WS(' ', me.firstname, me.lastname),
-                   CONCAT('Rated ', COALESCE(mo.firstname, 'a mentor'), ' ', f.rating, ' out of 5')
-              FROM feedback f
-              LEFT JOIN users me ON me.user_id = f.mentee_id
-              LEFT JOIN users mo ON mo.user_id = f.mentor_id
-             WHERE DATE(f.created_at) BETWEEN '$from' AND '$to'
-
-            UNION ALL
-            SELECT 'resource', rs.created_at,
-                   CONCAT_WS(' ', up.firstname, up.lastname),
-                   rs.title
-              FROM resources rs
-              LEFT JOIN users up ON up.user_id = rs.uploader_id
-             WHERE DATE(rs.created_at) BETWEEN '$from' AND '$to'
-
-            UNION ALL
-            SELECT 'announcement', an.published_at,
-                   COALESCE(CONCAT_WS(' ', ad.firstname, ad.lastname), 'Admin'),
-                   an.title
-              FROM announcements an
-              LEFT JOIN users ad ON ad.user_id = an.created_by
-             WHERE an.published_at IS NOT NULL
-               AND DATE(an.published_at) BETWEEN '$from' AND '$to'
-        ) feed
-        WHERE ts IS NOT NULL
-        ORDER BY ts DESC
-        LIMIT $limit";
-
-    $r = $con->query($sql);
-    return $r ? $r->fetch_all(MYSQLI_ASSOC) : [];
+    return SummaryRepository::feed($con, $from, $to, $limit);
 }
 
 /** How each feed row is labelled and coloured. */
@@ -356,6 +211,24 @@ function rp_feed_kinds(): array
         'resource'     => ['Resource',             '#F3F4F6', '#4B5563'],
         'announcement' => ['Announcement',         '#FBE9E4', '#9A3412'],
     ];
+}
+
+/**
+ * How many files the folders hold, and their size in bytes, subfolders
+ * included: [files, bytes]. A folder that does not exist holds nothing.
+ */
+function rp_files_in(array $dirs): array
+{
+    $n = 0;
+    $bytes = 0;
+    foreach ($dirs as $dir) {
+        if (!is_dir($dir)) continue;
+        $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
+        foreach ($it as $f) {
+            if ($f->isFile()) { $n++; $bytes += $f->getSize(); }
+        }
+    }
+    return [$n, $bytes];
 }
 
 /** Bytes, as something a person reads. */

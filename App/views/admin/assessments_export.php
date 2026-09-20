@@ -35,7 +35,7 @@ $out = fopen('php://output', 'w');
 fwrite($out, "\xEF\xBB\xBF");
 
 if ($what === 'assessments') {
-    fputcsv($out, [
+    CsvExport::row($out, [
         'Assessment ID', 'Title', 'Topic', 'Mentor', 'Mentor ID', 'Status',
         'Questions', 'Total points', 'Time limit (minutes)',
         'Attempts', 'Submitted', 'In progress', 'Average score (%)',
@@ -43,7 +43,7 @@ if ($what === 'assessments') {
     ]);
     $rows = $con->query(as_select() . " ORDER BY a.created_at DESC")->fetch_all(MYSQLI_ASSOC);
     foreach ($rows as $a) {
-        fputcsv($out, [
+        CsvExport::row($out, [
             (int)$a['assessment_id'], $a['title'], $a['topic'], $a['mentor_name'], (int)$a['mentor_id'], $a['status'],
             (int)$a['questions'], (int)$a['total_points'],
             (int)$a['time_limit_minutes'] > 0 ? (int)$a['time_limit_minutes'] : '',
@@ -56,7 +56,7 @@ if ($what === 'assessments') {
     }
 
 } elseif ($what === 'questions') {
-    fputcsv($out, [
+    CsvExport::row($out, [
         'Question ID', 'Assessment ID', 'Assessment', 'Topic', 'Mentor', 'Order',
         'Type', 'Question', 'Hint', 'Points', 'Required', 'Options', 'Correct answer',
         'Answered', 'Marked', 'Correct', 'Correct rate (%)', 'Flagged',
@@ -75,7 +75,7 @@ if ($what === 'assessments') {
 
     foreach ($rows as $q) {
         $st = as_question_stats($con, (int)$q['question_id']);
-        fputcsv($out, [
+        CsvExport::row($out, [
             (int)$q['question_id'], (int)$q['assessment_id'], $q['assessment_title'], $q['topic'], $q['mentor_name'],
             (int)$q['question_order'], as_qtype_label($q['question_type']), $q['question_text'], $q['hint'],
             (int)$q['points'], (int)$q['is_required'] ? 'Yes' : 'No', (int)$q['options_n'],
@@ -87,7 +87,7 @@ if ($what === 'assessments') {
     }
 
 } else {
-    fputcsv($out, [
+    CsvExport::row($out, [
         'Attempt ID', 'Assessment ID', 'Assessment', 'Topic', 'Mentor',
         'Mentee', 'Mentee ID', 'Status', 'Score', 'Total points', 'Score (%)',
         'Started', 'Submitted', 'Minutes taken',
@@ -121,7 +121,7 @@ if ($what === 'assessments') {
         $pct = ((int)$t['total_points'] > 0 && $t['status'] === 'submitted')
             ? round($t['score'] / $t['total_points'] * 100, 1)
             : '';
-        fputcsv($out, [
+        CsvExport::row($out, [
             (int)$t['attempt_id'], (int)$t['assessment_id'], $t['title'], $t['topic'], $t['mentor_name'],
             $t['mentee_name'], (int)$t['mentee_id'],
             $t['status'] === 'submitted' ? 'Submitted' : 'Unfinished',

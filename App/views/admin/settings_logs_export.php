@@ -71,10 +71,10 @@ header('Cache-Control: no-store');
 
 $out = fopen('php://output', 'w');
 fwrite($out, "\xEF\xBB\xBF");
-fputcsv($out, ['Log ID', 'Date', 'Time', 'Name', 'Email', 'Role', 'User ID', 'Activity']);
+CsvExport::row($out, ['Log ID', 'Date', 'Time', 'Name', 'Email', 'Role', 'User ID', 'Activity']);
 foreach ($rows as $r) {
     $ts = strtotime($r['log_date']);
-    fputcsv($out, [
+    CsvExport::row($out, [
         (int)$r['log_id'],
         date('Y-m-d', $ts),
         date('H:i:s', $ts),

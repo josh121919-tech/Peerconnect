@@ -41,22 +41,22 @@ $out = fopen('php://output', 'w');
 fwrite($out, "\xEF\xBB\xBF");
 
 $section = function (string $title) use ($out) {
-    fputcsv($out, []);
-    fputcsv($out, [$title]);
+    CsvExport::row($out, []);
+    CsvExport::row($out, [$title]);
 };
 
 /* ── What this file is ─────────────────────────────────────────────────── */
-fputcsv($out, ['PeerConnect — overall summary']);
-fputcsv($out, ['Range', $R['key'] === 'all' ? 'All time' : $R['label']]);
-fputcsv($out, ['From', $from]);
-fputcsv($out, ['To', $to]);
-fputcsv($out, ['Days in range', $R['days']]);
-fputcsv($out, ['Compared against', $prev ? $R['prev'][0] . ' to ' . $R['prev'][1] : 'Nothing — this range has no period before it']);
-fputcsv($out, ['Generated', date('Y-m-d H:i:s') . ' (Asia/Manila)']);
+CsvExport::row($out, ['PeerConnect — overall summary']);
+CsvExport::row($out, ['Range', $R['key'] === 'all' ? 'All time' : $R['label']]);
+CsvExport::row($out, ['From', $from]);
+CsvExport::row($out, ['To', $to]);
+CsvExport::row($out, ['Days in range', $R['days']]);
+CsvExport::row($out, ['Compared against', $prev ? $R['prev'][0] . ' to ' . $R['prev'][1] : 'Nothing — this range has no period before it']);
+CsvExport::row($out, ['Generated', date('Y-m-d H:i:s') . ' (Asia/Manila)']);
 
 /* ── Headline figures ──────────────────────────────────────────────────── */
 $section('Headline figures');
-fputcsv($out, ['Measure', 'This range', 'Previous range', 'Change %']);
+CsvExport::row($out, ['Measure', 'This range', 'Previous range', 'Change %']);
 
 $rows = [
     'New members'          => 'joined',
@@ -67,115 +67,84 @@ $rows = [
     'Messages sent'        => 'messages',
     'Feedback written'     => 'feedback',
     'Resources uploaded'   => 'resources',
-    'Sign-ins'             => 'signins',
+    'Sign-ins by members'  => 'signins',
 ];
 foreach ($rows as $label => $k) {
     $d = rp_delta($now[$k], $prev ? $prev[$k] : null);
     $change = $d === null ? 'n/a' : ($d[0] === 'new' ? 'no previous data' : ($d[0] === 'up' ? '+' : '') . $d[1]);
-    fputcsv($out, [$label, $now[$k], $prev ? $prev[$k] : '', $change]);
+    CsvExport::row($out, [$label, $now[$k], $prev ? $prev[$k] : '', $change]);
 }
 
 /* ── Activity by area ──────────────────────────────────────────────────── */
 $section('Records created, by area');
-fputcsv($out, ['Area', 'Records', 'Share %']);
-$areas = rp_areas($con, $from, $to);
+CsvExport::row($out, ['Area', 'Records', 'Share %']);
+$areas = rp_areas($now);
 $areaTotal = array_sum(array_column($areas, 1));
 foreach ($areas as [$label, $n]) {
-    fputcsv($out, [$label, $n, $areaTotal > 0 ? round($n / $areaTotal * 100) : 0]);
+    CsvExport::row($out, [$label, $n, $areaTotal > 0 ? round($n / $areaTotal * 100) : 0]);
 }
 
 /* ── Member mix ────────────────────────────────────────────────────────── */
 $section('Accounts by role (all time, not filtered by range)');
-fputcsv($out, ['Role', 'Accounts']);
-$rm = $con->query("SELECT IF(role = '' OR role IS NULL, 'unassigned', role) AS r, COUNT(*) n FROM users GROUP BY r ORDER BY n DESC");
-while ($row = $rm->fetch_assoc()) fputcsv($out, [$row['r'], $row['n']]);
+CsvExport::row($out, ['Role', 'Accounts']);
+foreach (SummaryRepository::roleMix($con) as $role => $n) CsvExport::row($out, [$role, $n]);
 
 /* ── Growth, bucket by bucket ──────────────────────────────────────────── */
 $B = rp_buckets($from, $to);
 $section('Activity per ' . $B['unit'] . ' (mentees and mentors only — admin accounts are not members)');
-fputcsv($out, [ucfirst($B['unit']) . ' starting', 'Mentees joined', 'Mentors joined', 'Sessions', 'Sessions completed']);
+CsvExport::row($out, [ucfirst($B['unit']) . ' starting', 'Mentees joined', 'Mentors joined', 'Sessions', 'Sessions completed']);
 
 $reg = [];
 foreach (array_keys($B['keys']) as $k) $reg[$k] = ['mentee' => 0, 'mentor' => 0, 'sess' => 0, 'done' => 0];
 
-$g = $con->query("
-    SELECT " . rp_bucket_expr($B, 'created_at') . " AS k, role, COUNT(*) n
-      FROM users
-     WHERE role IN ('mentee','mentor') AND DATE(created_at) BETWEEN '$from' AND '$to'
-     GROUP BY k, role");
-while ($row = $g->fetch_assoc()) {
+foreach (SummaryRepository::joinsPerBucket($con, $B['unit'], $from, $to) as $row) {
     if (isset($reg[$row['k']])) $reg[$row['k']][$row['role']] = (int)$row['n'];
 }
-
-$s = $con->query("
-    SELECT " . rp_bucket_expr($B, 'session_date') . " AS k,
-           COUNT(*) n, SUM(status = 'completed') done
-      FROM session_requests
-     WHERE DATE(session_date) BETWEEN '$from' AND '$to'
-     GROUP BY k");
-while ($row = $s->fetch_assoc()) {
+foreach (SummaryRepository::sessionsPerBucket($con, $B['unit'], $from, $to) as $row) {
     if (isset($reg[$row['k']])) {
         $reg[$row['k']]['sess'] = (int)$row['n'];
         $reg[$row['k']]['done'] = (int)$row['done'];
     }
 }
 foreach ($reg as $k => $v) {
-    fputcsv($out, [$k, $v['mentee'], $v['mentor'], $v['sess'], $v['done']]);
+    CsvExport::row($out, [$k, $v['mentee'], $v['mentor'], $v['sess'], $v['done']]);
 }
 
 /* ── Subjects ──────────────────────────────────────────────────────────── */
 $section('Subjects booked in this range');
-fputcsv($out, ['Subject', 'Sessions']);
-$sub = $con->query("
-    SELECT subject, COUNT(*) n FROM session_requests
-     WHERE subject IS NOT NULL AND subject <> '' AND DATE(session_date) BETWEEN '$from' AND '$to'
-     GROUP BY subject ORDER BY n DESC");
+CsvExport::row($out, ['Subject', 'Sessions']);
 $anySubject = false;
-while ($row = $sub->fetch_assoc()) { fputcsv($out, [$row['subject'], $row['n']]); $anySubject = true; }
-if (!$anySubject) fputcsv($out, ['No sessions in this range', 0]);
+foreach (SummaryRepository::subjects($con, $from, $to) as $row) { CsvExport::row($out, [$row['subject'], $row['n']]); $anySubject = true; }
+if (!$anySubject) CsvExport::row($out, ['No sessions in this range', 0]);
 
 /* ── Engagement ────────────────────────────────────────────────────────── */
-$signedIn = rp_int($con, "
-    SELECT COUNT(DISTINCT u.user_id) FROM users u JOIN logs l ON l.email = u.email
-     WHERE l.activity LIKE '%login%' AND l.log_date >= '$from 00:00:00' AND l.log_date < '$to' + INTERVAL 1 DAY");
-$returned = rp_int($con, "
-    SELECT COUNT(*) FROM (
-        SELECT u.user_id FROM users u JOIN logs l ON l.email = u.email
-         WHERE l.activity LIKE '%login%' AND l.log_date >= '$from 00:00:00' AND l.log_date < '$to' + INTERVAL 1 DAY
-         GROUP BY u.user_id HAVING COUNT(DISTINCT DATE(l.log_date)) > 1
-    ) t");
-$ratingRow = $con->query("
-    SELECT AVG(rating) a, COUNT(*) n FROM feedback
-     WHERE rating > 0 AND DATE(created_at) BETWEEN '$from' AND '$to'")->fetch_assoc();
-$concluded = rp_int($con, "
-    SELECT COUNT(*) FROM session_requests
-     WHERE status IN ('completed','cancelled','rejected','missed')
-       AND DATE(session_date) BETWEEN '$from' AND '$to'");
+$people    = SummaryRepository::signInPeople($con, $from, $to);
+$ratingRow = SummaryRepository::ratings($con, $from, $to);
+$concluded = SummaryRepository::concluded($con, $from, $to);
 
 $section('Engagement');
-fputcsv($out, ['Measure', 'Value']);
-fputcsv($out, ['Sign-ins', $now['signins']]);
-fputcsv($out, ['People who signed in', $signedIn]);
-fputcsv($out, ['Came back on another day', $returned]);
-fputcsv($out, ['Sessions that concluded', $concluded]);
-fputcsv($out, ['Completion rate %', $concluded > 0 ? round($now['completed'] / $concluded * 100) : 'n/a']);
-fputcsv($out, ['Reviews written', (int)$ratingRow['n']]);
-fputcsv($out, ['Average rating out of 5', (int)$ratingRow['n'] > 0 ? round((float)$ratingRow['a'], 2) : 'n/a']);
+CsvExport::row($out, ['Measure', 'Value']);
+CsvExport::row($out, ['Sign-ins by members', $now['signins']]);
+CsvExport::row($out, ['Members who signed in', $people['people']]);
+CsvExport::row($out, ['Came back on another day', $people['returned']]);
+CsvExport::row($out, ['Sessions that concluded', $concluded]);
+CsvExport::row($out, ['Completion rate %', $concluded > 0 ? round($now['completed'] / $concluded * 100) : 'n/a']);
+CsvExport::row($out, ['Reviews written', (int)$ratingRow['n']]);
+CsvExport::row($out, ['Average rating out of 5', (int)$ratingRow['n'] > 0 ? round((float)$ratingRow['a'], 2) : 'n/a']);
 
 /* ── Email delivery ────────────────────────────────────────────────────── */
 $section('Notification email in this range');
-fputcsv($out, ['Status', 'Notifications']);
-$mq = $con->query("SELECT email_status, COUNT(*) n FROM notifications WHERE DATE(created_at) BETWEEN '$from' AND '$to' GROUP BY email_status");
+CsvExport::row($out, ['Status', 'Notifications']);
 $anyMail = false;
-while ($row = $mq->fetch_assoc()) { fputcsv($out, [$row['email_status'], $row['n']]); $anyMail = true; }
-if (!$anyMail) fputcsv($out, ['No notifications raised', 0]);
+foreach (SummaryRepository::emailStatuses($con, $from, $to) as $status => $n) { CsvExport::row($out, [$status, $n]); $anyMail = true; }
+if (!$anyMail) CsvExport::row($out, ['No notifications raised', 0]);
 
 /* ── The gap, stated in the file too ───────────────────────────────────── */
 $section('Not measured by this platform');
-fputcsv($out, ['Average time on site', 'No page views are recorded']);
-fputcsv($out, ['Pages per visit', 'No page views are recorded']);
-fputcsv($out, ['Uptime %', 'No monitor runs against this install']);
-fputcsv($out, ['Average response time', 'No monitor runs against this install']);
+CsvExport::row($out, ['Average time on site', 'No page views are recorded']);
+CsvExport::row($out, ['Pages per visit', 'No page views are recorded']);
+CsvExport::row($out, ['Uptime %', 'No monitor runs against this install']);
+CsvExport::row($out, ['Average response time', 'No monitor runs against this install']);
 
 fclose($out);
 exit;
