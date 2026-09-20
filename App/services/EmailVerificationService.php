@@ -166,13 +166,13 @@ class EmailVerificationService
         $row = EmailVerificationRepository::bySelector($con, $selector);
 
         if (!$row) {
-            // Tell "this expired, ask for another" apart from "this was never
-            // ours". Both are dead ends, but only one has a way forward.
-            return $no(EmailVerificationRepository::selectorKnown($con, $selector) ? 'expired' : 'unknown');
+            return $no('unknown');
         }
 
-        // Compare in constant time. A plain === here leaks the validator one
-        // byte at a time to anyone willing to measure.
+        // Compare in constant time, and before saying anything at all about
+        // the account. A plain === here leaks the validator one byte at a time
+        // to anyone willing to measure, and answering ahead of this check
+        // would tell the holder of a bare selector whose account it is.
         if (!hash_equals((string) $row['validator'], hash('sha256', $validator))) {
             return $no('unknown');
         }
@@ -184,15 +184,26 @@ class EmailVerificationService
         $userId = (int) $row['user_id'];
         $role   = (string) ($row['role'] ?? '');
 
-        // Already confirmed, and the link simply got clicked twice — from the
-        // mail client's own preview fetch as often as from the person. Say so
-        // calmly instead of showing an error.
+        /*
+         * Already confirmed. Checked BEFORE the link's own state, because a
+         * spent link on a confirmed account is the ordinary case: the person
+         * clicked it, it worked, and then they — or their mail client, which
+         * fetches links by itself — opened it again. Reading used_at first
+         * told them the link had expired, on an account that was perfectly
+         * fine, which is alarming and wrong.
+         */
         if (!empty($row['email_verified_at'])) {
             return ['ok' => true, 'reason' => 'already', 'user_id' => $userId, 'role' => $role];
         }
 
-        // Claim the link before stamping the account, so two tabs cannot both
-        // spend it. The loser is told 'already', which is true by then.
+        // Not confirmed, so the link's own state decides. Spent-but-unconfirmed
+        // means a newer link retired this one; both cases want another letter.
+        if ($row['used_at'] !== null || !$row['still_fresh']) {
+            return $no('expired');
+        }
+
+        // Claim it before stamping the account, so two tabs cannot both spend
+        // it. The loser is told 'already', which is true by the time it reads.
         if (EmailVerificationRepository::claim($con, (int) $row['verification_id']) < 1) {
             return ['ok' => true, 'reason' => 'already', 'user_id' => $userId, 'role' => $role];
         }

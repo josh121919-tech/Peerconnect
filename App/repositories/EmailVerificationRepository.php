@@ -113,32 +113,28 @@ class EmailVerificationRepository extends Repository
     }
 
     /**
-     * The unused, unexpired link with this selector, with enough of its owner
-     * to finish the job. The validator comes back for the service to compare;
-     * nothing here decides whether it matched.
+     * The link with this selector, whether or not it is still usable, with
+     * enough of its owner to decide what to say about it.
+     *
+     * Deliberately unfiltered. Filtering on "unused and unexpired" here made
+     * every second click on a working link look expired, because the first
+     * click had just spent it — and mail clients fetch links on their own, so
+     * people met that on a link that had in fact worked. The service reads
+     * used_at, expires_at and email_verified_at and tells the three cases
+     * apart. The validator comes back for it to compare; nothing here decides
+     * whether it matched.
      */
     public static function bySelector(mysqli $con, string $selector): ?array
     {
         return self::typedRow($con, "
-            SELECT ev.verification_id, ev.user_id, ev.validator,
+            SELECT ev.verification_id, ev.user_id, ev.validator, ev.used_at,
+                   (ev.expires_at > NOW()) AS still_fresh,
                    u.email, u.firstname, u.role, u.status, u.email_verified_at
             FROM email_verifications ev
             JOIN users u ON u.user_id = ev.user_id
-            WHERE ev.selector = ? AND ev.used_at IS NULL AND ev.expires_at > NOW()
+            WHERE ev.selector = ?
             LIMIT 1
         ", 's', [$selector]);
-    }
-
-    /**
-     * Whether a selector exists at all, ignoring whether it is still usable.
-     *
-     * Lets the page tell "this link has expired, here is a new one" apart from
-     * "this link was never ours", which are different problems for the person
-     * holding it.
-     */
-    public static function selectorKnown(mysqli $con, string $selector): bool
-    {
-        return self::value($con, "SELECT 1 FROM email_verifications WHERE selector = ? LIMIT 1", 's', [$selector]) !== null;
     }
 
     /** Claims a link, so two tabs cannot both spend it. 1 when this call won. */
