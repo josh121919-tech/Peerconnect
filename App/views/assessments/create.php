@@ -37,6 +37,23 @@ if ($assessment_id) {
 }
 $questions_locked = !empty($submitted_count);
 
+/*
+ * Who this paper is for.
+ *
+ * The candidates are exactly the mentees the access rule already lets in, so
+ * the picker can never offer somebody who would then be refused. Ticking
+ * nobody means all of them, which is what every assessment meant before the
+ * picker existed — so an assessment saved before today opens with nothing
+ * ticked and keeps behaving as it always did.
+ *
+ * $audience_enabled is false until assessment_audience.sql has been run; the
+ * whole section stays hidden rather than offering a control that would not
+ * stick.
+ */
+$audience_enabled = AssessmentRepository::audienceEnabled($con);
+$mentee_choices   = $audience_enabled ? AssessmentRepository::candidateMentees($con, $mentor_id) : [];
+$audience_ids     = $assessment_id ? AssessmentRepository::audienceFor($con, $assessment_id) : [];
+
 // Topics come from the same academic taxonomy the rest of the app uses.
 $topics = array_map(fn($c) => str_replace(' Club', '', $c), PC_CLUBS);
 
@@ -398,6 +415,52 @@ $active_page = 'assessments';
             border-bottom: 1px solid var(--border);
         }
 
+        /* The mentee picker. Scrolls rather than growing without limit: a
+           mentor with thirty mentees should not push Publish off the page. */
+        .ac-audience {
+            max-height: 232px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+        }
+
+        .ac-aud-row {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            align-items: center;
+            column-gap: 10px;
+            padding: 9px 12px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .ac-aud-row:last-child {
+            border-bottom: 0;
+        }
+
+        .ac-aud-row:hover {
+            background: var(--gray-50, #f8fafc);
+        }
+
+        .ac-aud-row input {
+            width: 15px;
+            height: 15px;
+            accent-color: var(--primary, #0b5ed7);
+            grid-row: span 2;
+            cursor: pointer;
+        }
+
+        .ac-aud-name {
+            font-size: 13.5px;
+            font-weight: 600;
+            color: var(--gray-800);
+        }
+
+        .ac-aud-when {
+            font-size: 11.5px;
+            color: var(--gray-400);
+        }
+
         .ac-side-row:last-child {
             border-bottom: none;
         }
@@ -601,13 +664,58 @@ $active_page = 'assessments';
                                     </div>
                                     <b id="setTime">—</b>
                                 </div>
-                                <div class="ac-side-row">
-                                    <div>
-                                        <div style="font-size:13.5px;color:var(--gray-800);font-weight:600;">Who can take this</div>
-                                        <div class="ac-help" style="margin:2px 0 0;">Mentees you've had an approved or completed session with.</div>
+                                <?php if (!$audience_enabled): ?>
+                                    <div class="ac-side-row">
+                                        <div>
+                                            <div style="font-size:13.5px;color:var(--gray-800);font-weight:600;">Who can take this</div>
+                                            <div class="ac-help" style="margin:2px 0 0;">Mentees you've had an approved or completed session with.</div>
+                                        </div>
+                                        <b id="setAudience">—</b>
                                     </div>
-                                    <b id="setAudience">—</b>
-                                </div>
+                                <?php else: ?>
+                                    <div style="padding:14px 0 4px;border-top:1px solid var(--gray-200);margin-top:4px;">
+                                        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;">
+                                            <div style="font-size:13.5px;color:var(--gray-800);font-weight:600;">Who can take this</div>
+                                            <b id="setAudience" style="font-size:13px;">—</b>
+                                        </div>
+                                        <div class="ac-help" style="margin:2px 0 10px;">
+                                            <?php if ($mentee_choices): ?>
+                                                Pick the mentees this is for. Leave every box clear to send it to all of them.
+                                            <?php else: ?>
+                                                You have no mentees yet — anyone you have an approved or completed session with will appear here.
+                                            <?php endif; ?>
+                                        </div>
+
+                                        <?php if ($mentee_choices): ?>
+                                            <div class="ac-audience" id="acAudience">
+                                                <?php foreach ($mentee_choices as $m):
+                                                    $mid  = (int)$m['user_id'];
+                                                    $name = trim($m['firstname'] . ' ' . $m['lastname']);
+                                                    $when = !empty($m['last_session'])
+                                                        ? 'Last session ' . date('M j, Y', strtotime($m['last_session']))
+                                                        : 'No session on record';
+                                                    $done = (int)($m['sessions_done'] ?? 0);
+                                                ?>
+                                                    <label class="ac-aud-row">
+                                                        <input type="checkbox" name="mentees[]" value="<?= $mid ?>"
+                                                               onchange="updateAudience()"
+                                                               <?= in_array($mid, $audience_ids, true) ? 'checked' : '' ?>>
+                                                        <span class="ac-aud-name"><?= htmlspecialchars($name) ?></span>
+                                                        <span class="ac-aud-when">
+                                                            <?= htmlspecialchars($when) ?><?= $done > 0 ? ' · ' . $done . ' completed' : '' ?>
+                                                        </span>
+                                                    </label>
+                                                <?php endforeach; ?>
+                                            </div>
+                                            <div style="display:flex;gap:8px;margin-top:8px;">
+                                                <button type="button" class="btn btn-ghost" style="font-size:12.5px;padding:6px 12px;"
+                                                        onclick="setAllMentees(true)">Select all</button>
+                                                <button type="button" class="btn btn-ghost" style="font-size:12.5px;padding:6px 12px;"
+                                                        onclick="setAllMentees(false)">Clear</button>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
                                 <div class="ac-side-row">
                                     <div>
                                         <div style="font-size:13.5px;color:var(--gray-800);font-weight:600;">Attempts allowed</div>
@@ -995,8 +1103,39 @@ $active_page = 'assessments';
 
         document.getElementById('acTimeLimit').addEventListener('input', updateSummary);
 
+        /**
+         * The "Who can take this" value, kept in step with the boxes.
+         *
+         * No box ticked means everyone, which is what the empty list means to
+         * the query as well — so the label has to say "All your mentees"
+         * rather than "None", or the summary would read as though the paper
+         * were going nowhere.
+         */
+        function updateAudience() {
+            const label = document.getElementById('setAudience');
+            if (!label) return;
+            const boxes = document.querySelectorAll('#acAudience input[name="mentees[]"]');
+            if (!boxes.length) {
+                label.textContent = 'Your mentees';
+                return;
+            }
+            const picked = [...boxes].filter(b => b.checked);
+            label.textContent = picked.length === 0
+                ? 'All your mentees'
+                : (picked.length === 1
+                    ? picked[0].closest('.ac-aud-row').querySelector('.ac-aud-name').textContent.trim()
+                    : picked.length + ' of ' + boxes.length + ' mentees');
+        }
+
+        function setAllMentees(on) {
+            document.querySelectorAll('#acAudience input[name="mentees[]"]').forEach(b => { b.checked = on; });
+            updateAudience();
+        }
+
+        updateAudience();
+
         function renderReview() {
-            document.getElementById('setAudience').textContent = 'Your mentees';
+            updateAudience();
             const box = document.getElementById('reviewBody');
             const title = document.getElementById('acTitle').value.trim();
             const topic = document.getElementById('acTopic').value;

@@ -358,8 +358,9 @@ $active_page = 'assessments';
                                         <?php endif; ?>
                                     </div>
                                     <div class="as-actions">
-                                        <a href="<?= htmlspecialchars(url('assessment-take')) ?>?id=<?= (int)$a['assessment_id'] ?>" class="btn btn-ghost">Review answers</a>
-                                        <a href="<?= htmlspecialchars(url('assessment-take')) ?>?id=<?= (int)$a['assessment_id'] ?>&amp;again=1" class="btn btn-primary">Take again</a>
+                                        <!-- Reviewing is all there is once it is
+                                             submitted: one attempt per mentee. -->
+                                        <a href="<?= htmlspecialchars(url('assessment-take')) ?>?id=<?= (int)$a['assessment_id'] ?>" class="btn btn-primary">Review answers</a>
                                     </div>
                                 </div>
                             <?php endforeach; ?>

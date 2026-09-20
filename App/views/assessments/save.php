@@ -46,6 +46,35 @@ if ($publish && empty($questions)) {
 $status  = $publish ? 'published' : 'draft';
 $started = 0;   // attempts under way whose answers the rewrite clears
 
+/*
+ * Who the paper is for.
+ *
+ * Every posted id is checked against this mentor's own mentees and anything
+ * else is dropped, so hand-posting a stranger's id cannot put them on the
+ * list. Even if one slipped through it would not grant access — the access
+ * rule still requires a session — but a list naming people who can never take
+ * it would be a lie on the mentor's own screen.
+ *
+ * An empty list is meaningful, not missing: it means every mentee.
+ */
+$audience = [];
+if (AssessmentRepository::audienceEnabled($con)) {
+    $posted = is_array($_POST['mentees'] ?? null) ? $_POST['mentees'] : [];
+    $wanted = [];
+    foreach ($posted as $one) {
+        if (is_scalar($one) && (int)$one > 0) {
+            $wanted[(int)$one] = true;
+        }
+    }
+    if ($wanted) {
+        foreach (AssessmentRepository::candidateMentees($con, $mentor_id) as $m) {
+            if (isset($wanted[(int)$m['user_id']])) {
+                $audience[] = (int)$m['user_id'];
+            }
+        }
+    }
+}
+
 $con->begin_transaction();
 try {
     if ($assessment_id) {
@@ -63,6 +92,10 @@ try {
         $submitted = AssessmentRepository::countSubmitted($con, $assessment_id);
 
         if ($submitted > 0) {
+            // Who it is for stays editable even once answers are in — a mentor
+            // may want to set the same paper for one more mentee. Only the
+            // question set is frozen.
+            AssessmentRepository::setAudience($con, $assessment_id, $audience);
             $con->commit();
             pc_flash('success',
                 '"' . $title . '" was updated. Its questions stay as they are — ' .
@@ -81,6 +114,8 @@ try {
         $assessment_id = AssessmentRepository::create($con, $mentor_id, $title, $topic, $instructions, $time_limit, $status);
         AssessmentRepository::replaceQuestions($con, $assessment_id, $questions);
     }
+
+    AssessmentRepository::setAudience($con, $assessment_id, $audience);
 
     $con->commit();
 } catch (Throwable $e) {

@@ -151,37 +151,39 @@ class AssessmentService
     }
 
     /**
-     * The attempt a mentee is working on, starting one if they asked for it.
+     * The attempt a mentee is working on, starting their first if they have
+     * none.
      *
-     * Resumes whatever is open. Otherwise, with $startNew, begins a fresh
-     * attempt — which is what makes an assessment reusable. Two tabs cannot
-     * start two attempts: the lock holds the second one until the first has
-     * its row, and it then resumes that.
+     * One attempt each, and one only. An assessment is reusable in the sense
+     * that matters — a mentor sets the same paper for as many mentees as they
+     * like — but no mentee gets a second go at the same paper, because a
+     * second go measures how well they remember the first.
+     *
+     * So: resume whatever is open, show whatever was submitted, and only ever
+     * create a row when there is nothing at all on record. Two tabs cannot
+     * make two attempts — the lock holds the second until the first has its
+     * row, and it then finds it.
      */
-    public static function currentAttempt(mysqli $con, int $assessmentId, int $menteeId, bool $startNew): ?array
+    public static function currentAttempt(mysqli $con, int $assessmentId, int $menteeId, bool $startIfNone = true): ?array
     {
-        $open = AssessmentRepository::openAttempt($con, $assessmentId, $menteeId);
-        if ($open || !$startNew) {
-            return $open;
+        // Anything already on record — in progress or submitted — is THE
+        // attempt. latestAttempt() rather than openAttempt(), so a submitted
+        // one is found too and nothing starts a second.
+        $existing = AssessmentRepository::latestAttempt($con, $assessmentId, $menteeId);
+        if ($existing || !$startIfNone) {
+            return $existing;
         }
 
         $lock = 'assessment_attempt_' . $assessmentId . '_' . $menteeId;
         if (!AssessmentRepository::acquireLock($con, $lock, 5)) {
-            return AssessmentRepository::openAttempt($con, $assessmentId, $menteeId);
+            return AssessmentRepository::latestAttempt($con, $assessmentId, $menteeId);
         }
         try {
-            $open = AssessmentRepository::openAttempt($con, $assessmentId, $menteeId);
-            if ($open) {
-                return $open;
+            $existing = AssessmentRepository::latestAttempt($con, $assessmentId, $menteeId);
+            if ($existing) {
+                return $existing;
             }
-            try {
-                $id = AssessmentRepository::startAttempt($con, $assessmentId, $menteeId, AssessmentRepository::totalPoints($con, $assessmentId));
-            } catch (mysqli_sql_exception $e) {
-                // Until allow_assessment_retakes.sql has been run, the table
-                // still holds one attempt per mentee. Show them the attempt
-                // they have rather than an error page.
-                return AssessmentRepository::latestAttempt($con, $assessmentId, $menteeId);
-            }
+            $id = AssessmentRepository::startAttempt($con, $assessmentId, $menteeId, AssessmentRepository::totalPoints($con, $assessmentId));
             return AssessmentRepository::attemptOf($con, $id, $menteeId);
         } finally {
             AssessmentRepository::releaseLock($con, $lock);

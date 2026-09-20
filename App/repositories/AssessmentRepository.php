@@ -18,6 +18,59 @@ class AssessmentRepository extends Repository
                  WHERE sr.mentor_id = a.mentor_id AND sr.mentee_id = ?
                    AND sr.status IN ('approved','completed'))";
 
+    /**
+     * The second half of "who can take this": the mentor may name particular
+     * mentees, and then only those may take it. Naming nobody means all of
+     * them, which is what every assessment written before the picker existed
+     * meant — so an empty table needs no backfill to stay correct.
+     *
+     * This never replaces HAS_SESSION, it narrows it. A named mentee who has
+     * no session with the mentor still cannot take the paper.
+     */
+    private const IN_AUDIENCE = "
+        (NOT EXISTS (SELECT 1 FROM assessment_mentees am WHERE am.assessment_id = a.assessment_id)
+         OR EXISTS (SELECT 1 FROM assessment_mentees am
+                     WHERE am.assessment_id = a.assessment_id AND am.mentee_id = ?))";
+
+    /**
+     * Whether assessment_audience.sql has been run.
+     *
+     * Until it has, the table is absent and every query naming it would fail,
+     * so the clause is left out entirely and the audience is what it always
+     * was. Asked once per request and remembered.
+     */
+    public static function audienceEnabled(mysqli $con): bool
+    {
+        static $known = null;
+        if ($known !== null) {
+            return $known;
+        }
+        try {
+            $known = self::value($con, "
+                SELECT 1 FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'assessment_mentees' LIMIT 1
+            ") !== null;
+        } catch (Throwable $e) {
+            $known = false;
+        }
+        return $known;
+    }
+
+    /**
+     * The audience clause and the extra binding it needs, or nothing at all.
+     *
+     * HAS_SESSION is the last placeholder in every query that uses it, so this
+     * appends cleanly onto the end of both the SQL and the argument list.
+     *
+     * @return array{0:string, 1:string, 2:array} sql, extra types, extra args
+     */
+    private static function audience(mysqli $con, int $menteeId): array
+    {
+        return self::audienceEnabled($con)
+            ? [' AND ' . self::IN_AUDIENCE, 'i', [$menteeId]]
+            : ['', '', []];
+    }
+
     /** Counts every assessment list shows, as correlated subqueries on `a`. */
     private const COUNTS = "
         (SELECT COUNT(*) FROM assessment_questions q WHERE q.assessment_id = a.assessment_id) AS question_count,
@@ -59,12 +112,79 @@ class AssessmentRepository extends Repository
      */
     public static function openToMentee(mysqli $con, int $assessmentId, int $menteeId): ?array
     {
+        [$aud, $audTypes, $audArgs] = self::audience($con, $menteeId);
+
         return self::row($con, "
             SELECT a.*, u.firstname, u.lastname, u.user_id AS mentor_user_id
             FROM assessments a
             JOIN users u ON u.user_id = a.mentor_id
-            WHERE a.assessment_id = ? AND a.status = 'published' AND " . self::HAS_SESSION,
-            'ii', [$assessmentId, $menteeId]);
+            WHERE a.assessment_id = ? AND a.status = 'published' AND " . self::HAS_SESSION . $aud,
+            'ii' . $audTypes, array_merge([$assessmentId, $menteeId], $audArgs));
+    }
+
+    /**
+     * The mentees a mentor may send an assessment to, most recent session
+     * first — the same people HAS_SESSION lets in, which is why the picker can
+     * never offer somebody the access rule would then refuse.
+     *
+     * `last_session` is what the list is ordered and labelled by: a mentor
+     * choosing who to set a paper for thinks in terms of who they last saw.
+     */
+    public static function candidateMentees(mysqli $con, int $mentorId): array
+    {
+        return self::typedRows($con, "
+            SELECT u.user_id, u.firstname, u.lastname, pr.profile_image,
+                   MAX(sr.session_date)            AS last_session,
+                   SUM(sr.status = 'completed')    AS sessions_done
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentee_id
+            LEFT JOIN profile pr ON pr.user_id = u.user_id
+            WHERE sr.mentor_id = ? AND sr.status IN ('approved','completed')
+            GROUP BY u.user_id, u.firstname, u.lastname, pr.profile_image
+            ORDER BY last_session DESC, u.firstname ASC, u.user_id ASC
+        ", 'i', [$mentorId]);
+    }
+
+    /** The mentee ids this assessment was set for. Empty means all of them. */
+    public static function audienceFor(mysqli $con, int $assessmentId): array
+    {
+        if (!self::audienceEnabled($con)) {
+            return [];
+        }
+        return array_map('intval', array_column(
+            self::rows($con, "SELECT mentee_id FROM assessment_mentees WHERE assessment_id = ?", 'i', [$assessmentId]),
+            'mentee_id'
+        ));
+    }
+
+    /**
+     * Replaces who an assessment is for.
+     *
+     * An empty list clears the rows, which puts the paper back to "all my
+     * mentees" — the same meaning it had before anyone was named. Callers
+     * must have checked the ids belong to this mentor; this only stores them.
+     */
+    public static function setAudience(mysqli $con, int $assessmentId, array $menteeIds): void
+    {
+        if (!self::audienceEnabled($con)) {
+            return;
+        }
+
+        self::execute($con, "DELETE FROM assessment_mentees WHERE assessment_id = ?", 'i', [$assessmentId]);
+
+        $ids = array_values(array_unique(array_filter(array_map('intval', $menteeIds), fn($id) => $id > 0)));
+        if (!$ids) {
+            return;
+        }
+
+        $values = implode(', ', array_fill(0, count($ids), '(?, ?)'));
+        $args   = [];
+        foreach ($ids as $id) {
+            $args[] = $assessmentId;
+            $args[] = $id;
+        }
+        self::execute($con, "INSERT INTO assessment_mentees (assessment_id, mentee_id) VALUES $values",
+            str_repeat('ii', count($ids)), $args);
     }
 
     /** The assessment with the counts a card shows, for its author. */
@@ -85,6 +205,8 @@ class AssessmentRepository extends Repository
      */
     public static function forMentee(mysqli $con, int $menteeId): array
     {
+        [$aud, $audTypes, $audArgs] = self::audience($con, $menteeId);
+
         return self::rows($con, "
             SELECT a.*, u.firstname, u.lastname, " . self::COUNTS . ",
                    last.attempt_id, last.status AS attempt_status, last.score,
@@ -97,9 +219,9 @@ class AssessmentRepository extends Repository
                    ON last.attempt_id = (SELECT t3.attempt_id FROM assessment_attempts t3
                                           WHERE t3.assessment_id = a.assessment_id AND t3.mentee_id = ?
                                           ORDER BY t3.started_at DESC, t3.attempt_id DESC LIMIT 1)
-            WHERE a.status = 'published' AND " . self::HAS_SESSION . "
+            WHERE a.status = 'published' AND " . self::HAS_SESSION . $aud . "
             ORDER BY (last.attempt_id IS NOT NULL AND last.status = 'submitted'), a.published_at DESC, a.assessment_id DESC
-        ", 'iii', [$menteeId, $menteeId, $menteeId]);
+        ", 'iii' . $audTypes, array_merge([$menteeId, $menteeId, $menteeId], $audArgs));
     }
 
     // ── A mentee's own figures (their dashboard) ────────────────────────────
@@ -138,6 +260,8 @@ class AssessmentRepository extends Repository
      */
     public static function publishedForMentee(mysqli $con, int $menteeId): array
     {
+        [$aud, $audTypes, $audArgs] = self::audience($con, $menteeId);
+
         return self::rows($con, "
             SELECT a.assessment_id, a.title, a.topic,
                    u.firstname, u.lastname,
@@ -148,9 +272,9 @@ class AssessmentRepository extends Repository
                    ON last.attempt_id = (SELECT t.attempt_id FROM assessment_attempts t
                                           WHERE t.assessment_id = a.assessment_id AND t.mentee_id = ?
                                           ORDER BY t.started_at DESC, t.attempt_id DESC LIMIT 1)
-            WHERE a.status = 'published' AND " . self::HAS_SESSION . "
+            WHERE a.status = 'published' AND " . self::HAS_SESSION . $aud . "
             ORDER BY (last.attempt_id IS NOT NULL AND last.status = 'submitted'), a.published_at DESC
-        ", 'ii', [$menteeId, $menteeId]);
+        ", 'ii' . $audTypes, array_merge([$menteeId, $menteeId], $audArgs));
     }
 
     /** The mentee's average score across submitted attempts, as a whole percentage (0 when none). */

@@ -46,14 +46,14 @@ try {
     $names = UserRepository::names($con, $mentee_id);
     $who   = $names ? trim($names['firstname'] . ' ' . $names['lastname']) : 'A mentee';
     $pct   = $total > 0 ? round($score / $total * 100) : 0;
-    $tries = AssessmentRepository::countSubmittedBy($con, $assessment_id, $mentee_id);
+    // No attempt number to mention any more: a mentee answers a paper once,
+    // so there is never a second submission to tell the mentor apart.
     NotificationService::send(
         $con,
         (int)$attempt['mentor_id'],
         'assessment_submitted',
         'Assessment submitted',
-        $who . ' scored ' . $pct . '% on "' . $attempt['title'] . '"'
-            . ($tries > 1 ? ' (' . AssessmentService::attemptLabel($tries) . ').' : '.'),
+        $who . ' scored ' . $pct . '% on "' . $attempt['title'] . '".',
         url('assessment-results') . '?id=' . $assessment_id
     );
 } catch (Throwable $e) {

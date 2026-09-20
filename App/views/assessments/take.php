@@ -13,10 +13,9 @@ if (empty($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'mentee') {
 
 $mentee_id     = (int)$_SESSION['user_id'];
 $assessment_id = is_scalar($_GET['id'] ?? null) ? (int)$_GET['id'] : 0;
-// ?attempt= opens one of this mentee's earlier attempts; ?again=1 starts a
-// fresh one, which is how an assessment gets used a second time.
+// ?attempt= opens one of this mentee's attempts to read back. There is no
+// "start another": one mentee gets one attempt at a paper.
 $view_attempt  = is_scalar($_GET['attempt'] ?? null) ? (int)$_GET['attempt'] : 0;
-$start_again   = (is_scalar($_GET['again'] ?? null) ? (string)$_GET['again'] : '') === '1';
 
 $leave = function (string $message) {
     pc_flash('error', $message);
@@ -54,15 +53,9 @@ if (empty($questions)) {
 $total_points = array_sum(array_column($questions, 'points'));
 
 if (!$attempt) {
-    // Resume whatever is open. Otherwise the latest attempt is shown as a
-    // review, and a new one starts only when the mentee asks for it.
-    $attempt = AssessmentService::currentAttempt($con, $assessment_id, $mentee_id, false);
-    if (!$attempt) {
-        $latest = AssessmentRepository::latestAttempt($con, $assessment_id, $mentee_id);
-        $attempt = ($latest && !$start_again)
-            ? $latest
-            : AssessmentService::currentAttempt($con, $assessment_id, $mentee_id, true);
-    }
+    // Resume what is open, show what was submitted, or start the one attempt
+    // this mentee gets. currentAttempt() will not create a second.
+    $attempt = AssessmentService::currentAttempt($con, $assessment_id, $mentee_id);
     if (!$attempt) {
         $leave('That assessment could not be started. Please try again.');
     }
@@ -524,10 +517,12 @@ $active_page = 'assessments';
                                     <br><?= htmlspecialchars(AssessmentService::attemptLabel($attempt_no)) ?> of <?= count($history) ?>
                                 <?php endif; ?>
                             </div>
-                            <?php if ($assessment['status'] === 'published'): ?>
-                                <a class="btn btn-primary" style="width:100%;justify-content:center;margin-top:14px;"
-                                   href="<?= htmlspecialchars(url('assessment-take')) ?>?id=<?= (int)$assessment_id ?>&amp;again=1">Take again</a>
-                            <?php endif; ?>
+                            <!-- No "Take again": one attempt each. Saying so
+                                 beats leaving the space blank and letting the
+                                 mentee wonder whether they missed a button. -->
+                            <div class="ac-side-row" style="margin-top:12px;font-size:12.5px;color:var(--gray-400);text-align:center;">
+                                This assessment is answered once, so this is your final result.
+                            </div>
                         </div>
 
                         <?php if (count($history) > 1): ?>
