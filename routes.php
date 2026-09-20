@@ -107,6 +107,14 @@ return [
     'forgot-password'         => 'App/views/auth/forgot_password.php',
     'reset-password'          => 'App/views/auth/reset_password.php',
 
+    // Email confirmation — the first of the two gates between registering and
+    // a dashboard (an admin approving the identity documents is the second).
+    // 'verify-email' is the link target and takes no session, so the link
+    // works from whichever browser the mail was opened in.
+    'verify-email'            => 'App/views/auth/verify_email.php',
+    'email-pending'           => 'App/views/auth/email_pending.php',
+    'resend-verification'     => 'App/views/auth/resend_verification.php',
+
     // Leaderboard — top mentors, ranked from real session/feedback data
     'leaderboard'             => 'App/views/leaderboard/index.php',
 

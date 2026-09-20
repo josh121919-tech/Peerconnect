@@ -44,11 +44,30 @@ if (!defined('PC_LOGIN_DUMMY_HASH')) {
     define('PC_LOGIN_DUMMY_HASH', '$2y$10$33tyLMF9N4RKQe695YaOKOwcr4QIDFaGDjhVBd5PCi2yTw9r6RonG');
 }
 
-// Already signed in? Nothing to do here.
+// Already signed in? Nothing to do here — but where they go next is read from
+// the account, not from the session.
+//
+// This used to switch on $_SESSION['role'] alone and send anyone holding a
+// session to a dashboard. Signup created a session of its own, so registering
+// and then coming back to this page walked into the application without ever
+// entering a password: the reported bug. The state now comes from the
+// database every time, and pc_verification_gate() enforces the same answer on
+// every other page.
 if (!empty($_SESSION['user_id']) && !empty($_SESSION['role'])) {
-    $r = $_SESSION['role'];
-    header("Location: " . url($r === 'admin' ? 'admin-dashboard' : ($r === 'mentor' ? 'mentor-dashboard' : 'mentee-dashboard')));
-    exit;
+    $current = UserRepository::signInState($con, (int)$_SESSION['user_id']);
+    if ($current) {
+        header("Location: " . SignInService::destination(
+            (string)$current['role'],
+            $current['status'],
+            $current['verified'],
+            $con,
+            $current['email_verified_at'] ?? null
+        ));
+        exit;
+    }
+    // The account went away while the session lived on. Drop the session and
+    // let the form render rather than redirecting into nothing.
+    $_SESSION = [];
 }
 
 // A valid "Remember me" cookie signs the visitor straight back in — but only
@@ -68,7 +87,13 @@ $wants_form    = isset($_GET['switch']);
 if (!$is_login_post && !$wants_form && ($remembered = RememberService::attempt($con))) {
     $row = UserRepository::signInState($con, (int)$remembered);
     if ($row) {
-        header("Location: " . SignInService::destination((string)$row['role'], $row['status'], $row['verified']));
+        header("Location: " . SignInService::destination(
+            (string)$row['role'],
+            $row['status'],
+            $row['verified'],
+            $con,
+            $row['email_verified_at'] ?? null
+        ));
         exit;
     }
 }
@@ -123,6 +148,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
                 $role        = $account['role'] ?? null;
                 $user_status = $account['status'] ?? null;
                 $verified    = $account['verified'] ?? null;
+                $confirmed   = $account['email_verified_at'] ?? null;
 
                 // An account made with Google has no password, and cannot
                 // sign in with one until its owner sets one.
@@ -192,7 +218,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
                     }
 
                     logMe($email, date('Y-m-d H:i:s'), "user login");
-                    header("Location: " . SignInService::destination((string)$role, $user_status, $verified));
+                    header("Location: " . SignInService::destination(
+                        (string)$role,
+                        $user_status,
+                        $verified,
+                        $con,
+                        $confirmed
+                    ));
                     exit;
                 } else {
                     // One message whether the address is unknown or the password

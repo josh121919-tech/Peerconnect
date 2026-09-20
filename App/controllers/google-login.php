@@ -184,9 +184,25 @@ if ($account !== null) {
     $_SESSION['email'] = $email;
     $_SESSION['token'] = bin2hex(random_bytes(32));
 
+    // Google has just proved the owner can read this address (an unverified
+    // one was turned away above), so an account that signed up with a password
+    // and never opened its confirmation letter is confirmed by this sign-in.
+    // Asking them to go and find that letter now would prove nothing further.
+    if (EmailVerificationRepository::migrated($con) && empty($account['email_verified_at'])) {
+        EmailVerificationRepository::markConfirmed($con, $user_id);
+        EmailVerificationRepository::retireOutstanding($con, $user_id);
+        $account['email_verified_at'] = date('Y-m-d H:i:s');
+    }
+
     logMe($email, date('Y-m-d H:i:s'), "user login via google");
 
-    header("Location: " . SignInService::destination($existingRole, $account['status'], $account['verified']));
+    header("Location: " . SignInService::destination(
+        $existingRole,
+        $account['status'],
+        $account['verified'],
+        $con,
+        $account['email_verified_at'] ?? null
+    ));
     exit;
 }
 
@@ -221,6 +237,10 @@ if ($lastname === '') {
 // change. The owner can add a real one through Forgot password.
 try {
     $user_id = UserRepository::createMember($con, $firstname, $middlename, $lastname, $role, $email);
+    // Google only hands over addresses it has verified, and one it has not was
+    // turned away further up — so this address is already proved. A password
+    // signup has to confirm by letter; this one has nothing left to confirm.
+    EmailVerificationRepository::markConfirmedAtSignup($con, $user_id);
 } catch (Throwable $e) {
     redirect_with_error('Google sign-up failed. Please try again.', 'signup');
 }

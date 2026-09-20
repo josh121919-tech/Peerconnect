@@ -112,6 +112,23 @@ if ($status === 'pending'): ?>
             </div>
 
             <p class="text-xs text-gray-400" id="status-note">This page checks your status every 20 seconds</p>
+
+            <!--
+              A way off this screen — see the matching note on the mentee copy.
+              It signs out on the way, because while the session is live the
+              verification gate sends this account straight back here from the
+              login page, so a plain link to /login would bounce.
+            -->
+            <a href="<?= htmlspecialchars(url('logout') . '?to=login') ?>"
+               class="mt-6 inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200
+                      bg-white px-4 py-2.5 text-sm font-semibold text-gray-500 no-underline transition
+                      hover:border-gray-400 hover:text-gray-900 hover:shadow-sm">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 17.5 19.5 13 15 8.5M19 13H9" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5H6.5A1.5 1.5 0 0 0 5 6v14a1.5 1.5 0 0 0 1.5 1.5H12" />
+                </svg>
+                Back to log in
+            </a>
         </div>
         <script>
             let polling = null;

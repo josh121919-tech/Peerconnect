@@ -239,6 +239,38 @@ if ($status === 'pending'): ?>
                 animation: blink 1.4s ease-in-out infinite;
             }
 
+            /* The way off this screen. Quiet on purpose: the page is about
+               waiting, and leaving is the secondary thing to do here. */
+            .pending-exit {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                margin: 22px auto 0;
+                padding: 11px 18px;
+                width: fit-content;
+                font-size: 13.5px;
+                font-weight: 600;
+                color: var(--gray-500, #6b7280);
+                text-decoration: none;
+                background: #fff;
+                border: 1px solid var(--gray-200, #e5e7eb);
+                border-radius: 10px;
+                transition: color .15s, border-color .15s, box-shadow .15s;
+            }
+
+            .pending-exit:hover,
+            .pending-exit:focus-visible {
+                color: var(--ink, #111827);
+                border-color: var(--gray-400, #9ca3af);
+                box-shadow: 0 2px 10px rgba(17, 24, 39, .07);
+            }
+
+            .pending-exit svg {
+                width: 16px;
+                height: 16px;
+            }
+
             @keyframes blink {
 
                 0%,
@@ -304,6 +336,24 @@ if ($status === 'pending'): ?>
                 <div class="pulse-dot"></div>
                 <span id="status-note">Checking status every 15 seconds</span>
             </div>
+
+            <!--
+              A way off this screen. Waiting for an admin can take a day, and
+              until now the only exits were the browser's Back button and
+              closing the tab.
+
+              It signs out on the way, which is what makes it work: while the
+              session is live, pc_verification_gate() sends this account
+              straight back here from the login page, so a plain link to
+              /login would bounce and look broken.
+            -->
+            <a class="pending-exit" href="<?= htmlspecialchars(url('logout') . '?to=login') ?>">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 17.5 19.5 13 15 8.5M19 13H9" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5H6.5A1.5 1.5 0 0 0 5 6v14a1.5 1.5 0 0 0 1.5 1.5H12" />
+                </svg>
+                Back to log in
+            </a>
 
         </div>
         <script>
@@ -766,6 +816,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
                 transform: rotate(360deg);
             }
         }
+
+        /* The way off this form. The waiting screen further up defines the
+           same rule in its own <style>; the two screens are separate
+           documents and neither one's CSS reaches the other. */
+        .pending-exit {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 18px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--gray-400);
+            text-decoration: none;
+            background: #fff;
+            border: 1px solid var(--gray-200, #e5e7eb);
+            border-radius: 10px;
+            transition: color .15s, border-color .15s, box-shadow .15s;
+        }
+
+        .pending-exit:hover,
+        .pending-exit:focus-visible {
+            color: var(--navy);
+            border-color: var(--gray-300);
+            box-shadow: 0 2px 10px rgba(17, 24, 39, .07);
+        }
+
+        .pending-exit svg {
+            width: 15px;
+            height: 15px;
+        }
     </style>
 </head>
 
@@ -957,6 +1037,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
 
             </div>
         </form>
+
+        <!-- Same exit as the waiting screen. This form had no links on it at
+             all, so anyone not ready to upload their documents today had
+             nothing to click but the browser's Back button. -->
+        <p style="text-align:center; margin-top:22px;">
+            <a class="pending-exit" href="<?= htmlspecialchars(url('logout') . '?to=login') ?>">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 17.5 19.5 13 15 8.5M19 13H9" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5H6.5A1.5 1.5 0 0 0 5 6v14a1.5 1.5 0 0 0 1.5 1.5H12" />
+                </svg>
+                Back to log in
+            </a>
+        </p>
 
         <p style="text-align:center; font-size:11.5px; color:var(--gray-300); margin-top:20px;">
             NEUST · PeerConnect · <?= date('Y') ?>

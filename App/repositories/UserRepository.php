@@ -183,6 +183,21 @@ class UserRepository extends Repository
     }
 
     /**
+     * Forgets that this account's address was ever confirmed.
+     *
+     * Called when the owner changes it: the new address is unproved, whatever
+     * the old one was. Harmless before email_verification.sql has been run,
+     * because the guard that reads the column stands aside then anyway.
+     */
+    public static function clearEmailConfirmation(mysqli $con, int $userId): void
+    {
+        if (!EmailVerificationRepository::migrated($con)) {
+            return;
+        }
+        self::execute($con, "UPDATE users SET email_verified_at = NULL WHERE user_id = ?", 'i', [$userId]);
+    }
+
+    /**
      * An account its owner deleted: signed out for good the way a block does
      * it, with no email address and no name left on it. The row stays, because
      * other people's sessions and reviews refer to it; it reads as "Deleted User".
@@ -223,10 +238,23 @@ class UserRepository extends Repository
     /** How long a first, middle or last name may be: the columns hold 50 characters. */
     public const NAME_MAX = 50;
 
-    /** The account using $email, as 'user_id', 'role', 'status' and 'verified', or null. */
+    /**
+     * The account using $email, as 'user_id', 'role', 'status', 'verified' and
+     * 'email_verified_at', or null. See signInState() for why the last column
+     * is selected the way it is.
+     */
     public static function signInByEmail(mysqli $con, string $email): ?array
     {
-        return self::typedRow($con, "SELECT user_id, role, status, verified FROM users WHERE email = ? LIMIT 1", 's', [$email]);
+        $confirmed = EmailVerificationRepository::migrated($con)
+            ? 'email_verified_at'
+            : 'NULL AS email_verified_at';
+
+        return self::typedRow(
+            $con,
+            "SELECT user_id, role, status, verified, $confirmed FROM users WHERE email = ? LIMIT 1",
+            's',
+            [$email]
+        );
     }
 
     /**
@@ -270,10 +298,28 @@ class UserRepository extends Repository
         return self::execute($con, "UPDATE users SET status = ? WHERE user_id = ? AND status = ?", 'sis', [$to, $userId, $from]);
     }
 
-    /** 'role', 'status' and 'verified': what decides where a signed-in account is sent. */
+    /**
+     * 'role', 'status', 'verified' and 'email_verified_at': what decides where
+     * a signed-in account is sent, and what pc_enforce_account_status() reads
+     * on every authenticated request.
+     *
+     * The last column only exists once email_verification.sql has been run, so
+     * it is selected as a literal NULL until then — one query either way, and
+     * nothing higher up has to know which install it is talking to. The column
+     * name is chosen here, never taken from a caller.
+     */
     public static function signInState(mysqli $con, int $userId): ?array
     {
-        return self::typedRow($con, "SELECT role, status, verified FROM users WHERE user_id = ? LIMIT 1", 'i', [$userId]);
+        $confirmed = EmailVerificationRepository::migrated($con)
+            ? 'email_verified_at'
+            : 'NULL AS email_verified_at';
+
+        return self::typedRow(
+            $con,
+            "SELECT role, status, verified, $confirmed FROM users WHERE user_id = ? LIMIT 1",
+            'i',
+            [$userId]
+        );
     }
 
     /** Whether another account (not $exceptUserId) already uses $email. */

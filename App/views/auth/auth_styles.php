@@ -526,6 +526,21 @@
         box-sizing: border-box;
     }
 
+    /* A second action under the main one, on screens that offer two — "send
+       the link again" beneath "I have confirmed it". Same shape, quieter, so
+       the primary choice stays the obvious one. */
+    .auth-submit-ghost {
+        color: var(--mint-deep);
+        background: transparent;
+        border: 1.5px solid var(--gray-300);
+    }
+
+    .auth-submit-ghost:hover {
+        color: #fff;
+        background: var(--mint-deep);
+        border-color: var(--mint-deep);
+    }
+
     /* The round mark above "Check your email". */
     .auth-icon-badge {
         display: grid;

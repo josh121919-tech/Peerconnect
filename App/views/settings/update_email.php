@@ -80,7 +80,29 @@ try {
 }
 
 $_SESSION['email'] = $new_email;
+
+$message = 'Email updated.';
 if ($old_email !== '' && strcasecmp($old_email, $new_email) !== 0) {
     logMe($new_email, date('Y-m-d H:i:s'), 'email changed from ' . $old_email);
+
+    /*
+     * A new address is an unproved address. Clearing the stamp re-arms the
+     * confirmation stage, which also makes Settings the way out of a typo:
+     * somebody who registered as "jhon@" instead of "john@" can sign in,
+     * correct it here and get a fresh letter, rather than being stuck behind
+     * a link that will never arrive.
+     */
+    if (EmailVerificationRepository::migrated($con)) {
+        UserRepository::clearEmailConfirmation($con, $user_id);
+        $sent = EmailVerificationService::send($con, $user_id);
+        if ($sent['sent']) {
+            $message = 'Email updated. We have sent a confirmation link to ' . $new_email . '.';
+        } elseif ($sent['throttled']) {
+            $message = 'Email updated, but too many confirmation links have been requested just now.'
+                . ' Wait a few minutes and use Resend.';
+        } elseif (!$sent['skipped']) {
+            $message = 'Email updated, but the confirmation link could not be sent. Please use Resend.';
+        }
+    }
 }
-echo json_encode(['success' => true, 'message' => 'Email updated.', 'email' => $new_email]);
+echo json_encode(['success' => true, 'message' => $message, 'email' => $new_email]);

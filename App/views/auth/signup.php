@@ -20,10 +20,22 @@ if (isset($_SESSION['signup_error'])) {
     unset($_SESSION['signup_error']);
 }
 
-// Already signed in? Nothing to create.
+// Already signed in? Nothing to create — and where they belong is read from
+// the account rather than assumed from the session, which used to send a
+// half-registered visitor to a dashboard they had not earned.
 if (!empty($_SESSION['user_id']) && !empty($_SESSION['role'])) {
-    header("Location: " . url($_SESSION['role'] === 'mentor' ? 'mentor-dashboard' : 'mentee-dashboard'));
-    exit;
+    $current = UserRepository::signInState($con, (int)$_SESSION['user_id']);
+    if ($current) {
+        header("Location: " . SignInService::destination(
+            (string)$current['role'],
+            $current['status'],
+            $current['verified'],
+            $con,
+            $current['email_verified_at'] ?? null
+        ));
+        exit;
+    }
+    $_SESSION = [];
 }
 
 // The form collects the three name parts separately, exactly as the users
@@ -114,17 +126,43 @@ if (!$registration_open && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST
 
                     $con->commit();
 
-                    // Sign them straight in and send them to step 3, the way
-                    // Google sign-up already does. The old handler left people
-                    // on the form with "you can now log in", which meant typing
-                    // the password they had just chosen all over again.
-                    session_regenerate_id(true);
-                    $_SESSION['user_id'] = $new_user_id;
-                    $_SESSION['role']    = $role;
-                    $_SESSION['email']   = $email;
+                    /*
+                     * Registering does NOT sign anybody in.
+                     *
+                     * This used to mint a session here and send the new
+                     * account to the identity form, to save it retyping the
+                     * password it had just chosen. The saving was real; the
+                     * cost was that creating an account created credentials.
+                     * Coming back to /login afterwards found a live session
+                     * and walked into the application, no password asked.
+                     *
+                     * So: no session, and the address is confirmed before the
+                     * account can do anything. Signing in is one extra step
+                     * and it is the step that proves who is signing in.
+                     */
+                    $mail = EmailVerificationService::send($con, $new_user_id);
 
                     logMe($email, date('Y-m-d H:i:s'), "user signup");
-                    header("Location: " . url($role === 'mentor' ? 'mentor-verification' : 'mentee-verification'));
+
+                    if ($mail['sent']) {
+                        $_SESSION['login_notice'] = 'Your account has been registered. '
+                            . 'We have sent a confirmation link to ' . $email
+                            . ' — open it, then sign in. An administrator reviews your '
+                            . 'verification before you get full access.';
+                    } elseif ($mail['skipped']) {
+                        // Outbound mail is off on this install, so there is no
+                        // address check to pass. Admin approval still stands.
+                        $_SESSION['login_notice'] = 'Your account has been registered successfully. '
+                            . 'Please sign in, then submit your verification for an administrator to review.';
+                    } else {
+                        // The account exists; only the letter failed. Say so,
+                        // because "check your email" would be a lie, and point
+                        // at the resend they can reach after signing in.
+                        $_SESSION['login_notice'] = 'Your account has been registered, but the confirmation '
+                            . 'email could not be sent just now. Sign in and use "Resend" to try again.';
+                    }
+
+                    header("Location: " . url('login'));
                     exit;
                 } catch (Throwable $e) {
                     $con->rollback();

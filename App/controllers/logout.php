@@ -26,6 +26,22 @@ LoginTokenService::revoke(
 // page left them with no obvious way back in.
 $was_admin = ($_SESSION['role'] ?? '') === 'admin';
 
+/*
+ * ?to= lets a page choose where signing out lands, for the screens where the
+ * landing page is the wrong answer — the "waiting for verification" screen
+ * sends people to the login form, because that is what they came to find.
+ *
+ * Only these names are honoured, and each is turned into a URL by url() here.
+ * Taking a path or a URL from the query string instead would make this an
+ * open redirect: a link to our own logout that quietly lands on somebody
+ * else's site, wearing our domain.
+ */
+$allowed_to = ['login', 'welcomepage', 'admin-login'];
+$to         = is_string($_GET['to'] ?? null) ? $_GET['to'] : '';
+$after      = in_array($to, $allowed_to, true)
+    ? $to
+    : ($was_admin ? 'admin-login' : 'welcomepage');
+
 // Log the logout event before destroying session
 if (isset($_SESSION['email'])) {
     logMe($_SESSION['email'], date('Y-m-d H:i:s'), $was_admin ? 'admin logout' : 'user logout');
@@ -50,5 +66,5 @@ session_destroy();
 session_start();
 session_regenerate_id(true);
 
-header("Location: " . ($was_admin ? url('admin-login') : url('welcomepage')));
+header("Location: " . url($after));
 exit;

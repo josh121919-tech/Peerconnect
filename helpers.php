@@ -370,6 +370,14 @@ if (!function_exists('pc_enforce_account_status')) {
         // A missing row means the account was deleted while signed in.
         $blocked = $row === null || $status === 'blocked';
         if (!$blocked) {
+            // Still signed in and not blocked — so the remaining question is
+            // how far through registration this account actually is.
+            pc_verification_gate(
+                $con,
+                (string) ($row['role'] ?? ''),
+                $row['verified'] ?? null,
+                $row['email_verified_at'] ?? null
+            );
             return;
         }
 
@@ -381,6 +389,133 @@ if (!function_exists('pc_enforce_account_status')) {
         session_destroy();
 
         header('Location: ' . url('login') . '?blocked=1');
+        exit;
+    }
+}
+
+if (!function_exists('pc_gate_open_routes')) {
+    /**
+     * The routes a member may reach before they have finished registering.
+     *
+     * Everything not named here is closed to an account that still owes us a
+     * confirmed address or an admin's approval — deny by default, so a page
+     * added later is protected by existing rather than by being remembered.
+     *
+     * @return array{email:string[], approval:string[]}
+     *   email    reachable while the address is unconfirmed
+     *   approval additionally reachable once it is confirmed, while an admin
+     *            has yet to approve the identity documents
+     */
+    function pc_gate_open_routes(): array
+    {
+        // Signed-out pages and the confirmation flow itself. The gate's own
+        // redirect targets have to be in here or the redirect loops.
+        $email = [
+            '', 'welcomepage', 'login', 'signup', 'logout',
+            'forgot-password', 'reset-password', 'google-login', 'session-check',
+            'verify-email', 'email-pending', 'resend-verification',
+            'admin-login', 'admin-signup', 'pwa-manifest',
+            // The address may simply have a typo in it, and Settings is the
+            // only place to correct one. Changing it re-arms the stage rather
+            // than satisfying it — see settings/update_email.php.
+            'settings', 'mentee-settings', 'mentor-settings',
+            'account-update-email', 'account-update-password', 'account-delete',
+        ];
+
+        // The identity form, what it posts to, and the poller the pending
+        // screen uses to notice an admin's decision.
+        $approval = [
+            'mentee-verification', 'mentor-verification', 'verification-file',
+            'mentee-check-status', 'mentor-check-status',
+            // Deliberately NOT 'onboarding': the questionnaire comes after
+            // approval, not before it. Once users.verified is 1 this gate
+            // returns early and onboarding is reachable like any other page.
+            'notifications-count', 'notifications-get',
+            'notifications-read', 'notifications-read-all',
+            'account-update-notif-pref', 'account-update-privacy', 'account-export-data',
+        ];
+
+        return ['email' => $email, 'approval' => $approval];
+    }
+}
+
+if (!function_exists('pc_verification_gate')) {
+    /**
+     * Keeps a half-registered account out of the application.
+     *
+     * Registration here has two gates, and passing one says nothing about the
+     * other:
+     *
+     *   1. the owner proves they can read the address they signed up with
+     *      (users.email_verified_at — see EmailVerificationService);
+     *   2. an admin approves the student ID and credential they uploaded
+     *      (users.verified — see admin/action_verify.php).
+     *
+     * Only an account through both belongs on a dashboard. This runs from
+     * pc_enforce_account_status(), which every authenticated request reaches
+     * through App/config/db.php, so it holds for a typed URL, a refresh, a new
+     * tab, the Back button and a remembered cookie alike — not just for the
+     * redirect the login form happens to choose. That is the whole point: the
+     * old code decided where to *send* people and then let them go anywhere.
+     *
+     * Admins are exempt. They are created by invitation through
+     * admin/signup.php, already active and verified, and have no identity form
+     * to submit.
+     */
+    function pc_verification_gate(mysqli $con, string $role, $verified, $confirmedAt): void
+    {
+        if ($role === 'admin') {
+            return;
+        }
+
+        $emailPending = EmailVerificationService::pendingFor($con, $role, $confirmedAt);
+        $needsAdmin   = in_array($role, ['mentee', 'mentor'], true) && empty($verified);
+
+        if (!$emailPending && !$needsAdmin) {
+            return;   // through both gates; nothing to do on any page
+        }
+
+        // Undefined means this file was reached without going through the
+        // router. Treat it as an unknown route and close it: a page that
+        // cannot name itself cannot be on the allow-list.
+        $route = defined('PC_ROUTE') ? PC_ROUTE : null;
+        $open  = pc_gate_open_routes();
+
+        $allowed = $emailPending
+            ? $open['email']
+            : array_merge($open['email'], $open['approval']);
+
+        if ($route !== null && in_array($route, $allowed, true)) {
+            return;
+        }
+
+        $target = $emailPending
+            ? url('email-pending')
+            : url($role === 'mentor' ? 'mentor-verification' : 'mentee-verification');
+
+        // An endpoint that asked for JSON gets JSON. Sending it a redirect
+        // hands the caller a page of HTML where it expected an object, which
+        // surfaces as an unexplained parse error in the console instead of a
+        // message anyone can act on.
+        $wantsJson = stripos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') !== false
+            || strcasecmp($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '', 'XMLHttpRequest') === 0
+            || stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
+
+        if ($wantsJson) {
+            http_response_code(403);
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success'  => false,
+                'error'    => $emailPending
+                    ? 'Please confirm your email address to finish setting up your account.'
+                    : 'Your account is waiting for an administrator to approve it.',
+                'gated'    => true,
+                'redirect' => $target,
+            ]);
+            exit;
+        }
+
+        header('Location: ' . $target);
         exit;
     }
 }
