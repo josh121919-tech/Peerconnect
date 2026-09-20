@@ -145,6 +145,41 @@ class AssessmentRepository extends Repository
         ", 'i', [$mentorId]);
     }
 
+    /**
+     * The mentor's recent sessions, newest first, each with who was in it.
+     *
+     * A session is a slot: one mentor, one subject, one exact date and time.
+     * That is how the rest of the app groups them (see
+     * SessionRepository::openReservationsInSlot) — several rows sharing a slot
+     * are one group session, a single row is a one-to-one. Both are returned,
+     * and `mentees` says which it was.
+     *
+     * This is what the "everyone from that session" filter is built on: a
+     * mentor setting work after a session thinks of it as "the people who were
+     * there", not as a list of names to tick one by one.
+     */
+    public static function recentSessionsForMentor(mysqli $con, int $mentorId, int $limit = 10): array
+    {
+        $rows = self::typedRows($con, "
+            SELECT sr.subject, sr.session_date, sr.status,
+                   COUNT(*)                                   AS mentees,
+                   GROUP_CONCAT(sr.mentee_id ORDER BY sr.mentee_id)            AS mentee_ids,
+                   GROUP_CONCAT(CONCAT(u.firstname, ' ', u.lastname)
+                                ORDER BY u.firstname SEPARATOR ', ')           AS who
+            FROM session_requests sr
+            JOIN users u ON u.user_id = sr.mentee_id
+            WHERE sr.mentor_id = ? AND sr.status IN ('approved', 'completed')
+            GROUP BY sr.subject, sr.session_date, sr.status
+            ORDER BY sr.session_date DESC
+            LIMIT ?
+        ", 'ii', [$mentorId, $limit]);
+
+        foreach ($rows as &$r) {
+            $r['mentee_ids'] = array_map('intval', explode(',', (string)$r['mentee_ids']));
+        }
+        return $rows;
+    }
+
     /** The mentee ids this assessment was set for. Empty means all of them. */
     public static function audienceFor(mysqli $con, int $assessmentId): array
     {

@@ -54,6 +54,20 @@ $audience_enabled = AssessmentRepository::audienceEnabled($con);
 $mentee_choices   = $audience_enabled ? AssessmentRepository::candidateMentees($con, $mentor_id) : [];
 $audience_ids     = $assessment_id ? AssessmentRepository::audienceFor($con, $assessment_id) : [];
 
+/*
+ * Recent sessions, for "everyone who was in that one".
+ *
+ * A mentor setting work straight after a session thinks of the class as
+ * "the people who were there", not as names to tick one at a time — so the
+ * list is offered as a filter rather than leaving Select all as the only
+ * shortcut.
+ */
+$recent_sessions = $audience_enabled ? AssessmentRepository::recentSessionsForMentor($con, $mentor_id) : [];
+
+// How many mentees the list shows before it has to be asked for more. The
+// rest stay in the form, just hidden — see the note on the markup below.
+$audience_visible = 10;
+
 // Topics come from the same academic taxonomy the rest of the app uses.
 $topics = array_map(fn($c) => str_replace(' Club', '', $c), PC_CLUBS);
 
@@ -461,6 +475,18 @@ $active_page = 'assessments';
             color: var(--gray-400);
         }
 
+        /* Rows past the tenth. Hidden, never omitted — they are still in the
+           form, so a mentee who is ticked but off screen still posts. */
+        .ac-aud-extra {
+            display: none;
+        }
+
+        /* While a search is running the limit would hide matches, so it is
+           lifted and the search's own display rule decides what shows. */
+        .ac-audience.ac-searching .ac-aud-extra {
+            display: grid;
+        }
+
         .ac-side-row:last-child {
             border-bottom: none;
         }
@@ -687,19 +713,55 @@ $active_page = 'assessments';
                                         </div>
 
                                         <?php if ($mentee_choices): ?>
+                                            <?php if ($recent_sessions): ?>
+                                                <!-- Pick everyone who was in one session. A group slot ticks
+                                                     several people at once; a one-to-one ticks the one. -->
+                                                <select class="ac-select" id="acSessionPick" onchange="pickFromSession(this)"
+                                                        style="font-size:12.5px;margin-bottom:8px;">
+                                                    <option value="">Choose from a recent session…</option>
+                                                    <?php foreach ($recent_sessions as $s):
+                                                        $n    = (int)$s['mentees'];
+                                                        $kind = $n > 1 ? 'Group' : '1-on-1';
+                                                        $when = date('M j, Y', strtotime($s['session_date']));
+                                                        $who  = $n > 1 ? $n . ' mentees' : $s['who'];
+                                                    ?>
+                                                        <option value="<?= htmlspecialchars(json_encode($s['mentee_ids'])) ?>"
+                                                                title="<?= htmlspecialchars($s['who']) ?>">
+                                                            <?= htmlspecialchars("$kind · {$s['subject']} · $when — $who") ?>
+                                                        </option>
+                                                    <?php endforeach; ?>
+                                                </select>
+                                            <?php endif; ?>
+
+                                            <?php if (count($mentee_choices) > $audience_visible): ?>
+                                                <input class="ac-input" type="search" id="acAudSearch" oninput="filterMentees()"
+                                                       placeholder="Search your mentees by name"
+                                                       style="font-size:12.5px;margin-bottom:8px;">
+                                            <?php endif; ?>
+
+                                            <!--
+                                              Every mentee is in the form, even the ones not on screen: a
+                                              checkbox that is not rendered cannot be posted, and somebody
+                                              beyond the first ten would silently become unpickable. Rows
+                                              past the limit are hidden, not omitted — and a hidden row
+                                              that is ticked is always shown, so an existing audience is
+                                              never invisible.
+                                            -->
                                             <div class="ac-audience" id="acAudience">
-                                                <?php foreach ($mentee_choices as $m):
+                                                <?php foreach ($mentee_choices as $i => $m):
                                                     $mid  = (int)$m['user_id'];
                                                     $name = trim($m['firstname'] . ' ' . $m['lastname']);
                                                     $when = !empty($m['last_session'])
                                                         ? 'Last session ' . date('M j, Y', strtotime($m['last_session']))
                                                         : 'No session on record';
                                                     $done = (int)($m['sessions_done'] ?? 0);
+                                                    $on   = in_array($mid, $audience_ids, true);
+                                                    $over = $i >= $audience_visible && !$on;
                                                 ?>
-                                                    <label class="ac-aud-row">
+                                                    <label class="ac-aud-row<?= $over ? ' ac-aud-extra' : '' ?>"
+                                                           data-name="<?= htmlspecialchars(mb_strtolower($name)) ?>">
                                                         <input type="checkbox" name="mentees[]" value="<?= $mid ?>"
-                                                               onchange="updateAudience()"
-                                                               <?= in_array($mid, $audience_ids, true) ? 'checked' : '' ?>>
+                                                               onchange="updateAudience()" <?= $on ? 'checked' : '' ?>>
                                                         <span class="ac-aud-name"><?= htmlspecialchars($name) ?></span>
                                                         <span class="ac-aud-when">
                                                             <?= htmlspecialchars($when) ?><?= $done > 0 ? ' · ' . $done . ' completed' : '' ?>
@@ -707,11 +769,18 @@ $active_page = 'assessments';
                                                     </label>
                                                 <?php endforeach; ?>
                                             </div>
-                                            <div style="display:flex;gap:8px;margin-top:8px;">
+
+                                            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
                                                 <button type="button" class="btn btn-ghost" style="font-size:12.5px;padding:6px 12px;"
                                                         onclick="setAllMentees(true)">Select all</button>
                                                 <button type="button" class="btn btn-ghost" style="font-size:12.5px;padding:6px 12px;"
                                                         onclick="setAllMentees(false)">Clear</button>
+                                                <?php if (count($mentee_choices) > $audience_visible): ?>
+                                                    <button type="button" class="btn btn-ghost" style="font-size:12.5px;padding:6px 12px;"
+                                                            id="acAudMore" onclick="showAllMentees()">
+                                                        Show all <?= count($mentee_choices) ?>
+                                                    </button>
+                                                <?php endif; ?>
                                             </div>
                                         <?php endif; ?>
                                     </div>
@@ -1115,6 +1184,14 @@ $active_page = 'assessments';
             const label = document.getElementById('setAudience');
             if (!label) return;
             const boxes = document.querySelectorAll('#acAudience input[name="mentees[]"]');
+
+            // A ticked mentee must never be off screen. This is the backstop
+            // for the one route that gets there: search past the tenth row,
+            // tick somebody, clear the search.
+            boxes.forEach(b => {
+                if (b.checked) b.closest('.ac-aud-row').classList.remove('ac-aud-extra');
+            });
+
             if (!boxes.length) {
                 label.textContent = 'Your mentees';
                 return;
@@ -1129,7 +1206,52 @@ $active_page = 'assessments';
 
         function setAllMentees(on) {
             document.querySelectorAll('#acAudience input[name="mentees[]"]').forEach(b => { b.checked = on; });
+            // Ticking someone who is not on screen would be invisible, so
+            // reveal everything the moment a hidden row could have changed.
+            if (on) showAllMentees();
             updateAudience();
+        }
+
+        /** Drops the ten-row limit; the rows were always in the form. */
+        function showAllMentees() {
+            document.querySelectorAll('#acAudience .ac-aud-extra').forEach(r => r.classList.remove('ac-aud-extra'));
+            const more = document.getElementById('acAudMore');
+            if (more) more.style.display = 'none';
+        }
+
+        /**
+         * Everyone who was in one session.
+         *
+         * Replaces the selection rather than adding to it: "this paper is for
+         * Tuesday's group" is the thought, and a filter that quietly kept the
+         * previous ticks would send it to people who were not there.
+         */
+        function pickFromSession(select) {
+            if (!select.value) return;
+            let ids = [];
+            try { ids = JSON.parse(select.value) || []; } catch (e) { return; }
+            const wanted = new Set(ids.map(Number));
+            document.querySelectorAll('#acAudience input[name="mentees[]"]').forEach(b => {
+                b.checked = wanted.has(Number(b.value));
+                if (b.checked) b.closest('.ac-aud-row').classList.remove('ac-aud-extra');
+            });
+            select.selectedIndex = 0;   // it is an action, not a stored setting
+            updateAudience();
+        }
+
+        /** Narrows the visible rows by name; searching looks past the limit. */
+        function filterMentees() {
+            const box = document.getElementById('acAudSearch');
+            const term = (box ? box.value : '').trim().toLowerCase();
+            const more = document.getElementById('acAudMore');
+
+            document.querySelectorAll('#acAudience .ac-aud-row').forEach(row => {
+                row.style.display = (!term || row.dataset.name.includes(term)) ? '' : 'none';
+            });
+            // While searching, the ten-row limit would hide matches; lift it
+            // for the duration and put it back when the box is emptied.
+            document.getElementById('acAudience').classList.toggle('ac-searching', term !== '');
+            if (more) more.style.display = term ? 'none' : '';
         }
 
         updateAudience();
