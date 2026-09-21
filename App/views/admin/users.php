@@ -655,17 +655,31 @@ include 'layout.php';
         flex-wrap: wrap;
     }
 
+    /* An application leads with the applicant's photo at a size a face is
+       actually recognisable in — the admin is deciding whether this person
+       is who the ID card says, so 46px of avatar was too little to go on. */
+    .um-av-lg {
+        flex: 0 0 64px;
+        width: 64px;
+        height: 64px;
+        border-radius: 14px;
+        font-size: 19px;
+    }
+
     .um-vgrid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-        gap: 12px 18px;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 16px 22px;
         margin: 14px 0;
-        padding: 13px 0;
+        padding: 15px 0;
         border-top: 1px solid var(--gray-100);
         border-bottom: 1px solid var(--gray-100);
     }
 
     .um-vk {
+        display: flex;
+        align-items: center;
+        gap: 6px;
         font-size: 11px;
         text-transform: uppercase;
         letter-spacing: .06em;
@@ -673,11 +687,40 @@ include 'layout.php';
         font-weight: 600;
     }
 
+    .um-vk svg {
+        width: 14px;
+        height: 14px;
+        flex: none;
+        color: var(--mint);
+    }
+
     .um-vv {
         font-size: 13.5px;
         color: var(--gray-800);
-        margin-top: 2px;
+        margin-top: 4px;
+        line-height: 1.45;
         word-break: break-word;
+    }
+
+    /* Approve and Reject belong side by side. Approve is its own form, so
+       without this they stack as two block elements down the card. */
+    .um-vact {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+    }
+
+    .um-vact .um-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+    }
+
+    .um-vact .um-btn svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
     }
 
     /* Document tiles, the full-size viewer and the shared buttons live in
@@ -974,9 +1017,9 @@ include 'layout.php';
             </div>
             <?php else: foreach ($verif as $v):
                 $nm = trim($v['firstname'] . ' ' . $v['lastname']); ?>
-                <div class="um-vcard">
+                <div class="um-vcard" style="max-width:450px;">
                     <div class="um-vhead">
-                        <span class="um-av">
+                        <span class="um-av um-av-lg">
                             <?php if (!empty($v['profile_image'])): ?><img src="<?= htmlspecialchars($v['profile_image']) ?>" alt="">
                                 <?php else: ?><?= htmlspecialchars(strtoupper(substr($v['firstname'], 0, 1) . substr($v['lastname'], 0, 1))) ?><?php endif; ?>
                         </span>
@@ -997,18 +1040,32 @@ include 'layout.php';
                     </div>
 
                     <div class="um-vgrid">
-                        <?php foreach (
-                            [
-                                'Student ID' => $v['student_id'],
-                                'Course' => $v['course'],
-                                'Year level' => $v['year_level'],
-                                'Club' => $v['club'],
-                                'Expertise'  => $v['expertise'],
-                            ] as $k => $val
-                        ): ?>
+                        <?php
+                        /*
+                         * Label, value, icon. The icon gives each fact a shape
+                         * an admin can find again without reading the label,
+                         * which is what makes a card of five fields scannable.
+                         * Markup is written here, never from the database, so
+                         * it is echoed raw; the value is still escaped.
+                         *
+                         * Only what the applicant filled in is shown, and only
+                         * from what they actually submitted — Expertise is a
+                         * mentor's field and is simply absent for a mentee.
+                         */
+                        $um_vfields = [
+                            ['Student ID', $v['student_id'], '<rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="9" cy="10.5" r="2"/><path stroke-linecap="round" d="M5.9 16.3c.6-1.3 1.8-2 3.1-2s2.5.7 3.1 2M15 9.5h3.5M15 13h3.5"/>'],
+                            ['Course', $v['course'], '<path stroke-linecap="round" stroke-linejoin="round" d="m12 4 9 4-9 4-9-4 9-4Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M6.2 9.6V15c0 1.4 2.6 2.5 5.8 2.5s5.8-1.1 5.8-2.5V9.6"/>'],
+                            ['Year level', $v['year_level'], '<rect x="3.5" y="5" width="17" height="15" rx="2.5"/><path stroke-linecap="round" d="M8 3v4M16 3v4M3.5 10h17"/>'],
+                            ['Club', $v['club'], '<circle cx="9.2" cy="9" r="3"/><path stroke-linecap="round" d="M3.8 18.8c.6-2.7 2.7-4.2 5.4-4.2s4.8 1.5 5.4 4.2M16 6.3a3 3 0 0 1 0 5.4M17.4 14.8c1.6.6 2.6 1.9 3 4"/>'],
+                            ['Expertise', $v['expertise'], '<path stroke-linecap="round" stroke-linejoin="round" d="m12 3.9 2.3 4.6 5.1.8-3.7 3.6.9 5.1-4.6-2.4-4.6 2.4.9-5.1-3.7-3.6 5.1-.8L12 3.9Z"/>'],
+                        ];
+                        foreach ($um_vfields as [$k, $val, $icon]): ?>
                             <?php if (trim((string)$val) !== ''): ?>
                                 <div>
-                                    <div class="um-vk"><?= $k ?></div>
+                                    <div class="um-vk">
+                                        <svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24"><?= $icon ?></svg>
+                                        <?= $k ?>
+                                    </div>
                                     <div class="um-vv"><?= htmlspecialchars($val) ?></div>
                                 </div>
                             <?php endif; ?>
@@ -1016,22 +1073,46 @@ include 'layout.php';
                     </div>
 
                     <?php if (!empty($v['id_image']) || !empty($v['credential_image'])): ?>
-                        <div class="um-vdocs">
+                        <div class="um-vdocs" style="justify-content: center;">
                             <?php foreach (['id_image' => 'School ID', 'credential_image' => 'Credential'] as $col => $lbl): ?>
                                 <?php um_doc_tile($v[$col] ?? '', $lbl, $v['full_name'] ?: $nm); ?>
                             <?php endforeach; ?>
                         </div>
                     <?php endif; ?>
 
-                    <div class="um-vact">
-                        <form method="post" action="<?= url('admin-action-verify') ?>">
+                    <div class="um-vact" style="justify-content: center;">
+                        <?php
+                        /*
+                         * Approving used to happen on the first click, with
+                         * nothing between the mouse and a verified account.
+                         * Rejecting already asked (it needs a reason), so the
+                         * safer of the two was the one that asked. Both do now.
+                         */ ?>
+                        <form method="post" action="<?= url('admin-action-verify') ?>"
+                            data-pc-confirm="<?= htmlspecialchars(
+                                                    'Approve ' . ($v['full_name'] ?: $nm) . "'s application?\n"
+                                                    . 'They are marked verified and told they can sign in. '
+                                                    . 'This does not lift a block or restriction on the account.',
+                                                    ENT_QUOTES
+                                                ) ?>"
+                            data-pc-tone="success" data-pc-ok="Approve">
                             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
                             <input type="hidden" name="verification_id" value="<?= (int)$v['verification_id'] ?>">
                             <input type="hidden" name="action" value="approve">
-                            <button type="submit" class="um-btn um-ok">Approve</button>
+                            <button type="submit" class="um-btn um-ok">
+                                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                    <circle cx="12" cy="12" r="9" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m8.4 12.2 2.4 2.4 4.8-4.8" />
+                                </svg>Approve
+                            </button>
                         </form>
                         <button type="button" class="um-btn um-no"
-                            onclick="umReject(<?= (int)$v['verification_id'] ?>, <?= htmlspecialchars(json_encode($v['full_name'] ?: $nm), ENT_QUOTES) ?>)">Reject</button>
+                            onclick="umReject(<?= (int)$v['verification_id'] ?>, <?= htmlspecialchars(json_encode($v['full_name'] ?: $nm), ENT_QUOTES) ?>)">
+                            <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                                <circle cx="12" cy="12" r="9" />
+                                <path stroke-linecap="round" d="m9.2 9.2 5.6 5.6M14.8 9.2l-5.6 5.6" />
+                            </svg>Reject
+                        </button>
                     </div>
                 </div>
         <?php endforeach;

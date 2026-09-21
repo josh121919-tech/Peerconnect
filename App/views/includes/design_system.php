@@ -149,6 +149,8 @@ if (isset($con) && $con instanceof mysqli) {
 ?>
 
 <?php include __DIR__ . '/toasts.php'; ?>
+<?php // ...and the dialog that asks before something irreversible happens.
+include __DIR__ . '/dialog.php'; ?>
 
 <script>
     (function() {

@@ -552,7 +552,9 @@ if (empty($current_page)) {
 
         <?php // The same toasts the member pages use, so an admin action
         //     confirms itself exactly the way a mentee's does.
-        include __DIR__ . '/../includes/toasts.php'; ?>
+        include __DIR__ . '/../includes/toasts.php';
+        // ...and the same confirmation dialog, in place of the browser's box.
+        include __DIR__ . '/../includes/dialog.php'; ?>
 
         <!-- PAGE CONTENT -->
         <main class="flex-1 overflow-y-auto p-6">

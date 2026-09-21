@@ -226,7 +226,10 @@ require_once __DIR__ . '/includes/sessions_ui.php';
                             </td>
                             <td>
                                 <form method="post" action="<?= url('admin-award-badge') ?>" style="margin:0;display:inline;"
-                                      onsubmit="return confirm('Take the <?= htmlspecialchars(addslashes($r['badge_name'])) ?> badge back from <?= htmlspecialchars(addslashes($r['person'])) ?>?\n\nIt disappears from their profile. If the badge is automatic, the next award check will give it back when they still qualify.');">
+                                      <?php // No addslashes: the text is an attribute now, not a JS string
+                                      //      literal, so a name like O'Brien must not gain a backslash. ?>
+                                      data-pc-tone="danger" data-pc-ok="Take back"
+                                      data-pc-confirm="Take the <?= htmlspecialchars($r['badge_name'], ENT_QUOTES) ?> badge back from <?= htmlspecialchars($r['person'], ENT_QUOTES) ?>?&#10;It disappears from their profile. If the badge is automatic, the next award check will give it back when they still qualify.">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
                                     <input type="hidden" name="do" value="revoke">
                                     <input type="hidden" name="user_badge_id" value="<?= (int)$r['user_badge_id'] ?>">

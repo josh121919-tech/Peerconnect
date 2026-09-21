@@ -657,7 +657,7 @@ function pc_filesize(int $bytes): string
                                         </span>
                                         <div style="display:flex;gap:6px;">
                                             <?php if ($is_mine): ?>
-                                                <form method="POST" action="<?= htmlspecialchars(url('resource-delete')) ?>" onsubmit="return confirm('Remove this resource for everyone?');" style="display:inline;">
+                                                <form method="POST" action="<?= htmlspecialchars(url('resource-delete')) ?>" data-pc-confirm="Remove this resource for everyone?" data-pc-tone="danger" data-pc-ok="Remove" style="display:inline;">
                                                     <?= csrf_field() ?>
                                                     <input type="hidden" name="resource_id" value="<?= (int)$r['resource_id'] ?>">
                                                     <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);">Remove</button>

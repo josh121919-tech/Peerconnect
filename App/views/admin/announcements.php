@@ -443,7 +443,9 @@ include __DIR__ . '/includes/sessions_ui.php';
                             <span class="ss-pill" style="color:<?= $sfg ?>;background:<?= $sbg ?>;"><?= $sl ?></span>
                             <a class="an-btn" href="<?= an_url(['edit' => $id]) ?>#compose">Edit</a>
                             <form method="post" action="<?= url('admin-action-announcement') ?>"
-                                  onsubmit="return confirm('<?= $a['status'] === 'archived' ? 'Restore this announcement as a draft?' : 'Archive this announcement? It stops being visible to members.' ?>');">
+                                  data-pc-tone="<?= $a['status'] === 'archived' ? 'primary' : 'danger' ?>"
+                                  data-pc-ok="<?= $a['status'] === 'archived' ? 'Restore' : 'Archive' ?>"
+                                  data-pc-confirm="<?= $a['status'] === 'archived' ? 'Restore this announcement as a draft?' : 'Archive this announcement?&#10;It stops being visible to members.' ?>">
                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
                                 <input type="hidden" name="announcement_id" value="<?= $id ?>">
                                 <input type="hidden" name="back" value="<?= htmlspecialchars($backHere) ?>">

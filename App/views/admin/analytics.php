@@ -302,7 +302,8 @@ require_once __DIR__ . '/includes/report_data.php';
     </div>
     <div class="ss-hd-actions">
         <form method="post" action="<?= url('cron-missed-sessions') ?>" style="margin:0;"
-              onsubmit="return confirm('Close every approved session that ended more than <?= (int)PC_MISSED_GRACE_HOURS ?> hour<?= PC_MISSED_GRACE_HOURS === 1 ? '' : 's' ?> ago?\n\nIf both people joined the call it is marked completed. Otherwise it is recorded as missed by whoever did not join, and both people are told. Requests the mentor never answered are removed once their time has passed. This also runs every 30 minutes on its own.');">
+              data-pc-tone="warning" data-pc-ok="Run the check"
+              data-pc-confirm="Close every approved session that ended more than <?= (int)PC_MISSED_GRACE_HOURS ?> hour<?= PC_MISSED_GRACE_HOURS === 1 ? '' : 's' ?> ago?&#10;If both people joined the call it is marked completed. Otherwise it is recorded as missed by whoever did not join, and both people are told. Requests the mentor never answered are removed once their time has passed. This also runs every 30 minutes on its own.">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
             <button type="submit" class="an-run">
                 <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path stroke-linecap="round" d="m16.5 16.5 4 4" /></svg>
@@ -310,7 +311,8 @@ require_once __DIR__ . '/includes/report_data.php';
             </button>
         </form>
         <form method="post" action="<?= url('admin-check-badges') ?>" style="margin:0;"
-              onsubmit="return confirm('Recalculate every mentor score and award any badge that has been earned?\n\nMentors who earn one are notified by email.');">
+              data-pc-tone="primary" data-pc-ok="Recalculate"
+              data-pc-confirm="Recalculate every mentor score and award any badge that has been earned?&#10;Mentors who earn one are notified by email.">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
             <button type="submit" class="an-run primary">
                 <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="12" cy="9" r="5.5" /><path stroke-linecap="round" stroke-linejoin="round" d="m8.5 13.5-1 7 4.5-2.4 4.5 2.4-1-7" /></svg>

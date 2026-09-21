@@ -235,7 +235,9 @@ require_once __DIR__ . '/includes/sessions_ui.php';
                             <td style="white-space:nowrap;">
                                 <a class="ci-open" href="<?= url('certificate-view') ?>?id=<?= (int)$r['cert_id'] ?>" target="_blank" rel="noopener">Open</a>
                                 <form method="post" action="<?= url('admin-action-certificate') ?>" style="margin:0;display:inline;"
-                                      onsubmit="return confirm('Take this certificate back from <?= htmlspecialchars(addslashes($r['person'])) ?>?\n\nIt stops opening for them. They are not notified.');">
+                                      <?php // No addslashes — see badge_holders.php: an attribute, not JS. ?>
+                                      data-pc-tone="danger" data-pc-ok="Revoke"
+                                      data-pc-confirm="Take this certificate back from <?= htmlspecialchars($r['person'], ENT_QUOTES) ?>?&#10;It stops opening for them. They are not notified.">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
                                     <input type="hidden" name="do" value="revoke">
                                     <input type="hidden" name="cert_id" value="<?= (int)$r['cert_id'] ?>">

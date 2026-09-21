@@ -77,6 +77,16 @@ $um_ui_done = true;
     .um-overlay { display: none; position: fixed; inset: 0; z-index: 900; background: rgba(2,5,71,.42); align-items: center; justify-content: center; padding: 20px; }
     .um-overlay.open { display: flex; }
     .um-modal { width: min(460px, 100%); background: #fff; border-radius: 16px; padding: 22px 24px; box-shadow: 0 24px 60px -20px rgba(16,24,40,.4); }
+    /* The same icon badge the shared confirmation dialog uses
+       (includes/dialog.php), so approving and rejecting an application look
+       like two halves of one decision rather than two different screens. */
+    .um-modal-ico {
+        width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+        margin-bottom: 14px; background: var(--um-ico-soft); color: var(--um-ico);
+    }
+    .um-modal-ico svg { width: 22px; height: 22px; }
+    .um-ico-danger  { --um-ico: #A6301F; --um-ico-soft: #FBE5E1; }
+    .um-ico-warning { --um-ico: #9A7100; --um-ico-soft: #FBF0D4; }
     .um-modal h3 { margin: 0 0 6px; font-size: 18px; font-weight: 700; color: var(--forest); }
     .um-modal p { margin: 0 0 16px; font-size: 13.5px; color: var(--gray-500); }
     .um-modal label { display: block; font-size: 12.5px; font-weight: 600; color: var(--gray-700); margin-bottom: 5px; }
@@ -95,6 +105,11 @@ $um_ui_done = true;
         <input type="hidden" name="user_id" id="umBlockUser" value="0">
         <input type="hidden" name="report_id" id="umBlockReport" value="0">
         <?php if (!empty($um_return)): ?><input type="hidden" name="return_to" value="<?= htmlspecialchars($um_return) ?>"><?php endif; ?>
+        <div class="um-modal-ico um-ico-danger" aria-hidden="true">
+            <svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M5.6 5.6l12.8 12.8M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+        </div>
         <h3>Block <span id="umBlockName">this account</span>?</h3>
         <p>They will be signed out on their next request and cannot sign in again until unblocked.</p>
         <label for="umBlockReason">Reason (kept on the account record)</label>
@@ -112,6 +127,11 @@ $um_ui_done = true;
         <input type="hidden" name="user_id" id="umRestrictUser" value="0">
         <input type="hidden" name="report_id" id="umRestrictReport" value="0">
         <?php if (!empty($um_return)): ?><input type="hidden" name="return_to" value="<?= htmlspecialchars($um_return) ?>"><?php endif; ?>
+        <div class="um-modal-ico um-ico-warning" aria-hidden="true">
+            <svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 9.5v3.4m0 3h.01M10.3 4.2 2.9 17a2 2 0 0 0 1.7 3h14.8a2 2 0 0 0 1.7-3L13.7 4.2a2 2 0 0 0-3.4 0Z" />
+            </svg>
+        </div>
         <h3>Restrict <span id="umRestrictName">this account</span></h3>
         <p>They can still sign in and read, but cannot book, message or publish until the restriction expires. It lifts itself once the chosen number of days has passed. If they are already restricted, this replaces the current restriction.</p>
         <label for="umDays">Length</label>
@@ -136,6 +156,12 @@ $um_ui_done = true;
         <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
         <input type="hidden" name="verification_id" id="umRejectId" value="0">
         <input type="hidden" name="action" value="reject">
+        <div class="um-modal-ico um-ico-danger" aria-hidden="true">
+            <svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="9" />
+                <path stroke-linecap="round" d="m9.2 9.2 5.6 5.6M14.8 9.2l-5.6 5.6" />
+            </svg>
+        </div>
         <h3>Reject <span id="umRejectName">this application</span>?</h3>
         <p>They are told the application was not approved, along with your note.</p>
         <label for="umRejectNotes">Reason</label>

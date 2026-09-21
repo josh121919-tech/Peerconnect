@@ -320,7 +320,8 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     </div>
     <div class="ss-hd-actions">
         <form method="post" action="<?= url('admin-check-badges') ?>" style="margin:0;"
-              onsubmit="return confirm('Recalculate every mentor score and award any badge that has been earned?\n\nMentors who earn one are notified by email.');">
+              data-pc-tone="primary" data-pc-ok="Recalculate"
+              data-pc-confirm="Recalculate every mentor score and award any badge that has been earned?&#10;Mentors who earn one are notified by email.">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
             <button type="submit" class="aw-btn">Run award check</button>
         </form>

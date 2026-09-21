@@ -701,7 +701,8 @@ $active_page     = 'calendar';
                                     </button>
                                 </form>
                                 <form method="POST" action="<?= htmlspecialchars(url('gcal-action')) ?>" style="display:inline;"
-                                    onsubmit="return confirm('Disconnect Google Calendar? Sessions already added stay in your calendar, but new ones will stop syncing.');">
+                                    data-pc-confirm="Disconnect Google Calendar?&#10;Sessions already added stay in your calendar, but new ones will stop syncing."
+                                    data-pc-tone="danger" data-pc-ok="Disconnect">
                                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
                                     <input type="hidden" name="action" value="disconnect">
                                     <button type="submit" class="btn btn-ghost btn-sm" style="color:var(--danger);">Disconnect</button>

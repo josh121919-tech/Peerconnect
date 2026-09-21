@@ -176,7 +176,8 @@ include __DIR__ . '/includes/sessions_ui.php';
                     </span>
                 </div>
                 <form method="post" action="<?= url('cron-missed-sessions') ?>"
-                      onsubmit="return confirm('Close every approved session that ended more than <?= (int)PC_MISSED_GRACE_HOURS ?> hour<?= PC_MISSED_GRACE_HOURS === 1 ? '' : 's' ?> ago?\n\nIf both people joined the call it is marked completed. Otherwise it is recorded as missed by whoever did not join, and both people are told. Requests the mentor never answered are removed once their time has passed. This is the same check the task runs.');">
+                      data-pc-tone="warning" data-pc-ok="Run the check"
+                      data-pc-confirm="Close every approved session that ended more than <?= (int)PC_MISSED_GRACE_HOURS ?> hour<?= PC_MISSED_GRACE_HOURS === 1 ? '' : 's' ?> ago?&#10;If both people joined the call it is marked completed. Otherwise it is recorded as missed by whoever did not join, and both people are told. Requests the mentor never answered are removed once their time has passed. This is the same check the task runs.">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
                     <input type="hidden" name="back" value="<?= htmlspecialchars($backHere) ?>">
                     <button type="submit" class="ss-act warn"><?= ss_icon('clock') ?>Run the check now</button>

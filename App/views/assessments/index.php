@@ -277,12 +277,15 @@ $active_page = 'assessments';
                                     <?php endif; ?>
                                     <a href="<?= htmlspecialchars(url('assessment-create')) ?>?id=<?= (int)$a['assessment_id'] ?>" class="btn btn-ghost">Edit</a>
                                     <form method="POST" action="<?= htmlspecialchars(url('assessment-delete')) ?>" style="flex:1;display:flex;"
-                                        onsubmit="return confirm(<?= htmlspecialchars(json_encode(
-                                            (int)$a['submissions'] > 0
-                                                ? 'Delete this assessment, its questions and ' . (int)$a['submissions'] . ' submitted result'
-                                                    . ((int)$a['submissions'] === 1 ? '' : 's') . '? The mentees who took it will no longer see their score.'
-                                                : 'Delete this assessment and all its questions?'
-                                        ), ENT_QUOTES) ?>);">
+                                        data-pc-tone="danger" data-pc-ok="Delete"
+                                        data-pc-confirm="<?= htmlspecialchars(
+                                                                (int)$a['submissions'] > 0
+                                                                    ? 'Delete this assessment, its questions and ' . (int)$a['submissions'] . ' submitted result'
+                                                                        . ((int)$a['submissions'] === 1 ? '' : 's') . "?\n"
+                                                                        . 'The mentees who took it will no longer see their score.'
+                                                                    : 'Delete this assessment and all its questions?',
+                                                                ENT_QUOTES
+                                                            ) ?>">
                                         <?= csrf_field() ?>
                                         <input type="hidden" name="assessment_id" value="<?= (int)$a['assessment_id'] ?>">
                                         <button type="submit" class="btn btn-ghost" style="flex:1;justify-content:center;font-size:12.5px;color:var(--danger);">Delete</button>
