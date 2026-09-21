@@ -467,14 +467,45 @@ $back_url     = pc_back_url();
             window.location.href = '<?= url('google-login') ?>?mode=login';
         }
 
-        // Keeps the browser's own "please fill this in" bubbles, which the
-        // novalidate attribute would otherwise suppress entirely.
+        /*
+         * Say what is missing.
+         *
+         * The form carries novalidate, so the browser's own "please fill this
+         * in" bubble never appears — this used to move the cursor into the
+         * empty box and nothing else, which from the far side of the screen
+         * looks like the button simply not working.
+         */
         document.getElementById('loginForm').addEventListener('submit', function(e) {
             const email = document.getElementById('login-email');
             const pw = document.getElementById('login-password');
-            if (!email.value.trim() || !pw.value) {
+
+            let stop = null, say = '';
+            if (!email.value.trim()) {
+                stop = email;
+                say = 'Enter your email address first.';
+            } else if (!pw.value) {
+                stop = pw;
+                say = 'Enter your password.';
+            }
+
+            /*
+             * The captcha is verified on the server as well, and that check is
+             * the one that matters — this only spares a round trip that would
+             * come back with the form to fill in again.
+             */
+            if (!stop && typeof grecaptcha !== 'undefined' && document.querySelector('.g-recaptcha')) {
+                let answered = '';
+                try { answered = grecaptcha.getResponse(); } catch (err) { answered = ''; }
+                if (answered === '') {
+                    stop = document.querySelector('.g-recaptcha');
+                    say = 'Please complete the “I’m not a robot” check.';
+                }
+            }
+
+            if (stop) {
                 e.preventDefault();
-                (!email.value.trim() ? email : pw).focus();
+                pcToast(say, 'error', 5000);
+                if (typeof stop.focus === 'function') stop.focus();
             }
         });
     </script>

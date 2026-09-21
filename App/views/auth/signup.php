@@ -621,21 +621,48 @@ $sell_icons = [
             terms.addEventListener('change', repaint);
             repaint();
 
-            // Stop the obvious mistakes here; the server checks all of it again.
+            /*
+             * Stop the obvious mistakes here; the server checks all of it again.
+             *
+             * Each stop carries the sentence that explains it. The ticks and
+             * the strength meter repaint too, but a tick going grey is easy to
+             * miss halfway up a long form — and the terms checkbox and the
+             * captcha sit below the button on a short screen, so somebody can
+             * press Create Account without ever having seen what is stopping
+             * them.
+             */
             document.getElementById('signupForm').addEventListener('submit', function(e) {
-                let stop = null;
-                if (first.value.trim() === '') stop = first;
-                else if (last.value.trim() === '') stop = last;
-                else if (!emailOk()) stop = email;
-                else if (!passwordOk(pw.value)) stop = pw;
-                else if (confirm.value !== pw.value) stop = confirm;
-                else if (!roles.some(r => r.checked)) stop = roles[0];
-                else if (!terms.checked) stop = terms;
+                let stop = null, say = '';
+                const flag = (el, msg) => { stop = el; say = msg; };
+
+                if (first.value.trim() === '') flag(first, 'Enter your first name.');
+                else if (last.value.trim() === '') flag(last, 'Enter your last name.');
+                else if (!emailOk()) flag(email, 'Enter a valid email address first.');
+                else if (!passwordOk(pw.value)) flag(pw, 'Your password does not meet all the requirements yet — the checklist under the box shows which are still missing.');
+                else if (confirm.value !== pw.value) flag(confirm, 'The two passwords do not match.');
+                else if (!roles.some(r => r.checked)) flag(roles[0], 'Choose whether you are joining as a mentee or a mentor.');
+                else if (!terms.checked) flag(terms, 'Please read and accept the Terms of Service before creating your account.');
+
+                /*
+                 * The captcha is checked on the server too and that check is
+                 * what actually protects signup — this only saves a round trip
+                 * and a refilled form. Skipped entirely when no site key is
+                 * configured, because then there is no widget to complete.
+                 */
+                if (!stop && typeof grecaptcha !== 'undefined' && document.querySelector('.g-recaptcha')) {
+                    let answered = '';
+                    try { answered = grecaptcha.getResponse(); } catch (err) { answered = ''; }
+                    if (answered === '') {
+                        stop = document.querySelector('.g-recaptcha');
+                        say = 'Please complete the “I’m not a robot” check.';
+                    }
+                }
 
                 if (stop) {
                     e.preventDefault();
                     repaint();
-                    stop.focus();
+                    pcToast(say, 'error', 5000);
+                    if (typeof stop.focus === 'function') stop.focus();
                     stop.scrollIntoView({ block: 'center', behavior: 'smooth' });
                 }
             });
