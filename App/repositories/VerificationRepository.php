@@ -55,9 +55,37 @@ class VerificationRepository extends Repository
      * $details holds 'full_name', 'student_id', 'course', 'year_level',
      * 'club', 'id_image', 'credential_image', and 'expertise' for a mentor.
      */
+    /**
+     * Whether verification_name_parts.sql has been run.
+     *
+     * Checked once per request and remembered: submit() asks on every save,
+     * and information_schema is not free.
+     */
+    public static function hasNameParts(mysqli $con): bool
+    {
+        static $has = null;
+        if ($has !== null) {
+            return $has;
+        }
+        $has = (int) self::value($con, "
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME   = 'user_verifications'
+              AND COLUMN_NAME IN ('firstname', 'middlename', 'lastname')
+        ") === 3;
+        return $has;
+    }
+
     public static function submit(mysqli $con, int $userId, array $details, bool $replacing): void
     {
-        $columns = ['full_name', 'student_id', 'course', 'year_level', 'club'];
+        $columns = ['full_name'];
+        // The parts are written only once verification_name_parts.sql has been
+        // run. Until then the form still works and full_name still carries the
+        // whole name, so the site is never broken between deploy and migrate.
+        if (self::hasNameParts($con)) {
+            array_push($columns, 'firstname', 'middlename', 'lastname');
+        }
+        array_push($columns, 'student_id', 'course', 'year_level', 'club');
         if (array_key_exists('expertise', $details)) $columns[] = 'expertise';
         $columns[] = 'id_image';
         $columns[] = 'credential_image';

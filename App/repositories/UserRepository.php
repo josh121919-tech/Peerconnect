@@ -67,6 +67,21 @@ class UserRepository extends Repository
         return self::row($con, "SELECT firstname, lastname FROM users WHERE user_id = ?", 'i', [$userId]);
     }
 
+    /**
+     * The account's name in the three parts sign-up collected, for prefilling
+     * a form that asks for them again. Always three keys, always strings, so a
+     * caller can drop them straight into value="" without checking.
+     */
+    public static function nameParts(mysqli $con, int $userId): array
+    {
+        $row = self::row($con, "SELECT firstname, middlename, lastname FROM users WHERE user_id = ?", 'i', [$userId]);
+        return [
+            'firstname'  => trim((string) ($row['firstname']  ?? '')),
+            'middlename' => trim((string) ($row['middlename'] ?? '')),
+            'lastname'   => trim((string) ($row['lastname']   ?? '')),
+        ];
+    }
+
     /** The account's names, email and profile photo, or null when there is no such account. */
     public static function namesAndPhoto(mysqli $con, int $userId): ?array
     {

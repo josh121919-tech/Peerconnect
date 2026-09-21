@@ -412,14 +412,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
     // A field sent as a list counts as missing.
     $field = fn(string $name): string => is_string($_POST[$name] ?? null) ? trim($_POST[$name]) : '';
 
-    $full_name  = $field('full_name');
+    $firstname  = $field('firstname');
+    $middlename = $field('middlename');
+    $lastname   = $field('lastname');
     $student_id = $field('student_id');
     $course     = $field('course');
     $year_level = $field('year_level');
     $club       = $field('club');
 
-    if (!$full_name)                                      $errors[] = "Full name is required.";
-    elseif (!preg_match('/^[A-Za-z ,.\'-]{2,100}$/', $full_name)) $errors[] = "Full name: letters only, 2–100 characters.";
+    /*
+     * Asked for in three parts now, and stored that way — full_name is still
+     * written, because the admin queue and the notification text read it.
+     *
+     * A middle name is optional: it is optional at sign-up, and plenty of
+     * people do not have one. Requiring it here would have made the form
+     * unfillable for them.
+     */
+    $name_rule = '/^[A-Za-z ,.\'-]{2,50}$/';
+    if (!$firstname)                                      $errors[] = "First name is required.";
+    elseif (!preg_match($name_rule, $firstname))          $errors[] = "First name: letters only, 2–50 characters.";
+
+    if ($middlename !== '' && !preg_match('/^[A-Za-z ,.\'-]{1,100}$/', $middlename)) {
+        $errors[] = "Middle name: letters only, up to 100 characters.";
+    }
+
+    if (!$lastname)                                       $errors[] = "Surname is required.";
+    elseif (!preg_match($name_rule, $lastname))           $errors[] = "Surname: letters only, 2–50 characters.";
+
+    // Collapses the gap a missing middle name leaves behind.
+    $full_name = trim(preg_replace('/\s+/', ' ', $firstname . ' ' . $middlename . ' ' . $lastname));
 
     if (!$student_id)                                     $errors[] = "Student ID is required.";
     elseif (!preg_match('/^[A-Z0-9\-]{3,20}$/i', $student_id)) $errors[] = "Student ID: letters, numbers and hyphens only, 3–20 characters.";
@@ -473,6 +494,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
         try {
             VerificationRepository::submit($con, $user_id, [
                 'full_name'        => $full_name,
+                'firstname'        => $firstname,
+                'middlename'       => $middlename !== '' ? $middlename : null,
+                'lastname'         => $lastname,
                 'student_id'       => $student_id,
                 'course'           => $course,
                 'year_level'       => $year_level,
@@ -498,6 +522,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
 
     $existing = VerificationRepository::forUser($con, $user_id);
 }
+
+/*
+ * What goes in the three name boxes, most specific first:
+ *
+ *   1. whatever was just typed, so a validation error does not wipe the form
+ *   2. the application already on file, if it was submitted after the parts
+ *      existed as columns
+ *   3. the account itself — the names given at sign-up
+ *
+ * Prefilled but editable on purpose: the name on a student ID is not always
+ * the name somebody signed up with.
+ */
+$account_name = UserRepository::nameParts($con, $user_id);
+$name_value = function (string $part) use ($existing, $account_name): string {
+    if (isset($_POST[$part]) && is_string($_POST[$part])) return trim($_POST[$part]);
+    if (!empty($existing[$part]))                         return (string) $existing[$part];
+    return $account_name[$part] ?? '';
+};
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -629,6 +671,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
 
         .col-2 {
             grid-column: 1/-1;
+        }
+
+        /* The three name boxes share one full-width row. They collapse to one
+           per line well before the rest of the form does — "Middle Name" in a
+           third of a phone screen is a label with no room for a name. */
+        .name-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 14px;
+        }
+
+        @media (max-width: 720px) {
+            .name-row {
+                grid-template-columns: 1fr;
+            }
         }
 
         .field-group {
@@ -896,11 +953,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
                     <div class="ver-section-title"><span>Personal Information</span></div>
                     <div class="field-grid">
 
-                        <div class="field-group col-2">
-                            <label class="field-label">Full Name <sup>*</sup></label>
-                            <input type="text" name="full_name" class="field-input"
-                                value="<?= htmlspecialchars($existing['full_name'] ?? '') ?>"
-                                placeholder="e.g. Juan dela Cruz">
+                        <?php // Three parts rather than one box, and each starts
+                        //     with what the account already knows. ?>
+                        <div class="field-group col-2 name-row">
+                            <div class="field-group">
+                                <label class="field-label" for="ver-first">First Name <sup>*</sup></label>
+                                <input type="text" id="ver-first" name="firstname" class="field-input"
+                                    value="<?= htmlspecialchars($name_value('firstname')) ?>"
+                                    maxlength="50" autocomplete="given-name" placeholder="e.g. Juan">
+                            </div>
+                            <div class="field-group">
+                                <label class="field-label" for="ver-middle">Middle Name</label>
+                                <input type="text" id="ver-middle" name="middlename" class="field-input"
+                                    value="<?= htmlspecialchars($name_value('middlename')) ?>"
+                                    maxlength="100" autocomplete="additional-name" placeholder="optional">
+                            </div>
+                            <div class="field-group">
+                                <label class="field-label" for="ver-last">Surname <sup>*</sup></label>
+                                <input type="text" id="ver-last" name="lastname" class="field-input"
+                                    value="<?= htmlspecialchars($name_value('lastname')) ?>"
+                                    maxlength="50" autocomplete="family-name" placeholder="e.g. dela Cruz">
+                            </div>
                         </div>
 
                         <div class="field-group">
