@@ -321,8 +321,15 @@ $groups_gs = AvailabilityRepository::groupSlotsForMentor($con, $mentor_id_gs);
 <?php endif; ?>
 
 <script>
-    function removeGroupStudent(requestId, studentName) {
-        if (!confirm('Remove ' + studentName + ' from this group session?')) return;
+    async function removeGroupStudent(requestId, studentName) {
+        // The name is set with textContent inside the dialog, so it needs no
+        // escaping of its own here.
+        if (!await pcConfirm({
+            title: 'Remove ' + studentName + ' from this group session?',
+            body: 'Their reservation is cancelled and they are told.',
+            tone: 'danger',
+            ok: 'Remove'
+        })) return;
         fetch('<?= url('mentor-groups') ?>', {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

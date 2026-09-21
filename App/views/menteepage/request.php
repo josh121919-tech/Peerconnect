@@ -454,8 +454,8 @@ $active_page = 'request';
 
         const CSRF_TOKEN = "<?= csrf_token() ?>";
 
-        function removeRequest(id) {
-            if (!confirm('Remove this request?')) return;
+        async function removeRequest(id) {
+            if (!await pcConfirm({ title: 'Remove this request?', tone: 'danger', ok: 'Remove' })) return;
             fetch(window.location.pathname, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' },

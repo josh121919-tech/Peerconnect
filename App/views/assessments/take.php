@@ -814,10 +814,19 @@ $active_page = 'assessments';
             }).length;
 
             if (!auto) {
-                const msg = unanswered > 0
-                    ? unanswered + ' required question(s) are still unanswered. Submit anyway?'
-                    : 'Submit your assessment? You can only submit once.';
-                if (!confirm(msg)) return;
+                const asked = unanswered > 0 ? {
+                    title: unanswered + (unanswered === 1 ? ' required question is' : ' required questions are')
+                        + ' still unanswered. Submit anyway?',
+                    body: 'You can only submit once.',
+                    tone: 'warning',
+                    ok: 'Submit anyway'
+                } : {
+                    title: 'Submit your assessment?',
+                    body: 'You can only submit once.',
+                    tone: 'primary',
+                    ok: 'Submit'
+                };
+                if (!await pcConfirm(asked)) return;
             }
 
             try {

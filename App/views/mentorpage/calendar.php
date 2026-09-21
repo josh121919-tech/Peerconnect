@@ -1795,11 +1795,20 @@ $active_page = 'calendar';
             document.getElementById('availForm').scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
 
-        function deleteAvailability(id, booked) {
-            const msg = booked ?
-                'A mentee has already booked this slot. Deleting it will not cancel their session, but you will lose the slot details. Delete anyway?' :
-                'Delete this availability slot?';
-            if (!confirm(msg)) return;
+        // async because pcConfirm returns a promise where confirm() blocked.
+        // Nothing reads the return value — both callers are onclick handlers.
+        async function deleteAvailability(id, booked) {
+            const asked = booked ? {
+                title: 'Delete this slot even though it is booked?',
+                body: 'A mentee has already booked it. Deleting the slot will not cancel their session, but you will lose the slot details.',
+                tone: 'danger',
+                ok: 'Delete anyway'
+            } : {
+                title: 'Delete this availability slot?',
+                tone: 'danger',
+                ok: 'Delete slot'
+            };
+            if (!await pcConfirm(asked)) return;
             document.getElementById('delId').value = id;
             document.getElementById('delForm').submit();
         }
