@@ -1366,12 +1366,13 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
             <nav class="lp-nav-links" id="lpNavLinks" aria-label="Primary">
                 <a class="lp-navlink active" href="#top">Home</a>
                 <a class="lp-navlink" href="#about">About</a>
-                <a class="lp-navlink" href="#features">Features</a>
                 <a class="lp-navlink" href="#how">How It Works</a>
+                <a class="lp-navlink" href="#features">Features</a>
                 <a class="lp-navlink" href="#testimonials">Testimonials</a>
                 <a class="lp-navlink" href="#contact">Contact</a>
                 <?php // Only rendered into the dropdown on narrow screens, where the
-                //     Log In button is dropped from the bar for room. ?>
+                //     Log In button is dropped from the bar for room. 
+                ?>
                 <a class="lp-navlink lp-navlink-auth" href="<?= htmlspecialchars(url('login')) ?>">Log In</a>
             </nav>
 
@@ -1924,7 +1925,17 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
             sweep();
 
             // Underline whichever section is on screen.
-            const navLinks = Array.from(document.querySelectorAll('.lp-navlink'));
+            /*
+             * In-page anchors only.
+             *
+             * The mobile "Log In" link carries .lp-navlink as well, and its
+             * href is a route path — document.querySelector('/case/case/3ce…')
+             * is not a valid selector, so it threw SyntaxError and took the
+             * rest of this block with it, observer included. That is why the
+             * bar went on saying "Home" however far down the page you read:
+             * the highlighting was written, but never reached.
+             */
+            const navLinks = Array.from(document.querySelectorAll('.lp-navlink[href^="#"]'));
             const sections = navLinks
                 .map(a => document.querySelector(a.getAttribute('href')))
                 .filter(Boolean);
