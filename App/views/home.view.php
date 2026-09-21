@@ -59,32 +59,48 @@ if ($faces_q) {
 // qualifies. The bar is a rating of 4+, a comment with something actually in
 // it, and an author who has not switched off "share my activity".
 $testimonials = [];
+
+/*
+ * The twenty most recent qualifying reviews, then ordered best first.
+ *
+ * Two steps, and the order of them matters: taking the latest twenty and THEN
+ * sorting by rating keeps the slider fresh — a new review changes what is on
+ * it — whereas sorting the whole table by rating would freeze the same
+ * handful of five-star quotes at the front for ever.
+ *
+ * Four stars and up. A weaker review still reaches the mentor and the admin
+ * through Feedback and Reports; it is simply not used as advertising.
+ *
+ * Deliberately not restricted to today: no review has been written most days,
+ * and the section would show its empty panel far more often than it showed a
+ * quote.
+ *
+ * No name is selected. The reviewer is identified only by what they were
+ * being mentored in — see the caption in the markup below.
+ */
 $fb_q = $con->query("
-    SELECT f.rating, f.comment, sr.subject,
-           u.firstname, u.lastname, u.role
-    FROM feedback f
-    JOIN users u             ON u.user_id  = f.mentee_id
-    JOIN session_requests sr ON sr.request_id = f.session_id
-    LEFT JOIN privacy_settings ps ON ps.user_id = f.mentee_id
-    LEFT JOIN profile pr          ON pr.user_id = f.mentee_id
-    WHERE f.rating >= 4
-      AND CHAR_LENGTH(TRIM(COALESCE(f.comment,''))) >= 25
-      AND COALESCE(ps.share_activity, 1) = 1
-      AND COALESCE(pr.visibility, 'everyone') <> 'private'
-    ORDER BY f.created_at DESC
-    LIMIT 3
+    SELECT * FROM (
+        SELECT f.rating, f.comment, f.created_at, sr.subject
+        FROM feedback f
+        JOIN users u             ON u.user_id  = f.mentee_id
+        JOIN session_requests sr ON sr.request_id = f.session_id
+        LEFT JOIN privacy_settings ps ON ps.user_id = f.mentee_id
+        LEFT JOIN profile pr          ON pr.user_id = f.mentee_id
+        WHERE f.rating >= 4
+          AND CHAR_LENGTH(TRIM(COALESCE(f.comment,''))) >= 25
+          AND COALESCE(ps.share_activity, 1) = 1
+          AND COALESCE(pr.visibility, 'everyone') <> 'private'
+        ORDER BY f.created_at DESC
+        LIMIT 20
+    ) latest
+    ORDER BY latest.rating DESC, latest.created_at DESC
 ");
 if ($fb_q) {
     while ($row = $fb_q->fetch_assoc()) {
-        $fn = trim((string)$row['firstname']);
-        $ln = trim((string)$row['lastname']);
         $testimonials[] = [
-            'text'     => $row['comment'],
-            // Surname reduced to an initial: this page is public.
-            'name'     => trim($fn . ' ' . ($ln !== '' ? mb_strtoupper(mb_substr($ln, 0, 1)) . '.' : '')),
-            'role'     => $row['subject'] ? ($row['subject'] . ' mentee') : 'Mentee',
-            'initials' => strtoupper(mb_substr($fn ?: 'P', 0, 1) . mb_substr($ln ?: 'C', 0, 1)),
-            'stars'    => max(1, min(5, (int)round((float)$row['rating']))),
+            'text'  => $row['comment'],
+            'role'  => $row['subject'] ? ($row['subject'] . ' mentee') : 'Mentee',
+            'stars' => max(1, min(5, (int)round((float)$row['rating']))),
         ];
     }
 }
@@ -828,10 +844,107 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
         }
 
         /* ── Testimonials ── */
-        .lp-quotes {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+        /* ── Reviews slider ── */
+        .lp-slider {
+            position: relative;
+        }
+
+        .lp-slider-track {
+            display: flex;
             gap: 22px;
+            overflow-x: auto;
+            scroll-snap-type: x mandatory;
+            scroll-behavior: smooth;
+            /* Room for the card's own shadow and focus ring, trimmed back at
+               the edges so the row still lines up with the rest of the page. */
+            padding: 4px 4px 18px;
+            margin: -4px -4px 0;
+            scrollbar-width: none;
+        }
+
+        .lp-slider-track::-webkit-scrollbar {
+            display: none;
+        }
+
+        .lp-slider-track:focus-visible {
+            outline: 2px solid var(--mint-deep);
+            outline-offset: 4px;
+            border-radius: 18px;
+        }
+
+        .lp-slider-track > .lp-quote {
+            flex: 0 0 calc((100% - 44px) / 3);
+            scroll-snap-align: start;
+        }
+
+        .lp-slider-ui {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            margin-top: 6px;
+        }
+
+        .lp-slider-ui[hidden] {
+            display: none;
+        }
+
+        .lp-slider-btn {
+            width: 40px;
+            height: 40px;
+            flex: none;
+            display: grid;
+            place-items: center;
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            background: var(--surface);
+            color: var(--forest);
+            cursor: pointer;
+            transition: border-color .15s, color .15s, opacity .15s;
+        }
+
+        .lp-slider-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .lp-slider-btn:hover:not(:disabled) {
+            border-color: var(--mint-deep);
+            color: var(--mint-deep);
+        }
+
+        .lp-slider-btn:disabled {
+            opacity: .35;
+            cursor: default;
+        }
+
+        .lp-slider-dots {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .lp-slider-dot {
+            width: 8px;
+            height: 8px;
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: var(--gray-300);
+            cursor: pointer;
+            transition: background .15s, width .15s;
+        }
+
+        .lp-slider-dot.is-on {
+            width: 22px;
+            border-radius: 99px;
+            background: var(--mint-deep);
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .lp-slider-track {
+                scroll-behavior: auto;
+            }
         }
 
         .lp-quote {
@@ -865,25 +978,8 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
             gap: 11px;
         }
 
-        .lp-quote-av {
-            width: 38px;
-            height: 38px;
-            border-radius: 50%;
-            display: grid;
-            place-items: center;
-            background: var(--mint-faint);
-            color: var(--mint-deep);
-            font-size: 13px;
-            font-weight: 700;
-            flex-shrink: 0;
-        }
-
-        .lp-quote-n {
-            font-size: 14px;
-            font-weight: 700;
-            color: var(--forest);
-        }
-
+        <?php // .lp-quote-av and .lp-quote-n went with the name and the
+        //     initials avatar; nothing draws them any more. ?>
         .lp-quote-r {
             font-size: 12.5px;
             color: var(--gray-500);
@@ -1095,9 +1191,13 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
             }
 
             .lp-about,
-            .lp-features,
-            .lp-quotes {
+            .lp-features {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            /* Two cards to a view instead of three. */
+            .lp-slider-track > .lp-quote {
+                flex-basis: calc((100% - 22px) / 2);
             }
 
             .lp-footer-grid {
@@ -1171,11 +1271,14 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
                 gap: 12px;
             }
 
-            /* A pull quote needs a reading width; at half a phone screen it
-               would be three words per line. */
-            .lp-quotes,
             .lp-footer-grid {
                 grid-template-columns: minmax(0, 1fr);
+            }
+
+            /* A pull quote needs a reading width; at half a phone screen it
+               would be three words per line. One card to a view, and it swipes. */
+            .lp-slider-track > .lp-quote {
+                flex-basis: 100%;
             }
 
             .lp-stat {
@@ -1754,23 +1857,43 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
             <p class="lp-sub reveal">Written by mentees after their own sessions — nothing here is scripted.</p>
 
             <?php if ($testimonials): ?>
-                <div class="lp-quotes">
-                    <?php foreach ($testimonials as $t): ?>
-                        <figure class="lp-quote reveal">
-                            <span class="lp-quote-mark" aria-hidden="true">&ldquo;</span>
-                            <div class="lp-quote-stars" aria-label="<?= (int)$t['stars'] ?> out of 5">
-                                <?= str_repeat('&#9733;', (int)$t['stars']) . str_repeat('&#9734;', 5 - (int)$t['stars']) ?>
-                            </div>
-                            <blockquote class="lp-quote-txt"><?= htmlspecialchars($t['text']) ?></blockquote>
-                            <figcaption class="lp-quote-who">
-                                <span class="lp-quote-av"><?= htmlspecialchars($t['initials']) ?></span>
-                                <span>
-                                    <span class="lp-quote-n"><?= htmlspecialchars($t['name']) ?></span><br>
+                <div class="lp-slider reveal" id="lpQuotes">
+                    <?php // Scrolls natively — a swipe on a phone, the arrows or the
+                    //     dots anywhere else. Nothing here depends on the script
+                    //     below: without it the track still scrolls, and only the
+                    //     arrows and dots go quiet, so they are hidden until it runs. ?>
+                    <div class="lp-slider-track" id="lpQuotesTrack" tabindex="0" role="region"
+                        aria-label="Reviews from mentees, best rated first">
+                        <?php foreach ($testimonials as $t): ?>
+                            <figure class="lp-quote">
+                                <span class="lp-quote-mark" aria-hidden="true">&ldquo;</span>
+                                <div class="lp-quote-stars" aria-label="<?= (int)$t['stars'] ?> out of 5">
+                                    <?= str_repeat('&#9733;', (int)$t['stars']) . str_repeat('&#9734;', 5 - (int)$t['stars']) ?>
+                                </div>
+                                <blockquote class="lp-quote-txt"><?= htmlspecialchars($t['text']) ?></blockquote>
+                                <?php // No name and no initials. "A. C." beside a subject is
+                                //     still a person on a campus this size, so the quote is
+                                //     attributed to what they were being mentored in. ?>
+                                <figcaption class="lp-quote-who">
                                     <span class="lp-quote-r"><?= htmlspecialchars($t['role']) ?></span>
-                                </span>
-                            </figcaption>
-                        </figure>
-                    <?php endforeach; ?>
+                                </figcaption>
+                            </figure>
+                        <?php endforeach; ?>
+                    </div>
+
+                    <div class="lp-slider-ui" id="lpQuotesUi" hidden>
+                        <button type="button" class="lp-slider-btn" id="lpQuotesPrev" aria-label="Previous reviews">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15 5l-7 7 7 7" />
+                            </svg>
+                        </button>
+                        <div class="lp-slider-dots" id="lpQuotesDots"></div>
+                        <button type="button" class="lp-slider-btn" id="lpQuotesNext" aria-label="More reviews">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             <?php else: ?>
                 <!-- No qualifying review yet. An invented quote from an invented
@@ -1935,6 +2058,92 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
              * bar went on saying "Home" however far down the page you read:
              * the highlighting was written, but never reached.
              */
+            /*
+             * Reviews slider.
+             *
+             * The track scrolls on its own — a swipe, a trackpad, the keyboard
+             * once it has focus — so the arrows and dots are an extra way in,
+             * not the only one. They start hidden and are only revealed here,
+             * which keeps them from being controls that do nothing if this
+             * script never runs.
+             */
+            const track = document.getElementById('lpQuotesTrack');
+            if (track && track.children.length > 1) {
+                const ui = document.getElementById('lpQuotesUi');
+                const prev = document.getElementById('lpQuotesPrev');
+                const next = document.getElementById('lpQuotesNext');
+                const dotWrap = document.getElementById('lpQuotesDots');
+
+                /*
+                 * Everything is measured in cards, not in track-widths.
+                 *
+                 * Paging by the width of the track drifts out of step with
+                 * the cards, because a card plus its gap is not a whole
+                 * fraction of that width — on a phone that produced nine
+                 * stops for seven quotes. Stepping by the card pitch keeps a
+                 * dot meaning "this quote", which is what someone looking at
+                 * a row of dots reads them as.
+                 *
+                 * The pitch is taken from the distance between the first two
+                 * cards rather than a width plus an assumed gap, so it stays
+                 * right whatever the breakpoint does to either.
+                 */
+                const pitch = () => {
+                    const kids = track.children;
+                    if (kids.length > 1) {
+                        const d = kids[1].offsetLeft - kids[0].offsetLeft;
+                        if (d > 0) return d;
+                    }
+                    return kids[0].getBoundingClientRect().width || track.clientWidth || 1;
+                };
+                const perView = () => Math.max(1, Math.round(track.clientWidth / pitch()));
+                const pages = () => Math.max(1, track.children.length - perView() + 1);
+                const page = () => Math.min(pages() - 1, Math.round(track.scrollLeft / pitch()));
+
+                let dots = [];
+
+                function buildDots() {
+                    const n = pages();
+                    if (dots.length === n) return;
+                    dotWrap.innerHTML = '';
+                    dots = [];
+                    for (let i = 0; i < n; i++) {
+                        const b = document.createElement('button');
+                        b.type = 'button';
+                        b.className = 'lp-slider-dot';
+                        b.setAttribute('aria-label', 'Show review ' + (i + 1) + ' of ' + n);
+                        b.addEventListener('click', () => track.scrollTo({ left: i * pitch() }));
+                        dotWrap.appendChild(b);
+                        dots.push(b);
+                    }
+                }
+
+                function paint() {
+                    buildDots();
+                    const at = page();
+                    dots.forEach((d, i) => {
+                        d.classList.toggle('is-on', i === at);
+                        d.setAttribute('aria-current', i === at ? 'true' : 'false');
+                    });
+                    // A one-pixel tolerance: scrollLeft lands on fractions at
+                    // some zoom levels and the end arrow would never disable.
+                    prev.disabled = track.scrollLeft <= 1;
+                    next.disabled = track.scrollLeft >= track.scrollWidth - track.clientWidth - 1;
+                }
+
+                // A viewful at a time, so three visible cards advance by three.
+                prev.addEventListener('click', () => track.scrollBy({ left: -pitch() * perView() }));
+                next.addEventListener('click', () => track.scrollBy({ left: pitch() * perView() }));
+                track.addEventListener('scroll', paint, { passive: true });
+                window.addEventListener('resize', paint, { passive: true });
+                // Card widths settle once the web font has swapped in, which
+                // can change the page count after first paint.
+                window.addEventListener('load', paint);
+
+                ui.hidden = false;
+                paint();
+            }
+
             const navLinks = Array.from(document.querySelectorAll('.lp-navlink[href^="#"]'));
             const sections = navLinks
                 .map(a => document.querySelector(a.getAttribute('href')))
@@ -1951,6 +2160,39 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
                     rootMargin: '-45% 0px -50% 0px'
                 });
                 sections.forEach(sec => spy.observe(sec));
+
+                /*
+                 * The last section can never win on its own.
+                 *
+                 * The observer only counts a section once its top crosses a
+                 * band across the middle of the screen. Contact is the footer:
+                 * at full scroll its top still sits around two thirds of the
+                 * way down, below the band, so it never intersects and the bar
+                 * stayed on Testimonials even at #contact.
+                 *
+                 * Reaching the bottom of the page is reaching the last
+                 * section, whatever the geometry says, so say so directly.
+                 * Whichever link points at the lowest section wins — read from
+                 * the document rather than assuming it is last in the bar.
+                 */
+                let lowest = navLinks[0];
+                let lowestTop = -1;
+                navLinks.forEach(a => {
+                    const el = document.querySelector(a.getAttribute('href'));
+                    if (!el) return;
+                    const top = el.getBoundingClientRect().top + window.scrollY;
+                    if (top > lowestTop) { lowestTop = top; lowest = a; }
+                });
+
+                function bottomSpy() {
+                    const room = document.documentElement.scrollHeight - window.innerHeight;
+                    // A page shorter than the viewport has no bottom to reach.
+                    if (room <= 4 || window.scrollY < room - 4) return;
+                    navLinks.forEach(a => a.classList.toggle('active', a === lowest));
+                }
+                window.addEventListener('scroll', bottomSpy, { passive: true });
+                window.addEventListener('resize', bottomSpy, { passive: true });
+                bottomSpy();
             }
         })();
     </script>
