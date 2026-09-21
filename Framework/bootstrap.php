@@ -88,6 +88,23 @@ if (!defined('PC_SESSION_DAYS')) {
     define('PC_SESSION_DAYS', 20);
 }
 
+/*
+ * How long a session may sit untouched before it is closed.
+ *
+ * This is NOT session.gc_maxlifetime, and must never be moved there. That is
+ * what the 30-minute setting below used to be, and PHP's collector deleting a
+ * session file underneath a live user is precisely what signed people out
+ * mid-lecture. The check this drives lives in pc_idle_gate() in helpers.php:
+ * it decides deliberately, on the user's own next request, and can say why.
+ *
+ * Eight hours outlasts a teaching day, so a forgotten tab closes overnight
+ * while nobody is turned out of a session they are still in the middle of.
+ * Someone holding a "Remember me" cookie is signed straight back in.
+ */
+if (!defined('PC_IDLE_HOURS')) {
+    define('PC_IDLE_HOURS', 8);
+}
+
 // How long after an approved session ends the missed-session detector waits
 // before closing it. By then the call has shut (the video room closes five
 // minutes after the end), and session_attendance records who opened it: both

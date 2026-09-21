@@ -298,9 +298,25 @@ if ($leftover) {
                 };
 
                 function pollCount() {
-                    fetch('<?= url('notifications-count') ?>')
-                        .then(r => r.json())
+                    fetch('<?= url('notifications-count') ?>', { headers: { 'Accept': 'application/json' } })
+                        .then(r => {
+                            // The session idled out while this tab sat open.
+                            // Without this the poll 401s every 30 seconds for
+                            // ever and the page just quietly stops updating,
+                            // which looks like the app being broken rather
+                            // than like being signed out.
+                            if (r.status === 401) {
+                                return r.json().then(d => {
+                                    if (d && d.idle && d.redirect) {
+                                        window.location.href = d.redirect;
+                                    }
+                                    return null;
+                                });
+                            }
+                            return r.json();
+                        })
                         .then(d => {
+                            if (!d) return;
                             badge.style.display = d.count > 0 ? 'block' : 'none';
                         }).catch(() => {});
                 }
@@ -376,33 +392,6 @@ if ($leftover) {
         <div class="sb-promo-body">Every session brings you closer to your goals. Keep going.</div>
     </div>
     <div class="sb-footer">
-        <button onclick="toggleProfileMenu()" class="sb-link" type="button" aria-label="Open profile menu" aria-haspopup="true">
-            <span class="sb-user"><?= htmlspecialchars($initial) ?></span>
-            <span class="menu-label" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;"><?= htmlspecialchars($email) ?></span>
-        </button>
-        <div id="profileMenu" role="menu" aria-label="User menu">
-            <div class="pm-head">
-                <div class="pm-avatar"><?= htmlspecialchars($initial) ?></div>
-                <div style="min-width:0;">
-                    <p style="margin:0;color:var(--gray-900);font-weight:600;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= htmlspecialchars($email) ?></p>
-                    <p style="margin:2px 0 0;color:var(--gray-500);font-size:11.5px;text-transform:capitalize;"><?= htmlspecialchars($isAdmin ? 'Admin' : ucfirst($role ?: 'member')) ?></p>
-                </div>
-            </div>
-            <a href="<?= htmlspecialchars($profileUrl) ?>" class="pm-link" role="menuitem">
-                <?php pc_icon('users'); ?>
-                My profile
-            </a>
-            <a href="<?= htmlspecialchars($settingsUrl) ?>" class="pm-link" role="menuitem">
-                <?php pc_icon('settings'); ?>
-                Settings
-            </a>
-            <a href="<?= htmlspecialchars($logoutUrl) ?>" class="pm-link red" role="menuitem">
-                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M16 17l5-5-5-5M21 12H9M13 21H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3h7" />
-                </svg>
-                Sign out
-            </a>
-        </div>
     </div>
 </aside>
 <script>

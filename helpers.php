@@ -301,6 +301,13 @@ if (!function_exists('pc_enforce_account_status')) {
             return;
         }
 
+        // Before anything else, including the lookup below: an idle session is
+        // over, and there is nothing to enforce against an account whose
+        // session has just ended. Running after the verification gate would
+        // also send an idled, unapproved user to the verification screen
+        // instead of to login.
+        pc_idle_gate();
+
         $uid = (int) $_SESSION['user_id'];
         $row = UserRepository::signInState($con, $uid);
 
@@ -390,6 +397,114 @@ if (!function_exists('pc_enforce_account_status')) {
 
         header('Location: ' . url('login') . '?blocked=1');
         exit;
+    }
+}
+
+if (!function_exists('pc_idle_quiet_routes')) {
+    /**
+     * Routes that are served but do not count as activity.
+     *
+     * The app polls in the background: the shell asks for the notification
+     * count every 30 seconds, chat every 3, and the two verification screens
+     * every 10. All of them reach PHP, so a timer refreshed by "any request"
+     * would never expire while a single tab was open anywhere — the feature
+     * would look implemented and do nothing at all.
+     *
+     * Only automatic polls belong here. Opening the notification panel
+     * (notifications-get) or marking one read is a person doing something,
+     * and counts.
+     */
+    function pc_idle_quiet_routes(): array
+    {
+        return [
+            'notifications-count',
+            'messages-get',
+            'mentor-check-status',
+            'mentee-check-status',
+            'session-check',
+        ];
+    }
+}
+
+if (!function_exists('pc_idle_gate')) {
+    /**
+     * Close a session that has sat untouched for PC_IDLE_HOURS.
+     *
+     * Deliberately an application check rather than session.gc_maxlifetime.
+     * The 30-minute gc_maxlifetime this replaces let PHP's collector delete
+     * the session file underneath somebody who was still using the app, which
+     * is why it was removed (see Framework/bootstrap.php). This runs on the
+     * user's own next request, so nothing disappears mid-use and the reason
+     * can be shown.
+     *
+     * The session is emptied but a fresh one is kept, to carry the notice to
+     * the login page. The "Remember me" cookie is left alone on purpose: its
+     * rolling token signs the visitor straight back in when they return,
+     * which is the whole point of having asked to be remembered.
+     */
+    function pc_idle_gate(): void
+    {
+        if (empty($_SESSION['user_id']) || !defined('PC_IDLE_HOURS')) {
+            return;
+        }
+
+        $now  = time();
+        $seen = $_SESSION['pc_last_seen'] ?? null;
+
+        /*
+         * A session from before this existed has no stamp. Start its clock
+         * now rather than treating "never seen" as "idle forever" — otherwise
+         * deploying this signs out every signed-in user at once.
+         */
+        if (!is_int($seen)) {
+            $_SESSION['pc_last_seen'] = $now;
+            return;
+        }
+
+        if ($now - $seen > PC_IDLE_HOURS * 3600) {
+            $target = url('login');
+
+            // Same reasoning as pc_verification_gate: a caller expecting JSON
+            // must not be handed a login page to parse.
+            $wantsJson = stripos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') !== false
+                || strcasecmp($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '', 'XMLHttpRequest') === 0
+                || stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
+
+            $_SESSION = [];
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_regenerate_id(true);
+            }
+
+            if ($wantsJson) {
+                http_response_code(401);
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success'  => false,
+                    'error'    => 'Your session ended after a period of inactivity.',
+                    'idle'     => true,
+                    'redirect' => $target,
+                ]);
+                exit;
+            }
+
+            $_SESSION['login_notice'] = 'You were signed out after '
+                . PC_IDLE_HOURS . ' hours of inactivity. Please sign in again.';
+            header('Location: ' . $target);
+            exit;
+        }
+
+        /*
+         * An unrouted include cannot name itself, and the safe direction here
+         * is the opposite of the verification gate's: unknown counts as real
+         * activity. Failing to expire somebody is a much smaller harm than
+         * expiring somebody who is sitting right there.
+         */
+        $route = defined('PC_ROUTE') ? PC_ROUTE : null;
+        if ($route !== null && in_array($route, pc_idle_quiet_routes(), true)) {
+            return;
+        }
+
+        $_SESSION['pc_last_seen'] = $now;
     }
 }
 
