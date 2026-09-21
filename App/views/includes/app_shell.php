@@ -172,22 +172,29 @@ if ($leftover) {
 }
 ?>
 <header class="app-topbar">
+    <?php
+    /*
+     * The only sidebar toggle in the app. It used to be a button inside each
+     * page's header, which meant it did not exist on the small screens that
+     * need it most.
+     *
+     * It sits on the left, on its own, rather than in the cluster on the
+     * right: it opens the panel down the left-hand side, and a control an
+     * arm's length from the thing it controls reads as one more icon in the
+     * row of actions.
+     */
+    ?>
+    <button class="icon-btn topbar-nav-btn" type="button" id="pcNavBtn" onclick="pcToggleNav()"
+        aria-label="Open menu" aria-haspopup="true" aria-expanded="false" aria-controls="pcDrawer">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+    </button>
+
     <div class="topbar-brand-mobile">
         <?php pc_logo($homeUrl); ?>
     </div>
     <div class="topbar-actions">
-        <?php // The only sidebar toggle in the app. It used to be a button
-        //     inside each page's header, which meant it did not exist on the
-        //     small screens that need it most. 
-        ?>
-
-        <button class="icon-btn" type="button" id="pcNavBtn" onclick="pcToggleNav()"
-            aria-label="Open menu" aria-haspopup="true" aria-expanded="false" aria-controls="pcDrawer" >
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-        </button>
-
         <a class="icon-btn" href="<?= htmlspecialchars($searchUrl) ?>" aria-label="Search mentors">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="11" cy="11" r="7" />
