@@ -115,7 +115,7 @@ $groups_gs = AvailabilityRepository::groupSlotsForMentor($con, $mentor_id_gs);
                 if ($minsToStart_gs >= 0 && $minsToStart_gs <= 10) {
                     $groupAlerts_gs[] = [
                         'key'     => 'mentor-group-' . $availId_gs,
-                        'message' => 'Group session "' . $g['subject'] . '" starts in ' . $minsToStart_gs . ' minute(s).'
+                        'message' => 'Group session "' . $g['subject'] . '" starts in ' . $minsToStart_gs . ' minute' . ($minsToStart_gs === 1 ? '' : 's') . '.'
                     ];
                 }
             ?>
@@ -312,7 +312,7 @@ $groups_gs = AvailabilityRepository::groupSlotsForMentor($con, $mentor_id_gs);
             _alerts.forEach(function(a) {
                 const k = 'notify_' + a.key;
                 if (!sessionStorage.getItem(k)) {
-                    alert(a.message);
+                    pcToast(a.message, 'warning', 10000, 'Starting soon');
                     sessionStorage.setItem(k, '1');
                 }
             });

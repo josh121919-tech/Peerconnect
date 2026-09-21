@@ -1302,7 +1302,7 @@ $active_page = 'assessments';
             const usable = questions.filter(q => q.question_text.trim() !== '');
             if (publishing && usable.length === 0) {
                 e.preventDefault();
-                alert('Add at least one question before publishing. You can still Save as Draft.');
+                pcToast('Add at least one question before publishing. You can still Save as Draft.', 'error', 5000);
                 goStep(2);
                 return;
             }

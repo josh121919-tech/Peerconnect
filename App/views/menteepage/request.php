@@ -237,7 +237,7 @@ $active_page = 'request';
                                 $canJoin        = $status === 'approved' && $nowDt >= $openJoinDt && $nowDt <= $sessionEndDt;
                                 $minsToStart    = (int)floor(($sessionStartDt->getTimestamp() - $nowDt->getTimestamp()) / 60);
                                 if ($status === 'approved' && $minsToStart >= 0 && $minsToStart <= 10) {
-                                    $menteeAlerts[] = ['key' => 'mentee-request-' . (int)$r['request_id'], 'message' => 'Session with ' . $r['mentor_name'] . ' starts in ' . $minsToStart . ' minute(s).'];
+                                    $menteeAlerts[] = ['key' => 'mentee-request-' . (int)$r['request_id'], 'message' => 'Session with ' . $r['mentor_name'] . ' starts in ' . $minsToStart . ' minute' . ($minsToStart === 1 ? '' : 's') . '.'];
                                 }
                             ?>
                                 <tr>
@@ -438,7 +438,7 @@ $active_page = 'request';
             alerts.forEach(function(a) {
                 const k = 'notify_' + a.key;
                 if (!localStorage.getItem(k)) {
-                    alert(a.message);
+                    pcToast(a.message, 'warning', 10000, 'Starting soon');
                     localStorage.setItem(k, '1');
                 }
             });
@@ -502,12 +502,12 @@ $active_page = 'request';
                     closeCancelModal();
                     document.getElementById('cancelSuccessModal').classList.add('open');
                 } else {
-                    alert('Something went wrong. Please try again.');
+                    pcToast('Something went wrong. Please try again.', 'error');
                     btn.textContent = 'Yes, Cancel';
                     btn.disabled = false;
                 }
             } catch (e) {
-                alert('Network error. Please try again.');
+                pcToast('Network error. Please try again.', 'error');
                 btn.textContent = 'Yes, Cancel';
                 btn.disabled = false;
             }

@@ -839,10 +839,14 @@ $active_page = 'assessments';
                 if (data.success) {
                     window.location.href = RESULT_URL;
                 } else {
-                    alert(data.error || 'Could not submit. Please try again.');
+                    // A blocked submit is worth stopping for: the mentee is
+                    // owed a clear "your answers did not land", not a notice
+                    // that fades while they walk away believing it worked.
+                    await pcAlert('Your assessment was not submitted.',
+                                  data.error || 'Please try again.');
                 }
             } catch (e) {
-                alert('Network error. Please try again.');
+                pcToast('Network error. Please try again.', 'error');
             }
         }
 
@@ -864,7 +868,13 @@ $active_page = 'assessments';
                 wrapEl.classList.toggle('low', secondsLeft <= 60);
                 if (secondsLeft <= 0) {
                     clearInterval(timer);
-                    alert('Time is up. Your answers will be submitted.');
+                    /*
+                     * Not awaited, deliberately. alert() froze the thread, so
+                     * the paper was only sent once somebody pressed OK — a
+                     * mentee who had walked away came back to an unsubmitted
+                     * assessment. The notice and the submit now run together.
+                     */
+                    pcAlert('Time is up.', 'Your answers are being submitted.');
                     submitAssessment(true);
                     return;
                 }

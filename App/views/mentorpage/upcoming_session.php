@@ -68,7 +68,7 @@ $rows_us = SessionRepository::approvedOneToOneForMentor($con, $mentor_id_us);
                 $mentorAlerts_us[] = [
                     'key'     => 'mentor-upcoming-' . $requestId_us,
                     'message' => 'Session with ' . $r['firstname'] . ' ' . $r['lastname'] .
-                        ' starts in ' . $minsToStart_us . ' minute(s).'
+                        ' starts in ' . $minsToStart_us . ' minute' . ($minsToStart_us === 1 ? '' : 's') . '.'
                 ];
             }
 
@@ -183,7 +183,7 @@ $rows_us = SessionRepository::approvedOneToOneForMentor($con, $mentor_id_us);
                 /* sessionStorage so the alert fires once per browser session. */
                 const k = 'notify_' + a.key;
                 if (!sessionStorage.getItem(k)) {
-                    alert(a.message);
+                    pcToast(a.message, 'warning', 10000, 'Starting soon');
                     sessionStorage.setItem(k, '1');
                 }
             });

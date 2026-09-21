@@ -1137,6 +1137,18 @@ $active_page = 'find_mentor';
         <main class="main fade-in">
             <?php if (!$has_shell): ?>
                 <?php include __DIR__ . '/../includes/guest_header.php'; ?>
+                <?php
+                /*
+                 * A signed-out visitor gets no app shell, and the shell is what
+                 * pulls in toasts and the confirmation dialog. Without these two
+                 * lines every message on this page falls back to the browser's
+                 * own "localhost says" box for exactly the people least likely
+                 * to forgive it. Both files guard against double inclusion, so
+                 * this is safe even if the shell arrives another way.
+                 */
+                include __DIR__ . '/../../includes/toasts.php';
+                include __DIR__ . '/../../includes/dialog.php';
+                ?>
             <?php endif; ?>
 
             <!-- Back -->
@@ -1880,12 +1892,16 @@ $active_page = 'find_mentor';
         const SIGNUP_URL = '<?= htmlspecialchars(url('signup'), ENT_QUOTES) ?>';
 
         function requireLogin(nextAction) {
+            // Both branches below only run for someone signed in, which is
+            // exactly when the shell — and so pcAlert — is on the page.
             if (IS_SELF) {
-                alert('This is a preview of your own public profile — booking and reporting are what a mentee would see here.');
+                pcAlert('This is a preview of your own public profile.',
+                        'Booking and reporting are what a mentee would see here.');
                 return;
             }
             if (IS_SIGNED_IN) {
-                alert('Only mentee accounts can book sessions with a mentor.');
+                pcAlert('Only mentee accounts can book sessions.',
+                        'Your account is not a mentee account, so booking is not available from here.');
                 return;
             }
             const next = encodeURIComponent(window.location.pathname + window.location.search);
@@ -2141,25 +2157,15 @@ $active_page = 'find_mentor';
             }).then(r => r.json()).then(res => {
                 if (resetBtn) resetBtn();
                 if (res.error) {
-                    if (typeof pcToast === 'function') {
-                        pcToast(res.error, 'error', 4000);
-                    } else {
-                        alert(res.error);
-                    }
+                    pcToast(res.error, 'error', 4000);
                     return;
                 }
                 document.getElementById('bookingModal').classList.add('hidden');
                 document.getElementById('successModal').classList.remove('hidden');
-                if (typeof pcToast === 'function') {
-                    pcToast('Session booked successfully! 🎉', 'success');
-                }
+                pcToast('Session booked successfully! 🎉', 'success');
             }).catch(() => {
                 if (resetBtn) resetBtn();
-                if (typeof pcToast === 'function') {
-                    pcToast('Network error. Please try again.', 'error');
-                } else {
-                    alert('Network error. Please try again.');
-                }
+                pcToast('Network error. Please try again.', 'error');
             });
         }
 
@@ -2300,20 +2306,14 @@ $active_page = 'find_mentor';
                 })
             }).then(r => r.json()).then(res => {
                 if (res.error) {
-                    if (typeof pcToast === 'function') {
-                        pcToast(res.error, 'error', 4000);
-                    } else {
-                        alert(res.error);
-                    }
+                    pcToast(res.error, 'error', 4000);
                     return;
                 }
                 closeGroupModal();
                 document.getElementById('successModal').classList.remove('hidden');
-                if (typeof pcToast === 'function') pcToast('Group session reserved! 🎉', 'success');
+                pcToast('Group session reserved! 🎉', 'success');
             }).catch(() => {
-                if (typeof pcToast === 'function') {
-                    pcToast('Network error. Please try again.', 'error');
-                }
+                pcToast('Network error. Please try again.', 'error');
             });
         }
 
@@ -2376,11 +2376,7 @@ $active_page = 'find_mentor';
             const issueType = document.getElementById('reportIssueType').value;
             const proofFile = document.getElementById('reportProof').files[0] ?? null;
             if (!issueType || !reason) {
-                if (typeof pcToast === 'function') {
-                    pcToast('Please fill in all required fields.', 'error');
-                } else {
-                    alert('Please fill in all required fields.');
-                }
+                pcToast('Please fill in all required fields.', 'error');
                 return;
             }
             const fd = new FormData();
@@ -2399,24 +2395,16 @@ $active_page = 'find_mentor';
                 .then(data => {
                     if (resetReport) resetReport();
                     if (data.success) {
-                        if (typeof pcToast === 'function') {
-                            pcToast('Report submitted successfully.', 'success');
-                        }
+                        pcToast('Report submitted successfully.', 'success');
                         closeReportModal();
                         clearProof();
                     } else {
-                        if (typeof pcToast === 'function') {
-                            pcToast('Error: ' + (data.message ?? 'Unknown error.'), 'error', 4000);
-                        } else {
-                            alert('Error: ' + (data.message ?? 'Unknown error.'));
-                        }
+                        pcToast('Error: ' + (data.message ?? 'Unknown error.'), 'error', 4000);
                     }
                 })
                 .catch(() => {
                     if (resetReport) resetReport();
-                    if (typeof pcToast === 'function') {
-                        pcToast('An error occurred while submitting the report.', 'error');
-                    }
+                    pcToast('An error occurred while submitting the report.', 'error');
                 });
         });
     </script>

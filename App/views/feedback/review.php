@@ -1113,8 +1113,7 @@ $csrf        = csrf_token();
                         behavior: 'smooth',
                         block: 'center'
                     });
-                    if (typeof pcToast === 'function') pcToast('Please rate all five aspects before submitting.', 'error');
-                    else alert('Please rate all five aspects before submitting.');
+                    pcToast('Please rate all five aspects before submitting.', 'error');
                 }
             });
         }

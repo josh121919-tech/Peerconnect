@@ -628,7 +628,7 @@ $active_page = 'sessions';
                                 $isUpcoming = $status === 'approved' && $now < $openJoinDT;
                                 $minsToStart = (int)floor(($sessionDT->getTimestamp() - $now->getTimestamp()) / 60);
                                 if ($status === 'approved' && $minsToStart >= 0 && $minsToStart <= 10) {
-                                    $menteeSessionAlerts[] = ['key' => 'mentee-sessions-' . $sid, 'message' => 'Session with ' . $s['firstname'] . ' ' . $s['lastname'] . ' starts in ' . $minsToStart . ' minute(s).'];
+                                    $menteeSessionAlerts[] = ['key' => 'mentee-sessions-' . $sid, 'message' => 'Session with ' . $s['firstname'] . ' ' . $s['lastname'] . ' starts in ' . $minsToStart . ' minute' . ($minsToStart === 1 ? '' : 's') . '.'];
                                 }
                             ?>
                                 <tr>
@@ -714,7 +714,7 @@ $active_page = 'sessions';
         alerts.forEach(function(a) {
             const k = 'notify_' + a.key;
             if (!localStorage.getItem(k)) {
-                alert(a.message);
+                pcToast(a.message, 'warning', 10000, 'Starting soon');
                 localStorage.setItem(k, '1');
             }
         });

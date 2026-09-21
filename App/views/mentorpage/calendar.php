@@ -1816,7 +1816,7 @@ $active_page = 'calendar';
         document.getElementById('availForm').addEventListener('submit', function(e) {
             if (!document.getElementById('dateInput').value) {
                 e.preventDefault();
-                alert('Pick a date on the calendar first.');
+                pcToast('Pick a date on the calendar first.', 'error');
                 return;
             }
             // Mirror the server's check so a bad range does not cost a round trip.
@@ -1825,7 +1825,7 @@ $active_page = 'calendar';
             for (let i = 0; i < starts.length; i++) {
                 if (starts[i].value && ends[i].value && ends[i].value <= starts[i].value) {
                     e.preventDefault();
-                    alert('Each slot needs an end time later than its start.');
+                    pcToast('Each slot needs an end time later than its start.', 'error');
                     ends[i].focus();
                     return;
                 }
