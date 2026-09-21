@@ -133,7 +133,7 @@
 
     .app:has(#sidebar) {
         display: grid;
-        grid-template-columns: 220px minmax(0, 1fr);
+        grid-template-columns: 260px minmax(0, 1fr);
         grid-template-rows: 68px minmax(0, 1fr);
         height: 100vh;
         overflow: hidden;
@@ -406,8 +406,8 @@
     #sidebar {
         grid-column: 1;
         grid-row: 1 / -1;
-        width: 220px;
-        min-width: 220px;
+        width: 260px;
+        min-width: 260px;
         height: 100vh;
         background: var(--forest);
         border-right: none;
@@ -537,7 +537,7 @@
     .sb-section-label {
         display: block;
         margin: 0;
-        font-size: 10px;
+        font-size: 14px;
         font-weight: 600;
         letter-spacing: .07em;
         text-transform: uppercase;

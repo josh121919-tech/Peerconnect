@@ -37,22 +37,22 @@ if (!function_exists('pc_logo')) {
         $pc_logo_src = pc_brand_logo_src();
         if ($pc_logo_src !== '') {
 ?>
-        <img class="<?= htmlspecialchars($class) ?> is-custom" src="<?= htmlspecialchars($pc_logo_src) ?>" alt="" aria-hidden="true">
-<?php
+            <img class="<?= htmlspecialchars($class) ?> is-custom" src="<?= htmlspecialchars($pc_logo_src) ?>" alt="" aria-hidden="true">
+        <?php
             return;
         }
-?>
+        ?>
         <svg class="<?= htmlspecialchars($class) ?>" viewBox="0 0 48 48" fill="none" aria-hidden="true">
             <circle cx="24" cy="24" r="21" fill="currentColor" opacity=".14" />
             <circle cx="24" cy="24" r="12.5" stroke="currentColor" stroke-width="2.6" />
             <path d="M18 22.4c0-2.2 1.8-4 4-4 1.8 0 2.9.8 3.2 2 .3-1.2 1.4-2 3.2-2 2.2 0 4 1.8 4 4 0 3.6-5 6-7.2 7-2.2-1-7.2-3.4-7.2-7Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round" />
         </svg>
-<?php
+    <?php
     }
 
     function pc_logo(string $href, string $label = 'PeerConnect'): void
     {
-?>
+    ?>
         <a href="<?= htmlspecialchars($href) ?>" class="brand" aria-label="<?= htmlspecialchars($label) ?> — go to dashboard">
             <?php pc_brand_mark(); ?>
             <span><?= htmlspecialchars($label) ?></span>
@@ -131,14 +131,14 @@ if (isset($con) && $con instanceof mysqli) {
 
     if ($pc_primary !== $pc_def['brand_primary'] || $pc_accent !== $pc_def['brand_accent']) {
         echo '<style>:root{'
-           . '--forest:' . $pc_primary . ';'
-           . '--ink:' . $pc_primary . ';'
-           . '--navy:' . $pc_primary . ';'
-           . '--mint:' . $pc_accent . ';'
-           . '--accent:' . $pc_accent . ';'
-           . '--accent-2:' . $pc_accent . ';'
-           . '--forest-2:' . $pc_accent . ';'
-           . '}</style>';
+            . '--forest:' . $pc_primary . ';'
+            . '--ink:' . $pc_primary . ';'
+            . '--navy:' . $pc_primary . ';'
+            . '--mint:' . $pc_accent . ';'
+            . '--accent:' . $pc_accent . ';'
+            . '--accent-2:' . $pc_accent . ';'
+            . '--forest-2:' . $pc_accent . ';'
+            . '}</style>';
     }
 
     // A custom favicon, if one was uploaded.
