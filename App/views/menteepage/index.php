@@ -179,14 +179,17 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
         <main class="main fade-in">
 
             <!-- Page header -->
-            <div class="page-hd" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
-                
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
+
                 <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;margin-top:4px;">
                     <!-- PWA Install — shown by JS only when browser supports beforeinstallprompt -->
                     <button id="pwa-install-btn" style="display:none;align-items:center;gap:6px;background:var(--forest);color:white;border:none;border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;" title="Install PeerConnect as an app">
-                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
                         Install App
-                    </button></div>
+                    </button>
+                </div>
             </div>
 
             <!-- Welcome hero -->
@@ -214,14 +217,18 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
             <div class="stats-grid">
                 <div class="stat-card stat-card-icon">
                     <div class="stat-icon si-teal">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM20 19c0-1.8-1.2-3.3-2.8-3.8M17 4.4a3 3 0 0 1 0 5.2" /></svg>
+                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM20 19c0-1.8-1.2-3.3-2.8-3.8M17 4.4a3 3 0 0 1 0 5.2" />
+                        </svg>
                     </div>
                     <div>
                         <div class="stat-val"><?= $active_mentorships ?></div>
                         <div class="stat-lbl">Active Mentorships</div>
                         <?php if ($trend_mentorships): ?>
                             <div class="stat-trend trend-<?= $trend_mentorships['dir'] ?>">
-                                <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="<?= $trend_mentorships['dir'] === 'up' ? 'M5 15l7-7 7 7' : 'M5 9l7 7 7-7' ?>" /></svg>
+                                <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="<?= $trend_mentorships['dir'] === 'up' ? 'M5 15l7-7 7 7' : 'M5 9l7 7 7-7' ?>" />
+                                </svg>
                                 <?= htmlspecialchars($trend_mentorships['label']) ?>
                             </div>
                         <?php endif; ?>
@@ -229,7 +236,10 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                 </div>
                 <div class="stat-card stat-card-icon">
                     <div class="stat-icon si-blue">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="4" width="14" height="16" rx="3" /><path stroke-linecap="round" d="M8 2v4M16 2v4M5 9h14" /></svg>
+                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <rect x="5" y="4" width="14" height="16" rx="3" />
+                            <path stroke-linecap="round" d="M8 2v4M16 2v4M5 9h14" />
+                        </svg>
                     </div>
                     <div>
                         <div class="stat-val"><?= $upcoming_count ?></div>
@@ -241,7 +251,9 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                 </div>
                 <div class="stat-card stat-card-icon">
                     <div class="stat-icon si-purple">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7A2.5 2.5 0 0 1 17.5 16H12l-5 4v-4h-.5A2.5 2.5 0 0 1 4 13.5v-7Z" /></svg>
+                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v7A2.5 2.5 0 0 1 17.5 16H12l-5 4v-4h-.5A2.5 2.5 0 0 1 4 13.5v-7Z" />
+                        </svg>
                     </div>
                     <div>
                         <div class="stat-val"><?= $unread_messages ?></div>
@@ -251,14 +263,20 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                 </div>
                 <div class="stat-card stat-card-icon">
                     <div class="stat-icon si-orange">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" /><rect x="9" y="3" width="6" height="4" rx="1.2" /><path stroke-linecap="round" stroke-linejoin="round" d="m9 13 2 2 4-4" /></svg>
+                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+                            <rect x="9" y="3" width="6" height="4" rx="1.2" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m9 13 2 2 4-4" />
+                        </svg>
                     </div>
                     <div>
                         <div class="stat-val"><?= $assessments_done ?></div>
                         <div class="stat-lbl">Assessments Taken</div>
                         <?php if ($trend_assessments): ?>
                             <div class="stat-trend trend-<?= $trend_assessments['dir'] ?>">
-                                <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="<?= $trend_assessments['dir'] === 'up' ? 'M5 15l7-7 7 7' : 'M5 9l7 7 7-7' ?>" /></svg>
+                                <svg fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="<?= $trend_assessments['dir'] === 'up' ? 'M5 15l7-7 7 7' : 'M5 9l7 7 7-7' ?>" />
+                                </svg>
                                 <?= htmlspecialchars($trend_assessments['label']) ?>
                             </div>
                         <?php elseif ($assessments_done > 0): ?>
@@ -298,11 +316,15 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                                     </div>
                                     <div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;flex-shrink:0;">
                                         <span style="font-size:11.5px;color:var(--gray-500);display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">
-                                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
                                             <?= date('M j, Y', $ts) ?>
                                         </span>
                                         <span style="font-size:11.5px;color:var(--gray-500);display:inline-flex;align-items:center;gap:4px;white-space:nowrap;">
-                                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                            <svg width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
                                             <?= date('g:i A', $ts) ?>
                                         </span>
                                     </div>
@@ -313,6 +335,50 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                             <div class="prow-empty">
                                 <p style="margin:0 0 12px;">No upcoming sessions. Book a session with a mentor to get started.</p>
                                 <a href="<?= htmlspecialchars($find_mentor_url) ?>" class="btn btn-primary btn-sm">Find a mentor →</a>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+
+                    <!-- Recommended for You -->
+                    <div class="pcard">
+                        <div class="pcard-hd">
+                            <span class="pcard-title">Recommended for You</span>
+                            <a href="<?= htmlspecialchars($find_mentor_url) ?>" class="pcard-link">View all →</a>
+                        </div>
+                        <?php if (!empty($recommended)): ?>
+                            <?php foreach ($recommended as $rm):
+                                $rmName = trim($rm['firstname'] . ' ' . $rm['lastname']);
+                                $rmIni  = strtoupper(substr($rm['firstname'], 0, 1) . substr($rm['lastname'], 0, 1));
+                                $rmRating = (float)$rm['avg_rating'];
+                                $rmSessions = (int)$rm['total_sessions'];
+                            ?>
+                                <div class="prow">
+                                    <?php if (!empty($rm['profile_image'])): ?>
+                                        <img src="<?= htmlspecialchars($rm['profile_image']) ?>" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;">
+                                    <?php else: ?>
+                                        <div class="pc-avatar pc-avatar-md" style="flex-shrink:0;"><?= $rmIni ?></div>
+                                    <?php endif; ?>
+                                    <div style="flex:1;min-width:0;">
+                                        <div style="font-size:13px;font-weight:700;color:var(--gray-900);"><?= htmlspecialchars($rmName) ?></div>
+                                        <div style="font-size:11.5px;color:var(--gray-400);"><?= htmlspecialchars($rm['expertise'] ?: 'General mentorship') ?></div>
+                                        <?php if ($rmRating > 0): ?>
+                                            <div style="font-size:11px;color:var(--gray-500);margin-top:2px;">★ <?= number_format($rmRating, 1) ?><?= $rmSessions ? ' (' . $rmSessions . ' sessions)' : '' ?></div>
+                                        <?php endif; ?>
+                                        <?php // Why this mentor, in their own answers — not a bare score.
+                                        if (!empty($rm['shared_reasons'])): ?>
+                                            <div style="font-size:11px;color:var(--mint);margin-top:3px;font-weight:600;">
+                                                <?= htmlspecialchars($rm['shared_reasons'][0]) ?>
+                                            </div>
+                                        <?php endif; ?>
+                                    </div>
+                                    <a href="<?= htmlspecialchars(url('mentee-view-mentor') . '?id=' . (int)$rm['user_id']) ?>" class="btn btn-ghost" style="font-size:11.5px;padding:6px 12px;flex-shrink:0;">View Profile</a>
+                                </div>
+                            <?php endforeach; ?>
+                        <?php else: ?>
+                            <div class="prow-empty">
+                                <?= $personalized
+                                    ? 'No recommendations yet — answer the matching questionnaire to get matched.'
+                                    : 'Personalized recommendations are off in Settings → Data Privacy.' ?>
                             </div>
                         <?php endif; ?>
                     </div>
@@ -343,6 +409,8 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                             <div class="prow-empty">No recent activity yet.</div>
                         <?php endif; ?>
                     </div>
+
+
 
                 </div><!-- /left -->
 
@@ -409,13 +477,13 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                                                 <circle cx="50" cy="50" r="<?= $assess_r ?>" fill="none" stroke="var(--success)" stroke-width="10"
                                                     stroke-dasharray="<?= $a_completed_len ?> <?= $assess_circumference ?>" stroke-dashoffset="<?= -$off ?>"
                                                     transform="rotate(-90 50 50)" />
-                                                <?php $off += $a_completed_len;
+                                            <?php $off += $a_completed_len;
                                             endif; ?>
                                             <?php if ($a_inprogress_len > 0): ?>
                                                 <circle cx="50" cy="50" r="<?= $assess_r ?>" fill="none" stroke="var(--info)" stroke-width="10"
                                                     stroke-dasharray="<?= $a_inprogress_len ?> <?= $assess_circumference ?>" stroke-dashoffset="<?= -$off ?>"
                                                     transform="rotate(-90 50 50)" />
-                                                <?php $off += $a_inprogress_len;
+                                            <?php $off += $a_inprogress_len;
                                             endif; ?>
                                             <?php if ($a_notstarted_len > 0): ?>
                                                 <circle cx="50" cy="50" r="<?= $assess_r ?>" fill="none" stroke="var(--gray-300)" stroke-width="10"
@@ -471,49 +539,7 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                         </div>
                     </div>
 
-                    <!-- Recommended for You -->
-                    <div class="pcard">
-                        <div class="pcard-hd">
-                            <span class="pcard-title">Recommended for You</span>
-                            <a href="<?= htmlspecialchars($find_mentor_url) ?>" class="pcard-link">View all →</a>
-                        </div>
-                        <?php if (!empty($recommended)): ?>
-                            <?php foreach ($recommended as $rm):
-                                $rmName = trim($rm['firstname'] . ' ' . $rm['lastname']);
-                                $rmIni  = strtoupper(substr($rm['firstname'], 0, 1) . substr($rm['lastname'], 0, 1));
-                                $rmRating = (float)$rm['avg_rating'];
-                                $rmSessions = (int)$rm['total_sessions'];
-                            ?>
-                                <div class="prow">
-                                    <?php if (!empty($rm['profile_image'])): ?>
-                                        <img src="<?= htmlspecialchars($rm['profile_image']) ?>" alt="" style="width:40px;height:40px;border-radius:50%;object-fit:cover;flex-shrink:0;">
-                                    <?php else: ?>
-                                        <div class="pc-avatar pc-avatar-md" style="flex-shrink:0;"><?= $rmIni ?></div>
-                                    <?php endif; ?>
-                                    <div style="flex:1;min-width:0;">
-                                        <div style="font-size:13px;font-weight:700;color:var(--gray-900);"><?= htmlspecialchars($rmName) ?></div>
-                                        <div style="font-size:11.5px;color:var(--gray-400);"><?= htmlspecialchars($rm['expertise'] ?: 'General mentorship') ?></div>
-                                        <?php if ($rmRating > 0): ?>
-                                            <div style="font-size:11px;color:var(--gray-500);margin-top:2px;">★ <?= number_format($rmRating, 1) ?><?= $rmSessions ? ' (' . $rmSessions . ' sessions)' : '' ?></div>
-                                        <?php endif; ?>
-                                        <?php // Why this mentor, in their own answers — not a bare score.
-                                        if (!empty($rm['shared_reasons'])): ?>
-                                            <div style="font-size:11px;color:var(--mint);margin-top:3px;font-weight:600;">
-                                                <?= htmlspecialchars($rm['shared_reasons'][0]) ?>
-                                            </div>
-                                        <?php endif; ?>
-                                    </div>
-                                    <a href="<?= htmlspecialchars(url('mentee-view-mentor') . '?id=' . (int)$rm['user_id']) ?>" class="btn btn-ghost" style="font-size:11.5px;padding:6px 12px;flex-shrink:0;">View Profile</a>
-                                </div>
-                            <?php endforeach; ?>
-                        <?php else: ?>
-                            <div class="prow-empty">
-                                <?= $personalized
-                                    ? 'No recommendations yet — answer the matching questionnaire to get matched.'
-                                    : 'Personalized recommendations are off in Settings → Data Privacy.' ?>
-                            </div>
-                        <?php endif; ?>
-                    </div>
+
 
                 </div><!-- /right -->
             </div><!-- /dash-grid -->

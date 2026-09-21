@@ -631,14 +631,14 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
             margin-bottom: 14px;
         }
 
-        .rq-summary > div {
+        .rq-summary>div {
             display: flex;
             align-items: center;
             gap: 10px;
             padding: 12px 14px;
         }
 
-        .rq-summary > div + div {
+        .rq-summary>div+div {
             border-left: 1px solid var(--border);
         }
 
@@ -703,6 +703,7 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
         }
 
         @media (max-width: 760px) {
+
             .mc-grid,
             .mc-grid.list-view {
                 grid-template-columns: 1fr;
@@ -727,11 +728,6 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
                 <?php include __DIR__ . '/includes/guest_header.php'; ?>
             <?php endif; ?>
 
-            <!-- Page header -->
-            <div class="page-hd" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
-                <h1 style="margin:0;">Find a Mentor</h1>
-                <?php if ($is_logged_in): ?>                <?php endif; ?>
-            </div>
 
             <!-- Hero -->
             <div class="hero-banner">
@@ -757,11 +753,18 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
             <form method="GET" id="fmForm">
                 <div class="fm-toolbar">
                     <div class="fm-search">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path stroke-linecap="round" d="m20 20-4-4" /></svg>
+                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <circle cx="11" cy="11" r="7" />
+                            <path stroke-linecap="round" d="m20 20-4-4" />
+                        </svg>
                         <input type="search" name="search" value="<?= htmlspecialchars($search) ?>" placeholder="Search by name, subject, or keyword…">
                     </div>
                     <button type="button" class="fm-filters-btn active" id="fmFiltersBtn" onclick="toggleFmFilters()" aria-expanded="true" aria-controls="fmFilterRow">
-                        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" d="M4 7h5M15 7h5M4 17h9M19 17h1" /><circle cx="12" cy="7" r="2" /><circle cx="16" cy="17" r="2" /></svg>
+                        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                            <path stroke-linecap="round" d="M4 7h5M15 7h5M4 17h9M19 17h1" />
+                            <circle cx="12" cy="7" r="2" />
+                            <circle cx="16" cy="17" r="2" />
+                        </svg>
                         Filters
                     </button>
                     <label class="fm-sort">
@@ -774,10 +777,17 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
                     </label>
                     <div class="fm-view-toggle" role="group" aria-label="Layout">
                         <button type="button" class="fm-view-btn active" data-view="grid" onclick="setMentorView('grid')" aria-label="Grid view">
-                            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <rect x="3" y="3" width="7" height="7" rx="1" />
+                                <rect x="14" y="3" width="7" height="7" rx="1" />
+                                <rect x="3" y="14" width="7" height="7" rx="1" />
+                                <rect x="14" y="14" width="7" height="7" rx="1" />
+                            </svg>
                         </button>
                         <button type="button" class="fm-view-btn" data-view="list" onclick="setMentorView('list')" aria-label="List view">
-                            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" /></svg>
+                            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
+                            </svg>
                         </button>
                     </div>
                 </div>
@@ -835,7 +845,9 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
                                     <?php endif; ?>
                                     <?php if ((int)$m['verified'] === 1): ?>
                                         <span class="mc-verified" title="Verified mentor">
-                                            <svg fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7" /></svg>
+                                            <svg fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7" />
+                                            </svg>
                                         </span>
                                     <?php endif; ?>
                                 </div>
@@ -885,11 +897,16 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
 
                             <div class="mc-stats">
                                 <span class="mc-stat">
-                                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" /></svg>
+                                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+                                    </svg>
                                     <strong><?= (int)$m['mentee_count'] ?></strong>&nbsp;mentees
                                 </span>
                                 <span class="mc-stat">
-                                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="3" /><path stroke-linecap="round" d="M8 2v4M16 2v4M5 9h14" /></svg>
+                                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                        <rect x="5" y="4" width="14" height="16" rx="3" />
+                                        <path stroke-linecap="round" d="M8 2v4M16 2v4M5 9h14" />
+                                    </svg>
                                     Available <strong><?= htmlspecialchars($avail_label) ?></strong>
                                 </span>
                             </div>
@@ -972,7 +989,9 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
                 </div>
                 <button type="button" onclick="closeRequestModal()" aria-label="Close"
                     style="width:30px;height:30px;border-radius:8px;border:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">
-                    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
                 </button>
             </div>
 
@@ -1004,14 +1023,19 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
 
             <dl class="rq-summary">
                 <div>
-                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" /></svg>
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+                    </svg>
                     <div>
                         <dt>Mentorship Type</dt>
                         <dd id="rqType">—</dd>
                     </div>
                 </div>
                 <div>
-                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" /></svg>
+                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" />
+                    </svg>
                     <div>
                         <dt>Duration</dt>
                         <dd id="rqDuration">—</dd>
@@ -1020,7 +1044,9 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
             </dl>
 
             <div class="rq-tip">
-                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 18h6M10 21h4M12 3a6 6 0 0 1 4 10.5V15H8v-1.5A6 6 0 0 1 12 3Z" /></svg>
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M9 18h6M10 21h4M12 3a6 6 0 0 1 4 10.5V15H8v-1.5A6 6 0 0 1 12 3Z" />
+                </svg>
                 A thoughtful message increases your chances of getting accepted.
             </div>
 
@@ -1028,7 +1054,10 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
                 <button type="button" class="btn btn-ghost" onclick="closeRequestModal()">Cancel</button>
                 <button type="button" class="btn btn-primary" id="rqSend" onclick="sendMentorshipRequest()">
                     Send Request
-                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
+                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <line x1="22" y1="2" x2="11" y2="13" />
+                        <polygon points="22 2 15 22 11 13 2 9 22 2" />
+                    </svg>
                 </button>
             </div>
         </div>
@@ -1038,7 +1067,9 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
     <div id="requestSentModal" class="modal-overlay">
         <div class="rq-box" style="width:380px;text-align:center;padding:34px 28px;">
             <div style="width:56px;height:56px;border-radius:50%;background:var(--success-bg);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
-                <svg width="24" height="24" fill="none" stroke="var(--success)" stroke-width="2.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                <svg width="24" height="24" fill="none" stroke="var(--success)" stroke-width="2.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
             </div>
             <h2 style="font-size:18px;font-weight:700;color:var(--forest);margin:0 0 8px;">Request sent</h2>
             <p style="font-size:13px;color:var(--gray-500);margin:0 0 22px;">
@@ -1060,7 +1091,9 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
             document.querySelectorAll('.fm-view-btn').forEach(function(btn) {
                 btn.classList.toggle('active', btn.dataset.view === view);
             });
-            try { localStorage.setItem('mentorViewPref', view); } catch (e) {}
+            try {
+                localStorage.setItem('mentorViewPref', view);
+            } catch (e) {}
         }
         (function() {
             try {
@@ -1111,15 +1144,17 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
            The time and duration offered here are the mentor's own published
            availability slots — the same ones the profile booking flow uses,
            and the same ones save_booking.php validates against on submit. */
-        const RQ_CSRF        = <?= json_encode(csrf_token()) ?>;
-        const ROUTE_SLOTS    = <?= json_encode(url('mentee-mentor-slots')) ?>;
-        const ROUTE_BOOK     = <?= json_encode(url('save-booking')) ?>;
+        const RQ_CSRF = <?= json_encode(csrf_token()) ?>;
+        const ROUTE_SLOTS = <?= json_encode(url('mentee-mentor-slots')) ?>;
+        const ROUTE_BOOK = <?= json_encode(url('save-booking')) ?>;
 
         let rqMentor = null;
         let rqSlot = null;
 
         function openRequestModal(btn) {
-            rqMentor = { ...btn.dataset };
+            rqMentor = {
+                ...btn.dataset
+            };
             rqSlot = null;
 
             document.getElementById('rqMentorName').textContent = rqMentor.name;
@@ -1200,7 +1235,9 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
 
                     b.appendChild(left);
                     b.appendChild(tag);
-                    b.addEventListener('click', function() { selectRequestSlot(slot, b); });
+                    b.addEventListener('click', function() {
+                        selectRequestSlot(slot, b);
+                    });
                     box.appendChild(b);
                     if (i === 0) selectRequestSlot(slot, b);
                 });
@@ -1233,7 +1270,9 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
             try {
                 const res = await fetch(ROUTE_BOOK, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
                     body: JSON.stringify({
                         csrf_token: RQ_CSRF,
                         mentor_id: rqMentor.id,
