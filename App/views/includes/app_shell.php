@@ -180,12 +180,14 @@ if ($leftover) {
         //     inside each page's header, which meant it did not exist on the
         //     small screens that need it most. 
         ?>
+
         <button class="icon-btn" type="button" id="pcNavBtn" onclick="pcToggleNav()"
-            aria-label="Open menu" aria-haspopup="true" aria-expanded="false" aria-controls="pcDrawer">
+            aria-label="Open menu" aria-haspopup="true" aria-expanded="false" aria-controls="pcDrawer" >
             <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" d="M4 6h16M4 12h16M4 18h16" />
             </svg>
         </button>
+
         <a class="icon-btn" href="<?= htmlspecialchars($searchUrl) ?>" aria-label="Search mentors">
             <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
                 <circle cx="11" cy="11" r="7" />
@@ -298,7 +300,11 @@ if ($leftover) {
                 };
 
                 function pollCount() {
-                    fetch('<?= url('notifications-count') ?>', { headers: { 'Accept': 'application/json' } })
+                    fetch('<?= url('notifications-count') ?>', {
+                            headers: {
+                                'Accept': 'application/json'
+                            }
+                        })
                         .then(r => {
                             // The session idled out while this tab sat open.
                             // Without this the poll 401s every 30 seconds for

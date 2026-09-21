@@ -84,6 +84,42 @@ class LoginTokenService
      * Whether $token is still the one the password row points at. It stops
      * being so when the account signs in again elsewhere or resets its password.
      */
+    /**
+     * Whether this account's password row has been left with no live token —
+     * which is what a password reset leaves behind, and nothing else does.
+     *
+     * isCurrent() cannot be used for the per-request check, and the difference
+     * is the whole behaviour of the feature. There is one token per account:
+     * issue() retires the previous one on every login. So isCurrent() is false
+     * for every session except the most recent sign-in, and enforcing it would
+     * mean signing somebody's laptop out the moment they opened the app on
+     * their phone.
+     *
+     * A reset is distinguishable because it DELETEs the tokens row (see
+     * PasswordResetService) and leaves password_id pointing at nothing, while
+     * a second login leaves a different but perfectly live token. This asks
+     * the narrower question: is there any token at all?
+     *
+     * A password row that has gone entirely counts too — there is nothing left
+     * for the session to be holding.
+     */
+    public static function clearedByReset(mysqli $con, int $password_id): bool
+    {
+        $stmt = $con->prepare("
+            SELECT t.token_id
+            FROM passwords p
+            LEFT JOIN tokens t ON t.token_id = p.token_id
+            WHERE p.password_id = ?
+        ");
+        $stmt->bind_param('i', $password_id);
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+
+        // No password row at all, or a row whose token has been deleted.
+        return $row === null || $row['token_id'] === null;
+    }
+
     public static function isCurrent(mysqli $con, string $token, int $password_id): bool
     {
         $stmt = $con->prepare("

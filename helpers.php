@@ -307,6 +307,7 @@ if (!function_exists('pc_enforce_account_status')) {
         // also send an idled, unapproved user to the verification screen
         // instead of to login.
         pc_idle_gate();
+        pc_revoked_session_gate($con);
 
         $uid = (int) $_SESSION['user_id'];
         $row = UserRepository::signInState($con, $uid);
@@ -396,6 +397,71 @@ if (!function_exists('pc_enforce_account_status')) {
         session_destroy();
 
         header('Location: ' . url('login') . '?blocked=1');
+        exit;
+    }
+}
+
+if (!function_exists('pc_revoked_session_gate')) {
+    /**
+     * End a session whose account has had its password reset.
+     *
+     * This is the check that App/controllers/session-check.php was written to
+     * perform and that nothing ever called — PasswordResetService says so in
+     * its own comments: it clears the token rows "for tidiness, not security…
+     * a browser with a live PHP session stays signed in". Resetting a password
+     * did not, in fact, sign anybody else out.
+     *
+     * Deliberately narrower than session-check.php's version, which used
+     * isCurrent(). There is one token per account, so isCurrent() is false for
+     * every session but the newest, and wiring it in as written would have
+     * turned the app single-session: signing in on a phone would drop the
+     * laptop. clearedByReset() asks only whether any live token remains, which
+     * a reset removes and an ordinary second login does not.
+     *
+     * The other thing session-check.php did — session_regenerate_id(true) on
+     * every request — is deliberately NOT here. It deletes the old session
+     * file immediately, and this app polls every 3 seconds in chat: a request
+     * already in flight would come back holding an id that no longer exists
+     * and be treated as signed out. Fixation is defended where it matters, at
+     * sign-in, by login.php and RememberService.
+     *
+     * A Google login carries no password_id, so it is skipped.
+     */
+    function pc_revoked_session_gate(mysqli $con): void
+    {
+        if (empty($_SESSION['user_id']) || empty($_SESSION['password_id'])) {
+            return;
+        }
+        if (!LoginTokenService::clearedByReset($con, (int) $_SESSION['password_id'])) {
+            return;
+        }
+
+        $target = url('login');
+
+        $wantsJson = stripos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') !== false
+            || strcasecmp($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '', 'XMLHttpRequest') === 0
+            || stripos($_SERVER['CONTENT_TYPE'] ?? '', 'application/json') !== false;
+
+        $_SESSION = [];
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_regenerate_id(true);
+        }
+
+        if ($wantsJson) {
+            http_response_code(401);
+            header('Content-Type: application/json');
+            echo json_encode([
+                'success'  => false,
+                'error'    => 'Your session ended because this account\'s password was changed.',
+                'idle'     => true,
+                'redirect' => $target,
+            ]);
+            exit;
+        }
+
+        $_SESSION['login_notice'] = 'This account\'s password was changed, so you were signed out. '
+            . 'Please sign in with the new password.';
+        header('Location: ' . $target);
         exit;
     }
 }
