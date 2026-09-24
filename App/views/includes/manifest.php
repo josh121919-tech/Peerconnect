@@ -23,7 +23,7 @@ echo json_encode([
     'scope'            => BASE_URL . '/',
     'display'          => 'standalone',
     'orientation'      => 'portrait-primary',
-    'theme_color'      => '#023047',
+    'theme_color'      => '#071B4D',
     'background_color' => '#EDEDED',
     'lang'             => 'en-PH',
     'categories'       => ['education', 'productivity'],

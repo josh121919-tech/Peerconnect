@@ -647,3 +647,5 @@ include 'layout.php';
 </div>
 
 <?php include __DIR__ . '/includes/moderation_ui.php'; ?>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

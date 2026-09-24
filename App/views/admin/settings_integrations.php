@@ -64,7 +64,7 @@ $integrations = [
         'name'   => 'Email (SMTP)',
         'group'  => 'Communication',
         'desc'   => 'Sends notification and password-reset email through your mail server.',
-        'colour' => ['#0087CF', '#EAF6FB'],
+        'colour' => ['#087FC1', '#EAF6FC'],
         'ready'  => EmailService::isConfigured(),
         'usage'  => $mailSent > 0 ? $mailSent . ' emails delivered' : 'No email delivered yet',
         'env'    => 'SMTP_HOST, SMTP_USERNAME, SMTP_PASSWORD, MAIL_FROM',
@@ -123,7 +123,7 @@ include __DIR__ . '/includes/settings_ui.php';
     <?php foreach ([
         ['Integrations', (string)$total, 'Built into this platform', '#EAF1FB', '#1A5C9A', 'chart'],
         ['Configured', (string)$ready, $ready === $total ? 'All of them' : ($total - $ready) . ' need keys in .env', '#E6F5EE', '#17654B', 'check'],
-        ['Google links', number_format($gcalLinked), 'Calendars connected by members', '#EAF6FB', '#0087CF', 'cal'],
+        ['Google links', number_format($gcalLinked), 'Calendars connected by members', '#EAF6FC', '#087FC1', 'cal'],
         ['Emails delivered', number_format($mailSent), 'Through your SMTP server', '#FEF6DC', '#B7791F', 'chat'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
@@ -184,7 +184,7 @@ include __DIR__ . '/includes/settings_ui.php';
                     <circle cx="58" cy="58" r="<?= $R ?>" fill="none" stroke="#EDEDED" stroke-width="12" />
                     <circle cx="58" cy="58" r="<?= $R ?>" fill="none" stroke="#17654B" stroke-width="12" stroke-linecap="round"
                             stroke-dasharray="<?= round($len, 2) ?> <?= round($C - $len, 2) ?>" transform="rotate(-90 58 58)" />
-                    <text x="58" y="58" text-anchor="middle" font-size="19" font-weight="700" fill="#020547"><?= $pct ?>%</text>
+                    <text x="58" y="58" text-anchor="middle" font-size="19" font-weight="700" fill="#071B4D"><?= $pct ?>%</text>
                     <text x="58" y="72" text-anchor="middle" font-size="9" fill="#9A9EA6">ready</text>
                 </svg>
                 <div style="flex:1;min-width:120px;display:flex;flex-direction:column;gap:8px;font-size:12.5px;color:var(--gray-600);">
@@ -217,3 +217,5 @@ include __DIR__ . '/includes/settings_ui.php';
         </div>
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

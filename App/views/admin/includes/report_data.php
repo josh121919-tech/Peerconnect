@@ -179,7 +179,7 @@ function rp_areas(array $window): array
         ['Messages sent',      $window['messages'],    '#17654B'],
         ['Feedback written',   $window['feedback'],    '#B7791F'],
         ['Assessments taken',  $window['assessments'], '#6B4FA8'],
-        ['Resources uploaded', $window['resources'],   '#0087CF'],
+        ['Resources uploaded', $window['resources'],   '#087FC1'],
         ['Members joined',     $window['joined'],      '#A6301F'],
     ];
 
@@ -206,7 +206,7 @@ function rp_feed_kinds(): array
         'staff'        => ['Admin account',        '#F1ECFA', '#5A3E96'],
         'session'      => ['Session',              '#E6F5EE', '#17654B'],
         'assessment'   => ['Assessment submitted', '#F1ECFA', '#5A3E96'],
-        'message'      => ['Message',              '#EAF6FB', '#00679E'],
+        'message'      => ['Message',              '#EAF6FC', '#00679E'],
         'feedback'     => ['Feedback',             '#FEF6DC', '#8A6400'],
         'resource'     => ['Resource',             '#F3F4F6', '#4B5563'],
         'announcement' => ['Announcement',         '#FBE9E4', '#9A3412'],

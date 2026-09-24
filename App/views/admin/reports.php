@@ -182,7 +182,7 @@ require_once __DIR__ . '/includes/sessions_ui.php';
         font-size: 12.5px; font-weight: 600; color: var(--gray-600); text-decoration: none; white-space: nowrap;
     }
     .rs-chip:hover { border-color: var(--mint); color: var(--mint); }
-    .rs-chip.on { background: var(--forest); border-color: var(--forest); color: #fff; }
+    .rs-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
     .rs-custom { display: flex; align-items: center; gap: 6px; margin-left: auto; }
     .rs-custom input {
         padding: 6px 9px; border: 1px solid var(--gray-200); border-radius: 8px;
@@ -190,7 +190,7 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     }
     .rs-custom input:focus { border-color: var(--mint); box-shadow: 0 0 0 3px rgba(0,135,207,.13); }
     .rs-custom button {
-        padding: 7px 13px; border: 1px solid var(--forest); border-radius: 9px; background: var(--forest);
+        padding: 7px 13px; border: 1px solid var(--primary); border-radius: 9px; background: var(--primary);
         color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
     }
     .rs-custom span { font-size: 12px; color: var(--gray-400); }
@@ -297,6 +297,14 @@ require_once __DIR__ . '/includes/sessions_ui.php';
             <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M4 19h16" /></svg>
             Export CSV
         </a>
+        <?php // Same range, same figures — opened as a letterheaded document
+        //     rather than downloaded as a spreadsheet. ?>
+        <a class="ss-export is-pdf" href="<?= url('admin-reports-export') . '?' . htmlspecialchars($exportQs) ?>&amp;format=pdf">
+            <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8v-7Z" />
+            </svg>
+            Export PDF
+        </a>
     </div>
 </div>
 
@@ -320,7 +328,7 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     $tiles = [
         ['New members',  $now['joined'],      $d('joined'),      '#EAF1FB', '#1A5C9A', 'users'],
         ['Active members', $now['active'],    $d('active'),      '#E6F5EE', '#17654B', 'pulse'],
-        ['Sessions',     $now['sessions'],    $d('sessions'),    '#EAF6FB', '#0087CF', 'cal'],
+        ['Sessions',     $now['sessions'],    $d('sessions'),    '#EAF6FC', '#087FC1', 'cal'],
         ['Assessments',  $now['assessments'], $d('assessments'), '#F1ECFA', '#5A3E96', 'quiz'],
         ['Messages',     $now['messages'],    $d('messages'),    '#FEF6DC', '#8A6400', 'chat'],
     ];
@@ -662,3 +670,5 @@ require_once __DIR__ . '/includes/sessions_ui.php';
 
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

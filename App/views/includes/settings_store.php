@@ -54,8 +54,8 @@ if (!function_exists('pc_setting_defaults')) {
             'email_on_announcement' => '1',
 
             /* ── Appearance ── */
-            'brand_primary'        => '#020547',
-            'brand_accent'         => '#0087CF',
+            'brand_primary'        => '#071B4D',
+            'brand_accent'         => '#087FC1',
             'brand_logo'           => '',
             'brand_favicon'        => '',
         ];
@@ -184,9 +184,9 @@ if (!function_exists('pc_maintenance_gate')) {
            . '<style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F5F5F5;'
            . 'font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#3D424D;padding:24px}'
            . '.c{max-width:440px;text-align:center;background:#fff;border:1px solid #EDEDED;border-radius:16px;padding:36px 32px;'
-           . 'box-shadow:0 12px 32px -18px rgba(16,24,40,.3)}h1{margin:0 0 10px;font-size:21px;color:#020547}'
+           . 'box-shadow:0 12px 32px -18px rgba(16,24,40,.3)}h1{margin:0 0 10px;font-size:21px;color:#071B4D}'
            . 'p{margin:0;font-size:14px;line-height:1.6;color:#565B66}a{display:inline-block;margin-top:18px;'
-           . 'font-size:13px;font-weight:600;color:#0087CF;text-decoration:none}</style></head><body><div class="c">'
+           . 'font-size:13px;font-weight:600;color:#087FC1;text-decoration:none}</style></head><body><div class="c">'
            . '<h1>' . htmlspecialchars($name) . ' is under maintenance</h1>'
            . '<p>' . nl2br(htmlspecialchars($msg)) . '</p>'
            . '<a href="' . url('login') . '">Sign in</a>'

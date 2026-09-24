@@ -77,14 +77,29 @@ class MentorDirectoryRepository extends Repository
      * Each row: the mentor, their club, expertise, course and photo; completed
      * sessions ('total_sessions'); mentees they have completed a session with
      * ('mentee_count'), the rule their profile page uses; average rating and
-     * review count; their next open date ('next_available').
+     * review count; their next open date ('next_available'); and how many
+     * slots they have open from today ('slots_open') and within the coming
+     * week ('slots_week').
+     *
+     * 'relevant' leads with the mentors who are actually free this week. A
+     * perfect match on paper is no use to a mentee who cannot book them, and
+     * the ranking used to bury someone with four slots tomorrow under
+     * someone with none at all. Tag weight still decides the order within
+     * each of those two groups, so the matching is not thrown away — it is
+     * applied to the people who can actually take a session.
+     *
+     * A rolling seven days, not the calendar week: asked on a Saturday, "the
+     * rest of this week" is an hour and a half and would rank almost
+     * everybody as unavailable.
      */
     public static function page(mysqli $con, array $filters, string $sort, int $viewerId, int $limit, int $offset): array
     {
         [$where, $types, $args] = self::where($filters);
 
         $tagSelect = '0 AS tag_weight';
-        $relevant  = 'total_sessions DESC, avg_rating DESC, u.firstname ASC';
+        // Bookable this week, then everything that already decided the order.
+        $freeFirst = 'slots_week > 0 DESC, slots_open > 0 DESC';
+        $relevant  = "$freeFirst, total_sessions DESC, avg_rating DESC, u.firstname ASC";
         if ($viewerId > 0) {
             $tagSelect = "COALESCE((
                     SELECT SUM(CASE mt.tag_type WHEN 'learn' THEN 3 WHEN 'skill' THEN 2 ELSE 1 END)
@@ -93,7 +108,7 @@ class MentorDirectoryRepository extends Repository
                       ON st.user_id = ? AND st.tag_type = mt.tag_type AND st.tag = mt.tag
                     WHERE mt.user_id = u.user_id
                 ), 0) AS tag_weight";
-            $relevant = "tag_weight DESC, $relevant";
+            $relevant = "$freeFirst, tag_weight DESC, total_sessions DESC, avg_rating DESC, u.firstname ASC";
             $types = 'i' . $types;
             array_unshift($args, $viewerId);
         }
@@ -111,6 +126,9 @@ class MentorDirectoryRepository extends Repository
                    (SELECT ROUND(AVG(f.rating),1) FROM feedback f WHERE f.mentor_id = u.user_id) AS avg_rating,
                    (SELECT COUNT(*) FROM feedback f2 WHERE f2.mentor_id = u.user_id) AS total_reviews,
                    (SELECT MIN(av.date) FROM availability av WHERE av.mentor_id = u.user_id AND av.date >= CURDATE()) AS next_available,
+                   (SELECT COUNT(*) FROM availability av2 WHERE av2.mentor_id = u.user_id AND av2.date >= CURDATE()) AS slots_open,
+                   (SELECT COUNT(*) FROM availability av3 WHERE av3.mentor_id = u.user_id
+                      AND av3.date >= CURDATE() AND av3.date < CURDATE() + INTERVAL 7 DAY) AS slots_week,
                    $tagSelect
             " . self::FROM . "
             LEFT JOIN profile pr ON u.user_id = pr.user_id

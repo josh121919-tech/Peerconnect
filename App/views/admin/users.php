@@ -58,11 +58,18 @@ $c_block   = $counts['blocked'];
  * Under each figure, how many of those accounts joined this month. It used to
  * read "+100% from last month": this month's sign-ups so far against all of
  * last month's, printed under a total that it did not describe.
+ *
+ * "None" is worth saying out loud rather than leaving the line blank: a tile
+ * with nothing under its number reads as missing data beside three that have
+ * something. The second value is whether to draw the arrow — there is nothing
+ * to point up at when the count is zero.
  */
 $joined = [];
 foreach (['all', 'mentee', 'mentor', 'admin'] as $k) {
-    $n = $counts['joined_' . $k];
-    $joined[$k] = $n > 0 ? number_format($n) . ' joined this month' : null;
+    $n = (int)$counts['joined_' . $k];
+    $joined[$k] = $n > 0
+        ? [number_format($n) . ' joined this month', true]
+        : ['None joined this month', false];
 }
 
 /* ── The list ─────────────────────────────────────────────────────────── */
@@ -164,7 +171,7 @@ include 'layout.php';
         gap: 9px;
         padding: 11px 18px;
         border-radius: 11px;
-        background: var(--forest);
+        background: var(--primary);
         color: #fff;
         font-size: 14px;
         font-weight: 600;
@@ -174,7 +181,7 @@ include 'layout.php';
     }
 
     .um-new:hover {
-        background: #16265C;
+        background: var(--primary-2);
     }
 
     .um-new svg {
@@ -199,48 +206,70 @@ include 'layout.php';
         margin-bottom: 18px;
     }
 
+    /* The same figure tile as .ss-stat, .ad-stat and the members'
+       .stat-card: white, the tint on the icon, one shadow from the shared
+       --stat-* tokens. */
     .um-stat {
         display: flex;
-        align-items: center;
-        gap: 13px;
-        padding: 15px 16px;
-        border-radius: 14px;
-        border: 1px solid transparent;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 18px;
+        background: #fff;
+        border-radius: var(--stat-radius);
+        border: 1px solid var(--stat-border);
+        box-shadow: var(--stat-shadow);
+        transition: box-shadow .16s ease;
+    }
+
+    .um-stat:hover {
+        box-shadow: var(--stat-shadow-hover);
+    }
+
+    .um-stat > div {
+        display: flex;
+        flex-direction: column;
     }
 
     .um-stat-ico {
-        flex: 0 0 44px;
-        width: 44px;
-        height: 44px;
-        border-radius: 13px;
-        background: #fff;
+        flex: 0 0 40px;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
         display: grid;
         place-items: center;
     }
 
     .um-stat-ico svg {
-        width: 21px;
-        height: 21px;
+        width: 19px;
+        height: 19px;
     }
 
     .um-stat-k {
-        font-size: 13px;
+        order: 2;
+        font-size: 12px;
         color: var(--gray-500);
         font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: .05em;
     }
 
     .um-stat-v {
-        font-family: 'DM Serif Display', serif;
-        font-size: 27px;
-        line-height: 1.1;
-        color: var(--gray-900);
+        order: 1;
+        font-size: 26px;
+        font-weight: 600;
+        line-height: 1.15;
+        letter-spacing: -0.03em;
+        font-variant-numeric: tabular-nums;
+        color: var(--forest);
     }
 
     .um-stat-t {
+        order: 3;
         display: inline-flex;
         align-items: center;
         gap: 4px;
-        margin-top: 2px;
+        margin-top: 8px;
         font-size: 11.5px;
     }
 
@@ -251,6 +280,11 @@ include 'layout.php';
 
     .um-up {
         color: #17654B;
+    }
+
+    /* Nothing to point at, so no arrow and no green. */
+    .um-flat {
+        color: var(--gray-400);
     }
 
     /* ── Toolbar ── */
@@ -288,8 +322,8 @@ include 'layout.php';
     }
 
     .um-tab.active {
-        background: var(--forest);
-        border-color: var(--forest);
+        background: var(--primary);
+        border-color: var(--primary);
         color: #fff;
         font-weight: 600;
     }
@@ -796,43 +830,6 @@ include 'layout.php';
         color: var(--gray-500);
     }
 
-    .um-pages {
-        display: flex;
-        gap: 6px;
-    }
-
-    .um-pages a,
-    .um-pages span {
-        min-width: 36px;
-        height: 36px;
-        padding: 0 10px;
-        border-radius: 9px;
-        border: 1px solid var(--gray-200);
-        background: #fff;
-        color: var(--gray-600);
-        font-size: 13px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        text-decoration: none;
-    }
-
-    .um-pages a:hover {
-        border-color: var(--mint);
-        color: var(--mint-deep, #00539B);
-    }
-
-    .um-pages .on {
-        background: var(--forest);
-        border-color: var(--forest);
-        color: #fff;
-        font-weight: 600;
-    }
-
-    .um-pages .off {
-        opacity: .45;
-    }
-
     /* ── Flash ── */
 
     /* ── Modal ── */
@@ -844,6 +841,41 @@ include 'layout.php';
 
         .um-stats {
             grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+    }
+
+    @media (max-width: 700px) {
+        .um-stat {
+            flex-direction: row;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 14px;
+        }
+
+        .um-stat-ico {
+            flex: 0 0 34px;
+            width: 34px;
+            height: 34px;
+        }
+
+        .um-stat-ico svg {
+            width: 15px;
+            height: 15px;
+        }
+
+        .um-stat-v {
+            font-size: 18px;
+        }
+
+        .um-stat-k {
+            font-size: 10px;
+            text-transform: none;
+            letter-spacing: 0;
+            line-height: 1.2;
+        }
+
+        .um-stat-t {
+            display: none;
         }
     }
 
@@ -875,11 +907,39 @@ include 'layout.php';
         <h1>User Management</h1>
         <p>View and manage all users in the PeerConnect platform.</p>
     </div>
-    <a class="um-new" href="<?= $um_url(['tab' => 'pending', 'page' => null]) ?>">
-
-        Verify User
-        <?php if ($c_pending > 0): ?><span class="um-new-n"><?= $c_pending ?></span><?php endif; ?>
-    </a>
+    <div class="ss-hd-actions">
+        <?php
+        /*
+         * The export carries the filters the list is showing, so the file is
+         * the screen rather than "all users, always". 'page' is dropped: the
+         * export is every matching row, not the page you happen to be on.
+         */
+        $um_export_qs = http_build_query(array_filter([
+            'tab'    => $view !== 'all' ? $view : null,
+            'q'      => $q,
+            'status' => $status,
+            'sort'   => $get('sort') !== '' ? $sort : null,
+        ], fn($v) => $v !== null && $v !== ''));
+        $um_export = url('admin-users-export') . ($um_export_qs ? '?' . $um_export_qs : '');
+        ?>
+        <a class="ss-export" href="<?= htmlspecialchars($um_export) ?>">
+            <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14" />
+            </svg>
+            Export <?= number_format($total) ?> user<?= $total === 1 ? '' : 's' ?>
+        </a>
+        <a class="ss-export is-pdf" href="<?= htmlspecialchars($um_export . ($um_export_qs ? '&' : '?') . 'format=pdf') ?>">
+            <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M7 3h7l5 5v13a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+                <path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M9 13h6M9 17h4" />
+            </svg>
+            Export PDF
+        </a>
+        <a class="um-new" href="<?= $um_url(['tab' => 'pending', 'page' => null]) ?>">
+            Verify User
+            <?php if ($c_pending > 0): ?><span class="um-new-n"><?= $c_pending ?></span><?php endif; ?>
+        </a>
+    </div>
 </div>
 
 <!-- ══════════ Stats ══════════ -->
@@ -892,7 +952,6 @@ include 'layout.php';
             $c_all,
             $joined['all'],
             '#EAF2FE',
-            '#CBDFF8',
             '#1B6FD1',
             '<path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m9-4a4 4 0 11-8 0 4 4 0 018 0z"/>'
         ],
@@ -901,7 +960,6 @@ include 'layout.php';
             $c_mentee,
             $joined['mentee'],
             '#E6F5EE',
-            '#BFE2D1',
             '#17654B',
             '<path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/>'
         ],
@@ -910,7 +968,6 @@ include 'layout.php';
             $c_mentor,
             $joined['mentor'],
             '#EFEDFC',
-            '#D6D0F5',
             '#4A3FB8',
             '<path stroke-linecap="round" stroke-linejoin="round" d="m12 4 9 5-9 5-9-5 9-5Z"/><path stroke-linecap="round" d="M7 11.5V16c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5v-4.5"/>'
         ],
@@ -919,22 +976,21 @@ include 'layout.php';
             $c_admin,
             $joined['admin'],
             '#FBF0D4',
-            '#F0DDA4',
             '#9A7100',
             '<rect x="3.5" y="7" width="17" height="12" rx="2.5"/><path stroke-linecap="round" d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7"/>'
         ],
     ];
-    foreach ($statCards as [$label, $value, $t, $bg, $bd, $fg, $path]): ?>
-        <div class="um-stat" style="background:<?= $bg ?>;border-color:<?= $bd ?>;">
-            <span class="um-stat-ico" style="color:<?= $fg ?>;">
+    foreach ($statCards as [$label, $value, $t, $bg, $fg, $path]): ?>
+        <div class="um-stat">
+            <span class="um-stat-ico" style="background:<?= $bg ?>;color:<?= $fg ?>;">
                 <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><?= $path ?></svg>
             </span>
             <div>
                 <div class="um-stat-k"><?= $label ?></div>
                 <div class="um-stat-v"><?= number_format($value) ?></div>
                 <?php if ($t): ?>
-                    <span class="um-stat-t um-up">
-                        <span style="display:inline-flex;"><?= $arrow ?></span><?= htmlspecialchars($t) ?>
+                    <span class="um-stat-t <?= $t[1] ? 'um-up' : 'um-flat' ?>">
+                        <?php if ($t[1]): ?><span style="display:inline-flex;"><?= $arrow ?></span><?php endif; ?><?= htmlspecialchars($t[0]) ?>
                     </span>
                 <?php endif; ?>
             </div>
@@ -1336,16 +1392,7 @@ include 'layout.php';
             Showing <?= (($page - 1) * $perPage) + 1 ?>&ndash;<?= min($page * $perPage, $total) ?> of <?= $total ?> user<?= $total === 1 ? '' : 's' ?>
         <?php endif; ?>
         </span>
-        <?php if ($totalPages > 1): ?>
-            <div class="um-pages">
-                <?php if ($page > 1): ?><a href="<?= $um_url(['page' => $page - 1]) ?>">&lsaquo;</a><?php else: ?><span class="off">&lsaquo;</span><?php endif; ?>
-                <?php for ($i = 1; $i <= $totalPages; $i++): ?>
-                    <?php if ($i === $page): ?><span class="on"><?= $i ?></span>
-                    <?php else: ?><a href="<?= $um_url(['page' => $i]) ?>"><?= $i ?></a><?php endif; ?>
-                <?php endfor; ?>
-                <?php if ($page < $totalPages): ?><a href="<?= $um_url(['page' => $page + 1]) ?>">&rsaquo;</a><?php else: ?><span class="off">&rsaquo;</span><?php endif; ?>
-            </div>
-        <?php endif; ?>
+        <?php pc_pagination($page, $totalPages, fn(int $n) => $um_url(['page' => $n]), ['label' => 'User pages']); ?>
     </div>
 
 <?php endif; ?>
@@ -1374,3 +1421,4 @@ include 'layout.php';
 </script>
 
 <?php include 'admin_footer.php'; ?>
+<?php include __DIR__ . '/layout_end.php'; ?>

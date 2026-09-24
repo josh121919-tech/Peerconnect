@@ -3,6 +3,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 include __DIR__ . "/../db.php";
+require_once __DIR__ . '/../includes/join_control.php';
 // Role, not just "signed in": every query below runs as $mentee_id, so a
 // mentor landing here was shown a mentee dashboard built from their own id —
 // an incoherent page, and the onboarding gate ran with the wrong role.
@@ -15,6 +16,7 @@ $mentee_id = (int)$_SESSION['user_id'];
 $appTz = new DateTimeZone('Asia/Manila');
 $menteeSessionAlerts = [];
 $now = new DateTime('now', $appTz);
+$liveSessionStatuses = ['approved', 'unfinished'];
 
 // Every list and count on this page comes from SessionRepository.
 $filter = $_GET['status'] ?? 'all';
@@ -79,6 +81,28 @@ $this_week_sessions = SessionRepository::countForMenteeBetween($con, $mentee_id,
 
 $calendar_url = url('mentee-calendar');
 $active_page = 'sessions';
+
+/**
+ * The badge class for a session status.
+ *
+ * "badge-{$status}" was being built by hand, which quietly produced
+ * badge-unfinished — a class the stylesheet has never had, so the newest
+ * status rendered as unstyled text. Named statuses map to the classes that
+ * exist, and anything unrecognised falls back to a grey badge rather than
+ * to nothing at all.
+ */
+function ss_badge_class(string $status): string
+{
+    return [
+        'pending'    => 'badge-pending',
+        'approved'   => 'badge-approved',
+        'completed'  => 'badge-completed',
+        'rejected'   => 'badge-rejected',
+        'cancelled'  => 'badge-cancelled',
+        'missed'     => 'badge-missed',
+        'unfinished' => 'badge-orange',
+    ][$status] ?? 'badge-gray';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -96,11 +120,332 @@ $active_page = 'sessions';
            ≥700px, compact only on phones) now live in the shared design
            system, same as the Dashboard. */
 
+        /* ── Page header ── */
+        .sx-hd {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        .sx-hd-ico {
+            width: 54px;
+            height: 54px;
+            border-radius: 18px;
+            background: var(--info-bg);
+            color: var(--info);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .sx-hd-text {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        /* ── Stat cards ──
+           auto-fit rather than a fixed four, because this page has five real
+           counts and dropping one to match a four-up reference would be
+           losing information to fit a layout. */
+        .sx-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(185px, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .sx-stat {
+            position: relative;
+            background: #fff;
+            border: 1px solid var(--stat-border);
+            border-radius: var(--stat-radius);
+            box-shadow: var(--stat-shadow);
+            transition: box-shadow .16s ease;
+            padding: 18px;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .sx-stat:hover {
+            box-shadow: var(--stat-shadow-hover);
+        }
+
+        .sx-stat-ico {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 14px;
+        }
+
+        .sx-stat-ico svg {
+            width: 19px;
+            height: 19px;
+        }
+
+        .sx-stat-v {
+            font-size: 26px;
+            font-weight: 600;
+            line-height: 1.15;
+            letter-spacing: -0.03em;
+            font-variant-numeric: tabular-nums;
+            color: var(--forest);
+        }
+
+        .sx-stat-k {
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+            color: var(--gray-500);
+            margin-top: 4px;
+        }
+
+        .sx-stat-go {
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: var(--gray-50);
+            border: 1px solid var(--gray-100);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: inherit;
+        }
+
+        .sx-stat-go:hover { background: var(--mint-faint); border-color: var(--mint-soft); }
+
+        /* The tint is the icon's, not the card's — the card is white like
+           every other figure tile in the product. */
+        .sx-teal   .sx-stat-ico { background: #D3EDE1; color: #17654B; }
+        .sx-teal   .sx-stat-go  { color: #17654B; }
+
+        .sx-blue   .sx-stat-ico { background: #DBE7FD; color: #1A5C9A; }
+        .sx-blue   .sx-stat-go  { color: #1A5C9A; }
+        .sx-purple .sx-stat-ico { background: #E3DDFB; color: #5B4FCF; }
+        .sx-purple .sx-stat-go  { color: #5B4FCF; }
+        .sx-amber  .sx-stat-ico { background: #F8E7C4; color: #8A6400; }
+        .sx-amber  .sx-stat-go  { color: #8A6400; }
+
+        .sx-rose   .sx-stat-ico { background: #F8DADF; color: #A6301F; }
+        .sx-rose   .sx-stat-go  { color: #A6301F; }
+
+        /* Phones: the tile goes icon-beside-number, the same compaction the
+           dashboards' .stat-card-icon uses at this width, so the two pages
+           do not disagree about what a figure tile looks like on a phone.
+           Grid rather than flex because the children are flat — icon, value,
+           label — with no wrapper to make a column of. */
+        @media (max-width: 700px) {
+            .sx-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+
+            .sx-stat {
+                display: grid;
+                grid-template-columns: auto minmax(0, 1fr);
+                grid-template-areas: "ico val" "ico lbl";
+                align-items: center;
+                column-gap: 10px;
+                padding: 12px 32px 12px 14px;
+                border-radius: 12px;
+            }
+
+            .sx-stat-ico {
+                grid-area: ico;
+                width: 34px;
+                height: 34px;
+                margin-bottom: 0;
+            }
+
+            .sx-stat-ico svg { width: 16px; height: 16px; }
+
+            .sx-stat-v {
+                grid-area: val;
+                font-size: 18px;
+                align-self: end;
+            }
+
+            .sx-stat-k {
+                grid-area: lbl;
+                font-size: 10px;
+                text-transform: none;
+                letter-spacing: 0;
+                line-height: 1.25;
+                margin-top: 1px;
+                align-self: start;
+            }
+
+            .sx-stat-s { display: none; }
+
+            .sx-stat-go {
+                top: 50%;
+                right: 7px;
+                bottom: auto;
+                transform: translateY(-50%);
+                width: 22px;
+                height: 22px;
+            }
+
+            .sx-stat-go svg { width: 11px; height: 11px; }
+        }
+
+        /* Two across on a phone, scaled down to fit, rather than one per row:
+           five full-size cards stacked pushed the session lists off the first
+           screen entirely. Same approach as the onboarding grid. */
+        @media (max-width: 560px) {
+            .sx-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+            .sx-hd { gap: 12px; }
+            .sx-hd-ico { width: 42px; height: 42px; border-radius: 13px; }
+            .sx-hd-ico svg { width: 21px; height: 21px; }
+        }
+
+        @media (max-width: 340px) {
+            .sx-stats { grid-template-columns: minmax(0, 1fr); }
+        }
+
         .ss-filter-chips {
             display: flex;
             gap: 6px;
             flex-wrap: wrap;
             margin-bottom: 16px;
+        }
+
+        /* ── Session History cards ──
+           A table of six columns could not be read on a phone without
+           scrolling it sideways, and the row was mostly labels. Each session
+           is one card instead, two across where there is room. */
+        .sh-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .sh-head-ico {
+            width: 38px;
+            height: 38px;
+            border-radius: 11px;
+            background: var(--info-bg);
+            color: var(--info);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .sh-head-t {
+            font-size: 16px;
+            font-weight: 800;
+            color: var(--gray-900);
+            line-height: 1.2;
+        }
+
+        .sh-head-s {
+            font-size: 12.5px;
+            color: var(--gray-500);
+            margin-top: 2px;
+        }
+
+        .sh-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 14px;
+        }
+
+        .sh-card {
+            border: 1px solid var(--gray-100);
+            border-radius: 14px;
+            padding: 15px 16px;
+            background: var(--surface);
+            min-width: 0;
+        }
+
+        .sh-card-top {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .sh-av {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: 700;
+            flex-shrink: 0;
+            background: var(--mint-faint);
+            color: var(--forest);
+        }
+
+        .sh-who {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .sh-name {
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            flex-wrap: wrap;
+            font-size: 13.5px;
+            font-weight: 700;
+            color: var(--gray-900);
+        }
+
+        .sh-role {
+            font-size: 10.5px;
+            font-weight: 600;
+            color: var(--info);
+            background: var(--info-bg);
+            border-radius: 999px;
+            padding: 2px 8px;
+        }
+
+        .sh-facts {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px 16px;
+            font-size: 12px;
+            color: var(--gray-500);
+        }
+
+        .sh-facts span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            min-width: 0;
+        }
+
+        .sh-foot {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--gray-100);
+        }
+
+        .sh-foot-r {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--gray-400);
+            font-weight: 500;
+        }
+
+        @media (max-width: 760px) {
+            .sh-grid { grid-template-columns: minmax(0, 1fr); }
         }
 
         .ss-session-row {
@@ -283,7 +628,7 @@ $active_page = 'sessions';
         }
 
         .cal-day2.today {
-            background: var(--forest);
+            background: var(--primary);
             color: #fff;
             font-weight: 700;
         }
@@ -333,23 +678,9 @@ $active_page = 'sessions';
             color: var(--gray-400);
         }
 
-        /* Five stat cards on this page, not the shared four — Total Sessions
-           joined them when the duplicate Session Overview card was removed. */
-        .stats-grid {
-            grid-template-columns: repeat(5, minmax(0, 1fr));
-        }
-
-        @media (max-width: 1080px) {
-            .stats-grid {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-            }
-        }
-
-        @media (max-width: 860px) {
-            .stats-grid {
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-            }
-        }
+        /* The .stats-grid column overrides that were here are gone with the
+           markup they sized: the five cards are .sx-stats now, which fits
+           them with auto-fit instead of a breakpoint per width. */
     </style>
 </head>
 
@@ -358,8 +689,14 @@ $active_page = 'sessions';
         <?php include __DIR__ . '/includes/sidebar.php'; ?>
 
         <main class="main fade-in">
-            <div class="page-hd" style="display:flex;justify-content:space-between;align-items:flex-start;">
-                <div>
+            <div class="sx-hd">
+                <span class="sx-hd-ico">
+                    <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
+                        <rect x="4" y="5" width="16" height="15" rx="2.5" />
+                        <path stroke-linecap="round" d="M8 3v4M16 3v4M4 10h16" />
+                    </svg>
+                </span>
+                <div class="sx-hd-text page-hd" style="margin:0;">
                     <h1>Sessions</h1>
                     <p>Manage your mentorship sessions, track your progress, and stay on top of your learning journey.</p>
                 </div>
@@ -367,56 +704,50 @@ $active_page = 'sessions';
                     <button class="btn btn-ghost btn-sm" type="button" onclick="document.getElementById('historyModal').classList.add('open')">
                         <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" /></svg>
                         History
-                    </button>                </div>
+                    </button>
+                </div>
             </div>
 
-            <!-- Stat cards -->
-            <div class="stats-grid">
-                <div class="stat-card stat-card-icon">
-                    <div class="stat-icon si-teal">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="5" y="4" width="14" height="16" rx="3" /><path stroke-linecap="round" d="M8 2v4M16 2v4M5 9h14" /></svg>
+            <?php
+            /*
+             * Stat cards. The arrow opens Session History filtered to exactly
+             * what the card counts — ?status is what the modal reads, and the
+             * query takes any status, not just the ones with a chip.
+             *
+             * "This Month" has no arrow: it is a date range, not a status,
+             * and there is nothing for the filter to show.
+             */
+            $sx_cards = [
+                ['sx-blue',   $upcoming_count,   'Upcoming Sessions',  'approved',
+                 '<rect x="5" y="4" width="14" height="16" rx="3"/><path stroke-linecap="round" d="M8 2v4M16 2v4M5 9h14"/>'],
+                ['sx-purple', $this_month_count, 'Sessions This Month', null,
+                 '<circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3"/>'],
+                ['sx-teal',   $completed_count,  'Completed Sessions', 'completed',
+                 '<circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="m8.5 12.3 2.4 2.4 4.6-4.9"/>'],
+                ['sx-rose',   $cancelled_count,  'Cancelled Sessions', 'cancelled',
+                 '<circle cx="12" cy="12" r="9"/><path stroke-linecap="round" stroke-linejoin="round" d="m9.5 9.5 5 5m0-5-5 5"/>'],
+                ['sx-amber',  $total_count,      'Total Sessions',     'all',
+                 '<path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2"/>'],
+            ];
+            ?>
+            <div class="sx-stats">
+                <?php foreach ($sx_cards as [$tint, $value, $label, $status, $path]): ?>
+                    <div class="sx-stat <?= $tint ?>">
+                        <?php if ($status !== null): ?>
+                            <a class="sx-stat-go" href="?status=<?= htmlspecialchars($status) ?>"
+                               aria-label="Show <?= htmlspecialchars($label) ?> in Session History">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.1" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6" />
+                                </svg>
+                            </a>
+                        <?php endif; ?>
+                        <div class="sx-stat-ico">
+                            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24" aria-hidden="true"><?= $path ?></svg>
+                        </div>
+                        <div class="sx-stat-v"><?= (int)$value ?></div>
+                        <div class="sx-stat-k"><?= htmlspecialchars($label) ?></div>
                     </div>
-                    <div>
-                        <div class="stat-val"><?= $upcoming_count ?></div>
-                        <div class="stat-lbl">Upcoming Sessions</div>
-                    </div>
-                </div>
-                <div class="stat-card stat-card-icon">
-                    <div class="stat-icon si-purple">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l3 3" /></svg>
-                    </div>
-                    <div>
-                        <div class="stat-val"><?= $this_month_count ?></div>
-                        <div class="stat-lbl">Sessions This Month</div>
-                    </div>
-                </div>
-                <div class="stat-card stat-card-icon">
-                    <div class="stat-icon si-orange">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    </div>
-                    <div>
-                        <div class="stat-val"><?= $completed_count ?></div>
-                        <div class="stat-lbl">Completed Sessions</div>
-                    </div>
-                </div>
-                <div class="stat-card stat-card-icon">
-                    <div class="stat-icon si-blue">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" stroke-linejoin="round" d="m9.5 9.5 5 5m0-5-5 5" /></svg>
-                    </div>
-                    <div>
-                        <div class="stat-val"><?= $cancelled_count ?></div>
-                        <div class="stat-lbl">Cancelled Sessions</div>
-                    </div>
-                </div>
-                <div class="stat-card stat-card-icon">
-                    <div class="stat-icon si-teal">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2" /></svg>
-                    </div>
-                    <div>
-                        <div class="stat-val"><?= $total_count ?></div>
-                        <div class="stat-lbl">Total Sessions</div>
-                    </div>
-                </div>
+                <?php endforeach; ?>
             </div>
 
             <div class="dash-grid">
@@ -437,9 +768,10 @@ $active_page = 'sessions';
                                 $sessionDT = new DateTime($s['session_date'], $appTz);
                                 $dayLabel = $sessionDT->format('Y-m-d') === $now->format('Y-m-d') ? 'Today'
                                     : ($sessionDT->format('Y-m-d') === (clone $now)->modify('+1 day')->format('Y-m-d') ? 'Tomorrow' : $sessionDT->format('D'));
-                                $openJoinDT = (clone $sessionDT)->modify('-10 minutes');
-                                $isJoinable = $now >= $openJoinDT;
+                                $openJoinDT = (clone $sessionDT)->modify('-' . SessionRepository::JOIN_WINDOW_MINUTES . ' minutes');
                                 $duration = $s['duration'] ? (int)$s['duration'] : 60;
+                                $sessionEndDT = (clone $sessionDT)->modify("+{$duration} minutes");
+                                $status = $s['status'] ?? 'approved';
                                 $typeLabel = $s['session_type'] === 'group' ? 'Group Mentoring' : ($s['topics'] ?: (($s['subject'] ?: 'General') . ' Mentoring'));
                             ?>
                                 <div class="ss-session-row">
@@ -458,14 +790,31 @@ $active_page = 'sessions';
                                         <span><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" /><path stroke-linecap="round" d="M12 7v5l3 3" /></svg><?= $duration ?> min</span>
                                         <span><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9.75 17L15 11.75M11 6h6a2 2 0 012 2v6M13 18H7a2 2 0 01-2-2V6" /></svg>Online</span>
                                     </div>
-                                    <?php if ($isJoinable): ?>
-                                        <a href="<?= url('video-join') ?>?session_id=<?= $sid ?>" class="btn btn-primary" style="font-size:12px;padding:8px 14px;flex-shrink:0;">
-                                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" /></svg>
-                                            Join Session
-                                        </a>
-                                    <?php else: ?>
-                                        <button class="view-btn btn btn-ghost" data-id="<?= $sid ?>" style="font-size:12px;padding:8px 14px;flex-shrink:0;">View Details</button>
-                                    <?php endif; ?>
+                                    <?php
+                                    /*
+                                     * One control, minding both edges itself: a countdown
+                                     * before the call opens, the button while it is open,
+                                     * and View Details once it is over. This page gets left
+                                     * sitting open, and the button used to outlive the
+                                     * session it belonged to.
+                                     */
+                                    $detailsBtn = '<button class="view-btn btn btn-ghost" data-id="' . $sid
+                                        . '" style="font-size:12px;padding:8px 14px;flex-shrink:0;">View Details</button>';
+                                    if (in_array($status, $liveSessionStatuses, true)):
+                                        pc_join_control([
+                                            'session_id' => $sid,
+                                            'starts_at'  => $sessionDT->getTimestamp(),
+                                            'ends_at'    => $sessionEndDT->getTimestamp(),
+                                            'status'     => $status,
+                                            'class'      => 'btn btn-primary',
+                                            'label'      => $status === 'unfinished' ? 'Rejoin Session' : 'Join Session',
+                                            'icon'       => '<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="margin-right:5px;"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" /></svg>',
+                                            'ended'      => $detailsBtn,
+                                        ]);
+                                    else:
+                                        echo $detailsBtn;
+                                    endif;
+                                    ?>
                                 </div>
                             <?php endforeach; ?>
                         <?php else: ?>
@@ -501,7 +850,7 @@ $active_page = 'sessions';
                                         <div class="ss-session-with">with <?= htmlspecialchars($name) ?> <span class="ss-mentor-pill">Mentor</span></div>
                                     </div>
                                     <div class="ss-meta-col">
-                                        <span class="badge badge-<?= $s['status'] ?>"><?= ucfirst($s['status']) ?></span>
+                                        <span class="badge <?= ss_badge_class($s['status']) ?>"><?= ucfirst($s['status']) ?></span>
                                         <?php if ($s['rating']): ?>
                                             <span class="ss-rating">&#9733; <?= number_format((float)$s['rating'], 1) ?></span>
                                         <?php endif; ?>
@@ -589,32 +938,35 @@ $active_page = 'sessions';
          the "History" button instead of always taking up page space. -->
     <div id="historyModal" class="modal-overlay<?= isset($_GET['status']) ? ' open' : '' ?>">
         <div style="background:var(--surface);border-radius:var(--radius-lg);padding:24px;width:820px;max-width:95vw;max-height:85vh;overflow-y:auto;position:relative;box-shadow:var(--shadow-lg);">
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-                <div style="font-size:15px;font-weight:700;color:var(--gray-900);">Session History</div>
-                <button id="history-close" style="width:30px;height:30px;border-radius:8px;border:1px solid var(--gray-200);background:var(--surface);display:flex;align-items:center;justify-content:center;cursor:pointer;">
+            <div class="sh-head">
+                <span class="sh-head-ico">
+                    <svg width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="8.5" /><path stroke-linecap="round" d="M12 8v4l2.5 1.5" />
+                    </svg>
+                </span>
+                <div style="flex:1 1 auto;min-width:0;">
+                    <div class="sh-head-t">Session History</div>
+                    <div class="sh-head-s">View all your past and upcoming mentoring sessions.</div>
+                </div>
+                <button id="history-close" style="width:30px;height:30px;border-radius:8px;border:1px solid var(--gray-200);background:var(--surface);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;">
                     <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                 </button>
             </div>
             <div class="ss-filter-chips">
-                <?php foreach (['all', 'approved', 'pending', 'completed', 'rejected'] as $st): ?>
+                <?php
+                /*
+                 * Every status a session can end up in, not just the five it
+                 * used to offer. Cancelled, missed and unfinished sessions
+                 * were all in this list with no way to filter down to them,
+                 * which is most of what History is for.
+                 */
+                foreach (['all', 'approved', 'pending', 'completed', 'unfinished', 'missed', 'cancelled', 'rejected'] as $st): ?>
                     <a href="?status=<?= $st ?>" class="chip <?= $filter === $st ? 'active' : '' ?>"><?= ucfirst($st) ?></a>
                 <?php endforeach; ?>
             </div>
-            <div style="overflow-x:auto;">
-                <table class="tbl">
-                    <thead>
-                        <tr>
-                            <th>Mentor</th>
-                            <th>Subject</th>
-                            <th>Date</th>
-                            <th>Time</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
+            <div class="sh-grid">
                         <?php if ($sessions): ?>
                             <?php foreach ($sessions as $s):
                                 $sid        = (int)$s['request_id'];
@@ -623,60 +975,95 @@ $active_page = 'sessions';
                                 $timeEnd    = !empty($s['session_end']) ? ' – ' . date('g:i A', strtotime($s['session_end'])) : '';
                                 $status     = $s['status'];
                                 $sessionDT  = new DateTime($s['session_date'], $appTz);
-                                $openJoinDT = (clone $sessionDT)->modify('-10 minutes');
-                                $isJoinable = $status === 'approved' && $now >= $openJoinDT;
+                                $openJoinDT = (clone $sessionDT)->modify('-' . SessionRepository::JOIN_WINDOW_MINUTES . ' minutes');
+                                /*
+                                 * The end matters as much as the start. Without
+                                 * the upper bound this offered "Rejoin Video" on
+                                 * a session that finished hours ago — the lobby
+                                 * refuses anything past its end, so the button
+                                 * could only ever bounce the mentee straight
+                                 * back. The list on this same page already
+                                 * bounded it; History did not.
+                                 */
+                                $durationHs   = !empty($s['duration']) ? (int)$s['duration'] : 60;
+                                $sessionEndDT = (clone $sessionDT)->modify("+{$durationHs} minutes");
                                 $isUpcoming = $status === 'approved' && $now < $openJoinDT;
                                 $minsToStart = (int)floor(($sessionDT->getTimestamp() - $now->getTimestamp()) / 60);
                                 if ($status === 'approved' && $minsToStart >= 0 && $minsToStart <= 10) {
                                     $menteeSessionAlerts[] = ['key' => 'mentee-sessions-' . $sid, 'message' => 'Session with ' . $s['firstname'] . ' ' . $s['lastname'] . ' starts in ' . $minsToStart . ' minute' . ($minsToStart === 1 ? '' : 's') . '.'];
                                 }
                             ?>
-                                <tr>
-                                    <td>
-                                        <div style="display:flex;align-items:center;gap:10px;">
-                                            <div class="tbl-avatar"><?= strtoupper(substr($s['firstname'], 0, 1)) ?></div>
-                                            <span style="font-weight:600;color:var(--gray-800);"><?= htmlspecialchars($s['firstname'] . ' ' . $s['lastname']) ?></span>
+                                <div class="sh-card">
+                                    <div class="sh-card-top">
+                                        <span class="sh-av"><?= strtoupper(substr($s['firstname'], 0, 1)) ?></span>
+                                        <div class="sh-who">
+                                            <div class="sh-name">
+                                                <?= htmlspecialchars($s['firstname'] . ' ' . $s['lastname']) ?>
+                                                <span class="sh-role">Mentor</span>
+                                            </div>
                                         </div>
-                                    </td>
-                                    <td><?= htmlspecialchars($s['subject'] ?? '') ?></td>
-                                    <td><?= $sdate ?></td>
-                                    <td><?= $stime . $timeEnd ?></td>
-                                    <td><span class="badge badge-<?= $status ?>"><?= ucfirst($status) ?></span></td>
-                                    <td>
-                                        <div style="display:flex;align-items:center;gap:6px;">
-                                            <?php if ($isJoinable): ?>
-                                                <a href="<?= url('video-join') ?>?session_id=<?= $sid ?>" class="btn btn-blue" style="font-size:12px;padding:6px 12px;">
-                                                    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
-                                                    </svg>
-                                                    Join Video
-                                                </a>
+                                        <span class="badge <?= ss_badge_class($status) ?>" style="flex-shrink:0;"><?= ucfirst($status) ?></span>
+                                    </div>
+
+                                    <div class="sh-facts">
+                                        <?php if (trim((string)($s['subject'] ?? '')) !== ''): ?>
+                                            <span>
+                                                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5 3 9l9 4 9-4-9-4Z" /><path stroke-linecap="round" d="M7 11v4c0 1 2.2 2 5 2s5-1 5-2v-4" /></svg>
+                                                <?= htmlspecialchars($s['subject']) ?>
+                                            </span>
+                                        <?php endif; ?>
+                                        <span>
+                                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2.5" /><path stroke-linecap="round" d="M8 3v4M16 3v4M4 10h16" /></svg>
+                                            <?= $sdate ?>
+                                        </span>
+                                        <span>
+                                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" /><path stroke-linecap="round" d="M12 8v4l2.5 1.5" /></svg>
+                                            <?= $stime . $timeEnd ?>
+                                        </span>
+                                    </div>
+
+                                    <div class="sh-foot">
+                                        <?php // View Details on every card now. It used to appear only
+                                              // when there was nothing else to offer, so the sessions a
+                                              // mentee most wanted to look into — the ones still ahead —
+                                              // were the ones with no way to open them. ?>
+                                        <button class="view-btn btn btn-ghost" data-id="<?= $sid ?>" style="font-size:12px;padding:5px 12px;">
+                                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24" style="margin-right:5px;"><path stroke-linecap="round" stroke-linejoin="round" d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="2.6" /></svg>
+                                            View Details
+                                        </button>
+
+                                        <span class="sh-foot-r">
+                                            <?php if (in_array($status, $liveSessionStatuses, true) && $now <= $sessionEndDT): ?>
+                                                <?php pc_join_control([
+                                                    'session_id' => $sid,
+                                                    'starts_at'  => $sessionDT->getTimestamp(),
+                                                    'ends_at'    => $sessionEndDT->getTimestamp(),
+                                                    'status'     => $status,
+                                                    'class'      => 'btn btn-blue',
+                                                    'label'      => $status === 'unfinished' ? 'Rejoin Video' : 'Join Video',
+                                                    'icon'       => '<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="margin-right:5px;"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" /></svg>',
+                                                ]); ?>
                                             <?php elseif ($isUpcoming): ?>
-                                                <span style="font-size:12px;color:var(--gray-400);font-weight:500;">Upcoming</span>
-                                            <?php else: ?>
-                                                <button class="view-btn btn btn-ghost" data-id="<?= $sid ?>" style="font-size:12px;padding:5px 12px;">View Details</button>
+                                                <span style="display:inline-flex;align-items:center;gap:6px;color:var(--info);">
+                                                    <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2.5" /><path stroke-linecap="round" d="M8 3v4M16 3v4M4 10h16" /></svg>
+                                                    Upcoming
+                                                </span>
                                             <?php endif; ?>
                                             <?php if ($status === 'approved'): ?>
                                                 <a href="<?= url('session-ics') ?>?session_id=<?= $sid ?>" title="Add to calendar" style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border:1px solid var(--border);border-radius:7px;color:var(--gray-500);flex-shrink:0;">
                                                     <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
                                                 </a>
                                             <?php endif; ?>
-                                        </div>
-                                    </td>
-                                </tr>
+                                        </span>
+                                    </div>
+                                </div>
                             <?php endforeach; ?>
                         <?php else: ?>
-                            <tr>
-                                <td colspan="6">
-                                    <div class="empty-state" style="padding:40px 0;">
-                                        <div class="empty-icon">📚</div>
-                                        <p style="color:var(--gray-500);font-weight:600;">No sessions found</p>
-                                    </div>
-                                </td>
-                            </tr>
+                            <div class="empty-state" style="padding:40px 0;grid-column:1 / -1;">
+                                <div class="empty-icon">📚</div>
+                                <p style="color:var(--gray-500);font-weight:600;">No sessions found</p>
+                            </div>
                         <?php endif; ?>
-                    </tbody>
-                </table>
             </div>
         </div>
     </div>

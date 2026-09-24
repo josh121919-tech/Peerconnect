@@ -70,10 +70,10 @@ $cancelAll   = $figures['cancelled'];
 $upcomingAll = $figures['upcoming'];
 $todayCount  = $figures['today'];
 
-// The missed-session job closes a session PC_MISSED_GRACE_HOURS after it ends
-// and runs every 30 minutes. One still open 90 minutes past that — three runs
-// later — means the job has stopped.
-$staleAfter = PC_MISSED_GRACE_HOURS * 60 + 90;
+// The missed-session job closes a session PC_MISSED_GRACE_MINUTES after it
+// ends and runs every 30 minutes. One still open 90 minutes past that —
+// three runs later — means the job has stopped.
+$staleAfter = PC_MISSED_GRACE_MINUTES + 90;
 $unclosed   = AdminSessionRepository::countUnclosedOlderThan($con, $staleAfter);
 
 // "vs last month" here means sessions SCHEDULED in each month — the only
@@ -154,12 +154,18 @@ include __DIR__ . '/includes/sessions_ui.php';
             <div class="ss-hd-actions">
                 <?php // Exports exactly what the current filters select, so the file
                 //     matches the screen it was taken from. ?>
-                <a class="ss-export" href="<?= url('admin-sessions-export') . '?' . http_build_query(array_filter([
-                        'tab' => $view !== 'all' ? $view : null, 'q' => $q ?: null, 'type' => $type ?: null,
-                        'subject' => $subject ?: null, 'from' => $from ?: null, 'to' => $to ?: null,
-                    ], fn($v) => $v !== null)) ?>">
+                <?php // Built once: the CSV and the PDF must export the same selection. ?>
+                <?php $ss_export_qs = http_build_query(array_filter([
+                    'tab' => $view !== 'all' ? $view : null, 'q' => $q ?: null, 'type' => $type ?: null,
+                    'subject' => $subject ?: null, 'from' => $from ?: null, 'to' => $to ?: null,
+                ], fn($v) => $v !== null)); ?>
+                <a class="ss-export" href="<?= url('admin-sessions-export') . '?' . $ss_export_qs ?>">
                     <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M4 19h16" /></svg>
                     Export <?= $total ?> row<?= $total === 1 ? '' : 's' ?>
+                </a>
+                <a class="ss-export is-pdf" href="<?= url('admin-sessions-export') . '?' . $ss_export_qs ?>&amp;format=pdf">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8v-7Z" /></svg>
+                    Export PDF
                 </a>
             </div>
         </div>
@@ -177,7 +183,7 @@ include __DIR__ . '/includes/sessions_ui.php';
                 </div>
                 <form method="post" action="<?= url('cron-missed-sessions') ?>"
                       data-pc-tone="warning" data-pc-ok="Run the check"
-                      data-pc-confirm="Close every approved session that ended more than <?= (int)PC_MISSED_GRACE_HOURS ?> hour<?= PC_MISSED_GRACE_HOURS === 1 ? '' : 's' ?> ago?&#10;If both people joined the call it is marked completed. Otherwise it is recorded as missed by whoever did not join, and both people are told. Requests the mentor never answered are removed once their time has passed. This is the same check the task runs.">
+                      data-pc-confirm="Close every approved session that ended more than <?= pc_missed_grace_label() ?> ago?&#10;If both people joined the call it is marked completed. Otherwise it is recorded as missed by whoever did not join, and both people are told. Requests the mentor never answered are removed once their time has passed. This is the same check the task runs.">
                     <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
                     <input type="hidden" name="back" value="<?= htmlspecialchars($backHere) ?>">
                     <button type="submit" class="ss-act warn"><?= ss_icon('clock') ?>Run the check now</button>
@@ -191,7 +197,7 @@ include __DIR__ . '/includes/sessions_ui.php';
             $tiles = [
                 ['Total sessions', number_format($totalAll), $trTotal, 'All time', '#EAF1FB', '#1A5C9A', 'cal'],
                 ['Upcoming', number_format($upcomingAll), null, $todayCount . ' scheduled today', '#E6F5EE', '#17654B', 'clock'],
-                ['Completed', number_format($doneAll), $trDone, $completion !== null ? $completion . '% of concluded sessions' : 'None concluded yet', '#EAF6FB', '#0087CF', 'check'],
+                ['Completed', number_format($doneAll), $trDone, $completion !== null ? $completion . '% of concluded sessions' : 'None concluded yet', '#EAF6FC', '#087FC1', 'check'],
                 ['Cancelled or declined', number_format($cancelAll), $trCanc, 'Includes declined requests', '#FBE5E1', '#A6301F', 'x'],
             ];
             foreach ($tiles as [$label, $value, $trend, $sub, $bg, $fg, $ico]): ?>
@@ -328,20 +334,7 @@ include __DIR__ . '/includes/sessions_ui.php';
 
             <div class="ss-foot">
                 <span>Showing <?= $offset + 1 ?>–<?= min($offset + $perPage, $total) ?> of <?= number_format($total) ?> session<?= $total === 1 ? '' : 's' ?></span>
-                <?php if ($totalPages > 1): ?>
-                    <div class="ss-pages">
-                        <?php if ($page > 1): ?><a href="<?= ss_url(['page' => $page - 1]) ?>">‹</a><?php else: ?><span class="off">‹</span><?php endif; ?>
-                        <?php
-                        $lo = max(1, $page - 2);
-                        $hi = min($totalPages, $lo + 4);
-                        $lo = max(1, $hi - 4);
-                        for ($i = $lo; $i <= $hi; $i++): ?>
-                            <?php if ($i === $page): ?><span class="on"><?= $i ?></span>
-                            <?php else: ?><a href="<?= ss_url(['page' => $i]) ?>"><?= $i ?></a><?php endif; ?>
-                        <?php endfor; ?>
-                        <?php if ($page < $totalPages): ?><a href="<?= ss_url(['page' => $page + 1]) ?>">›</a><?php else: ?><span class="off">›</span><?php endif; ?>
-                    </div>
-                <?php endif; ?>
+                <?php pc_pagination($page, $totalPages, fn(int $n) => ss_url(['page' => $n]), ['label' => 'Session pages']); ?>
             </div>
         <?php endif; ?>
     </div>
@@ -470,7 +463,7 @@ include __DIR__ . '/includes/sessions_ui.php';
                             It closes on its own once it ends.
                         <?php endif; ?>
                         The mentor ending the call or the mentee leaving feedback marks it completed;
-                        otherwise, about <?= (int)PC_MISSED_GRACE_HOURS ?> hour<?= PC_MISSED_GRACE_HOURS === 1 ? '' : 's' ?> after the end,
+                        otherwise, about <?= pc_missed_grace_label() ?> after the end,
                         it is marked completed if both people joined the call, or missed by whoever did not.
                         <?php if ($endTs < time() - $staleAfter * 60): ?>
                             That should have happened by now — see the warning on the list.
@@ -528,3 +521,5 @@ include __DIR__ . '/includes/sessions_ui.php';
     });
     document.addEventListener('keydown', e => { if (e.key === 'Escape') ssClose(); });
 </script>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

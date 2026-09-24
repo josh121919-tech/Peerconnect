@@ -212,3 +212,5 @@ include __DIR__ . '/includes/settings_ui.php';
         document.querySelectorAll('#ap-rail .ap-item')[1].style.background = a;
     }
 </script>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

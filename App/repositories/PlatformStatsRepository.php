@@ -172,12 +172,39 @@ class PlatformStatsRepository extends Repository
     /** The soonest pending or approved sessions still ahead, with both names, slot type and length. */
     public static function upcomingSessions(mysqli $con, int $limit): array
     {
+        /*
+         * One row per session. The mentees of a group slot booked it once
+         * each, but the mentor runs it once and they all meet in one call, so
+         * listing it per booking filled the panel with the same session over
+         * and over.
+         *
+         * The grouping happens here rather than after the fetch because of
+         * the LIMIT: fold six rows afterwards and a group whose second
+         * booking fell outside the limit would be counted as having one
+         * mentee. Grouped in SQL, the limit counts sessions.
+         *
+         * The CASE is what keeps this to group slots. For those it is a
+         * constant, so the bookings of one slot collapse together; for
+         * everything else it is the booking's own id, which nothing else
+         * shares, so 1-on-1 sessions and bookings whose slot has since been
+         * deleted stay exactly as they were.
+         *
+         * Every column that is not grouped is aggregated, because a host
+         * running ONLY_FULL_GROUP_BY rejects the query otherwise, and
+         * COUNT(DISTINCT) guards the count against a duplicated availability
+         * row multiplying the join.
+         */
         return self::rows($con, "
-            SELECT sr.request_id, sr.subject, sr.session_date,
-                   CONCAT(mu.firstname,' ',mu.lastname) AS mentor_name,
-                   CONCAT(eu.firstname,' ',eu.lastname) AS mentee_name,
-                   COALESCE(a.session_type,'') AS stype,
-                   COALESCE(a.duration, 60)    AS duration
+            SELECT MIN(sr.request_id)                                    AS request_id,
+                   sr.subject,
+                   sr.session_date,
+                   MAX(CONCAT(mu.firstname,' ',mu.lastname))             AS mentor_name,
+                   GROUP_CONCAT(DISTINCT CONCAT(eu.firstname,' ',eu.lastname)
+                                ORDER BY eu.firstname SEPARATOR ', ')    AS mentee_names,
+                   COUNT(DISTINCT sr.request_id)                         AS booked,
+                   MAX(COALESCE(a.session_type,''))                      AS stype,
+                   MAX(COALESCE(a.capacity, 0))                          AS capacity,
+                   MAX(COALESCE(a.duration, 60))                         AS duration
             FROM session_requests sr
             JOIN users mu ON mu.user_id = sr.mentor_id
             JOIN users eu ON eu.user_id = sr.mentee_id
@@ -186,6 +213,8 @@ class PlatformStatsRepository extends Repository
                   AND DATE(a.date) = DATE(sr.session_date)
                   AND TIME(a.start_time) = TIME(sr.session_date)
             WHERE sr.session_date >= NOW() AND sr.status IN ('pending','approved')
+            GROUP BY sr.mentor_id, sr.subject, sr.session_date,
+                     CASE WHEN a.session_type = 'group' THEN 0 ELSE sr.request_id END
             ORDER BY sr.session_date ASC
             LIMIT ?
         ", 'i', [$limit]);

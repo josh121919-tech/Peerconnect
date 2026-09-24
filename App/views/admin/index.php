@@ -66,12 +66,30 @@ $rating_n   = $rated['n'];
  * shown when the previous month had something to compare against, so a young
  * database shows the figure and no arrow rather than a meaningless "+100%".
  */
-function adm_trend(int $now, int $prev): ?array
+/**
+ * The line under a figure.
+ *
+ * A percentage needs something to be a percentage *of*: with nobody at all
+ * last month the change from zero is undefined, not infinite, so no figure is
+ * invented for it. The line says what actually happened instead of going
+ * blank — which is what left the Mentors tile short of a line while the four
+ * beside it had one.
+ *
+ * 'up' => null means there is no direction to point in: the note is rendered
+ * flat, without an arrow.
+ */
+function adm_trend(int $now, int $prev): array
 {
-    if ($prev <= 0) return null;
-    $pct = (int)round((($now - $prev) / $prev) * 100);
-    if ($pct === 0) return null;
-    return ['up' => $pct > 0, 'label' => ($pct > 0 ? '+' : '') . $pct . '% from last month'];
+    if ($prev > 0) {
+        $pct = (int)round((($now - $prev) / $prev) * 100);
+        if ($pct !== 0) {
+            return ['up' => $pct > 0, 'label' => ($pct > 0 ? '+' : '') . $pct . '% from last month'];
+        }
+        return ['up' => null, 'label' => 'About the same as last month'];
+    }
+    return ['up' => null, 'label' => $now > 0
+        ? number_format($now) . ' this month, none last month'
+        : 'None this month or last'];
 }
 
 $t_users    = adm_trend($acc['joined_now'], $acc['joined_prev']);
@@ -236,22 +254,33 @@ include 'layout.php';
     .ad-range select:focus-visible { outline: 2px solid var(--mint); outline-offset: 1px; }
 
     /* ── Stat row ── */
+    /* Figure tiles. The same component as .ss-stat and the mentee/mentor
+       dashboards' .stat-card: a white card with the tint moved onto the
+       icon, not spread across the whole tile. The five of them used to be
+       the only pastel-filled cards in the product. */
     .ad-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
 
     .ad-stat {
         display: flex;
-        align-items: center;
+        flex-direction: column;
+        align-items: flex-start;
         gap: 12px;
-        padding: 13px 14px;
-        border-radius: 14px;
-        border: 1px solid transparent;
+        padding: 18px;
+        background: #fff;
+        border-radius: var(--stat-radius);
+        border: 1px solid var(--stat-border);
+        box-shadow: var(--stat-shadow);
+        transition: box-shadow .16s ease;
     }
 
-    .ad-stat-ico { flex: 0 0 42px; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; }
-    .ad-stat-ico svg { width: 20px; height: 20px; }
-    .ad-stat-k { font-size: 12.5px; color: var(--gray-500); font-weight: 500; }
-    .ad-stat-v { font-family: 'DM Serif Display', serif; font-size: 26px; line-height: 1.1; color: var(--gray-900); }
-    .ad-stat-t { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 11.5px; }
+    .ad-stat:hover { box-shadow: var(--stat-shadow-hover); }
+    .ad-stat > div { display: flex; flex-direction: column; }
+
+    .ad-stat-ico { flex: 0 0 40px; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; }
+    .ad-stat-ico svg { width: 19px; height: 19px; }
+    .ad-stat-k { order: 2; font-size: 12px; color: var(--gray-500); font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+    .ad-stat-v { order: 1; font-size: 26px; font-weight: 600; line-height: 1.15; letter-spacing: -0.03em; color: var(--forest); font-variant-numeric: tabular-nums; }
+    .ad-stat-t { order: 3; display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; font-size: 11.5px; }
     .ad-stat-t svg { width: 11px; height: 11px; }
     .ad-up { color: #17654B; }
     .ad-down { color: #A6301F; }
@@ -382,6 +411,16 @@ include 'layout.php';
         .ad-card { min-height: 220px; }
         .ad-stats { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
     }
+
+    @media (max-width: 700px) {
+        .ad-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .ad-stat { flex-direction: row; align-items: center; gap: 10px; padding: 12px 14px; }
+        .ad-stat-ico { flex: 0 0 34px; width: 34px; height: 34px; }
+        .ad-stat-ico svg { width: 15px; height: 15px; }
+        .ad-stat-v { font-size: 18px; }
+        .ad-stat-k { font-size: 10px; text-transform: none; letter-spacing: 0; line-height: 1.2; }
+        .ad-stat-t { display: none; }
+    }
 </style>
 
 <div class="ad-hd">
@@ -395,32 +434,36 @@ include 'layout.php';
 <div class="ad-stats">
     <?php
     $arrow = '<svg fill="none" stroke="currentColor" stroke-width="2.4" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 19V5m0 0-6 6m6-6 6 6"/></svg>';
-    // [label, value, trend, card fill, card border, icon colour, icon path]
+    // [label, value, trend, icon fill, icon colour, icon path]
     $cards = [
-        ['Total Users', number_format($total_users), $t_users, '#EAF2FE', '#CBDFF8', '#1B6FD1',
+        ['Total Users', number_format($total_users), $t_users, '#EAF2FE', '#1B6FD1',
             '<path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m9-4a4 4 0 11-8 0 4 4 0 018 0z"/>'],
-        ['Mentees', number_format($total_mentees), $t_mentees, '#E6F5EE', '#BFE2D1', '#17654B',
+        ['Mentees', number_format($total_mentees), $t_mentees, '#E6F5EE', '#17654B',
             '<path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/>'],
-        ['Mentors', number_format($total_mentors), $t_mentors, '#EFEDFC', '#D6D0F5', '#4A3FB8',
+        ['Mentors', number_format($total_mentors), $t_mentors, '#EFEDFC', '#4A3FB8',
             '<path stroke-linecap="round" stroke-linejoin="round" d="m12 4 9 5-9 5-9-5 9-5Z"/><path stroke-linecap="round" d="M7 11.5V16c0 1.4 2.2 2.5 5 2.5s5-1.1 5-2.5v-4.5"/>'],
-        ['Completed Sessions', number_format($total_sessions), $t_sessions, '#FBF0D4', '#F0DDA4', '#9A7100',
+        ['Completed Sessions', number_format($total_sessions), $t_sessions, '#FBF0D4', '#9A7100',
             '<rect x="4" y="5" width="16" height="16" rx="3"/><path stroke-linecap="round" d="M8 3v4M16 3v4M4 10h16"/>'],
-        ['Average Rating', $rating_n ? number_format($avg_rating, 2) : '—', $t_rating, '#FBE5E1', '#F3C9C0', '#A6301F',
+        ['Average Rating', $rating_n ? number_format($avg_rating, 2) : '—', $t_rating, '#FBE5E1', '#A6301F',
             '<path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.6Z"/>'],
     ];
-    foreach ($cards as [$label, $value, $trend, $bg, $bd, $fg, $path]):
+    foreach ($cards as [$label, $value, $trend, $bg, $fg, $path]):
     ?>
-        <div class="ad-stat" style="background:<?= $bg ?>;border-color:<?= $bd ?>;">
-            <span class="ad-stat-ico" style="background:#fff;color:<?= $fg ?>;">
+        <div class="ad-stat">
+            <span class="ad-stat-ico" style="background:<?= $bg ?>;color:<?= $fg ?>;">
                 <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true"><?= $path ?></svg>
             </span>
             <div style="min-width:0;">
                 <div class="ad-stat-k"><?= $label ?></div>
                 <div class="ad-stat-v"><?= $value ?></div>
                 <?php if ($trend): ?>
-                    <span class="ad-stat-t <?= $trend['up'] ? 'ad-up' : 'ad-down' ?>"
-                        style="<?= $trend['up'] ? '' : 'display:inline-flex;' ?>">
-                        <span style="display:inline-flex;<?= $trend['up'] ? '' : 'transform:rotate(180deg);' ?>"><?= $arrow ?></span>
+                    <?php // No inline display here: .ad-stat-t already sets one, and
+                          // an inline copy outranked the rule that hides the trend
+                          // on a phone, so downward trends alone stayed visible. ?>
+                    <span class="ad-stat-t <?= $trend['up'] === null ? 'ad-flat' : ($trend['up'] ? 'ad-up' : 'ad-down') ?>">
+                        <?php if ($trend['up'] !== null): ?>
+                            <span style="display:inline-flex;<?= $trend['up'] ? '' : 'transform:rotate(180deg);' ?>"><?= $arrow ?></span>
+                        <?php endif; ?>
                         <?= htmlspecialchars($trend['label']) ?>
                     </span>
                 <?php elseif ($label === 'Average Rating' && $rating_n): ?>
@@ -592,7 +635,19 @@ include 'layout.php';
                         <i class="ad-bar" style="background:<?= $isGroup ? '#17654B' : '#1B6FD1' ?>;"></i>
                         <span class="ad-who">
                             <span class="ad-n"><?= htmlspecialchars($s['subject']) ?></span>
-                            <span class="ad-s"><?= $isGroup ? 'Group' : '1-on-1' ?> &middot; <?= htmlspecialchars($s['mentor_name']) ?> &amp; <?= htmlspecialchars($s['mentee_name']) ?></span>
+                            <span class="ad-s">
+                                <?php // One line per session. A group names how many booked it
+                                      // rather than every mentee, which would not fit and would
+                                      // grow with the seats taken. ?>
+                                <?php if ($isGroup): ?>
+                                    <?php $booked = (int)$s['booked']; ?>
+                                    Group &middot; <?= htmlspecialchars($s['mentor_name']) ?>
+                                    &middot; <?= $booked ?> mentee<?= $booked === 1 ? '' : 's' ?>
+                                <?php else: ?>
+                                    1-on-1 &middot; <?= htmlspecialchars($s['mentor_name']) ?>
+                                    &amp; <?= htmlspecialchars($s['mentee_names']) ?>
+                                <?php endif; ?>
+                            </span>
                         </span>
                         <span class="ad-when"><?= date('g:i A', $ts) ?> &ndash; <?= date('g:i A', $end) ?></span>
                     </div>
@@ -715,3 +770,5 @@ include 'layout.php';
 </div>
 
 <?php include 'admin_footer.php'; ?>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

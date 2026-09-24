@@ -250,12 +250,12 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
         }
 
         .lp-btn-primary {
-            background: var(--mint-deep);
+            background: var(--primary);
             color: #fff;
         }
 
         .lp-btn-primary:hover {
-            background: var(--forest-2);
+            background: var(--primary-2);
             transform: translateY(-1px);
             box-shadow: 0 6px 18px rgba(0, 83, 155, .30);
         }
@@ -938,7 +938,7 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
         .lp-slider-dot.is-on {
             width: 22px;
             border-radius: 99px;
-            background: var(--mint-deep);
+            background: var(--primary);
         }
 
         @media (prefers-reduced-motion: reduce) {

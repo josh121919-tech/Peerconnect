@@ -27,6 +27,11 @@ if ($status === 'pending'): ?>
 
     <head>
         <meta charset="UTF-8">
+        <?php // Without this a phone lays the page out at ~980px and scales the
+              // whole thing down, so the waiting screen rendered as a postage
+              // stamp in the middle of an empty page. The form below has always
+              // had it; this screen was missed. ?>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Waiting for Verification – NEUST</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -414,7 +419,11 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                 <span class="font-semibold text-gray-700">NEUST · PeerConnect</span>
             </div>
             <div class="inline-flex items-center gap-1.5 bg-blue-50 border border-blue-100 rounded-full px-3 py-1 text-xs font-semibold text-blue-600 mb-2">
-                🎓 Mentor Account
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4 2.5 8.6 12 13.2l9.5-4.6L12 4Z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.5 10.8v4.4c0 1.6 2.5 3 5.5 3s5.5-1.4 5.5-3v-4.4" />
+                </svg>
+                Mentor Account
             </div>
             <h1 class="text-xl font-semibold text-gray-800">Mentor Verification</h1>
             <p class="text-sm text-gray-400 mt-1">Submit your student details and areas of expertise for admin review</p>
@@ -423,7 +432,12 @@ $name_value = function (string $part) use ($existing, $account_name): string {
         <!-- Rejected banner -->
         <?php if ($status === 'rejected'): ?>
             <div class="bg-red-50 border border-red-200 rounded-xl px-5 py-4 mb-5 flex items-start gap-3">
-                <span class="text-red-500 text-lg mt-0.5">❌</span>
+                <span class="text-red-500 mt-0.5" aria-hidden="true">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="9" />
+                        <path stroke-linecap="round" d="m9.2 9.2 5.6 5.6M14.8 9.2l-5.6 5.6" />
+                    </svg>
+                </span>
                 <div>
                     <p class="font-medium text-red-700 text-sm">Verification Rejected</p>
                     <?php if ($admin_notes): ?>
@@ -456,7 +470,7 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                 <!-- ── Personal Information ── -->
                 <h2 class="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-3">Personal Information</h2>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
                     <?php // Three parts rather than one box, each starting from
                     //     what the account already knows. Matches the mentee form. ?>
@@ -552,21 +566,26 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                 <h2 class="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-3 pt-2">Mentor Details</h2>
 
                 <div>
+                    <?php // The hint used to sit on the same line as the label and
+                          // wrapped into it on a phone, so "Areas of Expertise *"
+                          // and the instruction ran together as one paragraph.
+                          // Its own line, and only one of the two hints is shown
+                          // on a narrow screen. ?>
                     <label class="text-xs text-gray-400 mb-1 block">
                         Areas of Expertise <span class="text-red-400">*</span>
-                        <span class="font-normal text-gray-300 ml-1">— type then press Enter or comma to add each</span>
+                        <span class="font-normal text-gray-300 ml-1 hidden sm:inline">— type then press Enter or comma to add each</span>
                     </label>
                     <div id="expertise-wrap" onclick="document.getElementById('expertise-text').focus()">
                         <!-- chips injected by JS -->
                         <input id="expertise-text" type="text" placeholder="e.g. Algebra, Trigonometry…" autocomplete="off">
                     </div>
-                    <p class="text-xs text-gray-300 mt-1">You can add multiple topics separated by comma</p>
+                    <p class="text-xs text-gray-300 mt-1">Type a topic, then press Enter or comma to add it.</p>
                 </div>
 
                 <!-- ── Upload Documents ── -->
                 <h2 class="text-sm font-semibold text-gray-700 border-b border-gray-100 pb-3 pt-2">Upload Documents</h2>
 
-                <div class="grid grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
                     <!-- Valid ID -->
                     <div>
@@ -579,7 +598,7 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                                 <img id="id-preview" class="absolute inset-0 w-full h-full object-contain p-1 hidden">
                             <?php endif; ?>
                             <span class="text-xs text-gray-400 z-10" id="id-label">
-                                <?= !empty($existing['id_image']) ? '📎 Change ID' : '📎 Upload ID' ?>
+                                <?= !empty($existing['id_image']) ? 'Change ID' : 'Upload ID' ?>
                             </span>
                             <span class="text-xs text-gray-300 z-10">JPG, PNG · max 3MB</span>
                             <input type="file" name="id_image" accept="image/*"
@@ -599,7 +618,7 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                                 <img id="cor-preview" class="absolute inset-0 w-full h-full object-contain p-1 hidden">
                             <?php endif; ?>
                             <span class="text-xs text-gray-400 z-10" id="cor-label">
-                                <?= !empty($existing['credential_image']) ? '📎 Change COR' : '📎 Upload COR' ?>
+                                <?= !empty($existing['credential_image']) ? 'Change COR' : 'Upload COR' ?>
                             </span>
                             <span class="text-xs text-gray-300 z-10">JPG, PNG · max 3MB</span>
                             <input type="file" name="credential_image" accept="image/*"
@@ -640,7 +659,7 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                 const img = document.getElementById(previewId);
                 img.src = e.target.result;
                 img.classList.remove('hidden');
-                document.getElementById(labelId).textContent = '✅ ' + file.name;
+                document.getElementById(labelId).textContent = file.name;
             };
             reader.readAsDataURL(file);
         }

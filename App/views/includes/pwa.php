@@ -9,7 +9,7 @@ define('PWA_INCLUDED', true);
 ?>
 <!-- ── PWA Manifest & Meta ─────────────────────────────────────── -->
 <link rel="manifest" href="<?= htmlspecialchars(url('pwa-manifest')) ?>">
-<meta name="theme-color" content="#023047">
+<meta name="theme-color" content="#071B4D">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -49,7 +49,7 @@ define('PWA_INCLUDED', true);
         banner.innerHTML = `
             <span>🔄 A new version of PeerConnect is available.</span>
             <button onclick="window.location.reload()" style="
-                margin-left:12px;background:white;color:#023047;
+                margin-left:12px;background:white;color:#071B4D;
                 border:none;border-radius:6px;padding:5px 12px;
                 font-size:12px;font-weight:700;cursor:pointer;
             ">Update now</button>
@@ -61,7 +61,7 @@ define('PWA_INCLUDED', true);
         Object.assign(banner.style, {
             position:'fixed', bottom:'16px', left:'50%',
             transform:'translateX(-50%)',
-            background:'#023047', color:'white',
+            background:'#071B4D', color:'white',
             padding:'12px 18px', borderRadius:'10px',
             fontSize:'13px', fontWeight:'500',
             boxShadow:'0 4px 20px rgba(0,0,0,.2)',

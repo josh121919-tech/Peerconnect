@@ -28,6 +28,8 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'mentor') {
     exit;
 }
 
+require_once __DIR__ . '/../../services/NotificationService.php';
+
 $mentor_id = (int)$_SESSION['user_id'];
 $self_url  = url('mentor-calendar');
 $success   = false;
@@ -130,20 +132,109 @@ register_shutdown_function(function () use ($con, $mentor_id, &$cal_locked) {
 });
 const CAL_BUSY = "Your calendar is saving another change right now. Please try again in a moment.";
 
-// ── Delete ────────────────────────────────────────────────────────────
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
+/*
+ * The shortest slot a mentor may offer.
+ *
+ * Whether a session counts as completed is a share of its length — see
+ * SessionRepository::MIN_ATTENDANCE_FRACTION — so on a five minute slot
+ * "attended enough of it" would mean three and a half minutes. A floor here
+ * is what stops that share from describing something too small to be a
+ * session at all.
+ *
+ * Slots already saved keep whatever length they have; this is checked only
+ * where a length is being set.
+ */
+const CAL_MIN_MINUTES = 30;
+const CAL_TOO_SHORT = "A session has to be at least " . CAL_MIN_MINUTES . " minutes long.";
+
+/*
+ * How long before it starts a slot can still be called off. Later than this
+ * the mentee may already be on their way, and a cancellation is no longer a
+ * change of plan but a no-show with paperwork. The cut-off is the same
+ * whether anyone has booked or not, so the button does not appear and
+ * disappear depending on who happens to be in the slot.
+ */
+const CAL_CANCEL_LEAD_HOURS = 2;
+
+// ── Cancel ────────────────────────────────────────────────────────────
+/*
+ * Removing the slot is the easy half. The half that matters is that people
+ * may be booked into it, and they have to be told — by a person, with a
+ * reason, not by their session quietly vanishing. So the reason is required
+ * whenever anyone holds a booking, each of those sessions is cancelled
+ * carrying it, and each mentee is notified before the slot goes.
+ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel_id'])) {
     if (!verify_csrf()) {
         http_response_code(403);
         exit('CSRF token mismatch.');
     }
-    $gone = AvailabilityRepository::deleteForMentor($con, cal_id('delete_id'), $mentor_id) > 0;
-    if ($gone) {
-        pc_flash('success', 'That availability slot was removed.', 'Availability deleted');
-    } else {
-        pc_flash('error', 'That slot could not be found, so nothing was removed.');
+
+    $slotId = cal_id('cancel_id');
+    $reason = cal_text('cancel_reason');
+    $slot   = AvailabilityRepository::findForMentor($con, $slotId, $mentor_id);
+
+    $bounce = function (string $kind, string $msg, string $title = '') use ($self_url) {
+        pc_flash($kind, $msg, $title);
+        header("Location: " . $self_url . '?tab=saved');
+        exit;
+    };
+
+    if (!$slot) {
+        $bounce('error', 'That slot could not be found, so nothing was cancelled.');
     }
-    header("Location: " . $self_url . '?tab=saved');
-    exit;
+
+    $booked  = SessionRepository::liveBookingsInSlot($con, $mentor_id, $slot['subject'], $slot['date'], $slot['start_time']);
+    $startTs = strtotime($slot['date'] . ' ' . $slot['start_time']);
+
+    // The same cut-off the button obeys. Checked here too: a hidden button
+    // is a suggestion, not a rule.
+    if ($startTs - time() < CAL_CANCEL_LEAD_HOURS * 3600) {
+        $bounce('error', 'That slot starts in under ' . CAL_CANCEL_LEAD_HOURS
+            . ' hours, so it can no longer be cancelled.'
+            . ($booked ? ' Message the mentee instead.' : ''));
+    }
+
+    if ($booked && $reason === '') {
+        $bounce('error', 'Please say why you are cancelling — everyone booked into this slot is told.');
+    }
+    if (mb_strlen($reason) > 500) {
+        $bounce('error', 'That reason is too long (500 characters max).');
+    }
+
+    $me = trim(($_SESSION['firstname'] ?? '') . ' ' . ($_SESSION['lastname'] ?? ''));
+    if ($me === '') {
+        $me = 'Your mentor';
+    }
+
+    $told = 0;
+    foreach ($booked as $b) {
+        if (SessionRepository::cancelByMentor($con, (int)$b['request_id'], $mentor_id, $reason) < 1) {
+            continue;   // it closed itself between the read and here
+        }
+        NotificationService::send(
+            $con,
+            (int)$b['mentee_id'],
+            'session_cancelled',
+            'Session Cancelled',
+            $me . ' cancelled your ' . $slot['subject'] . ' session on '
+                . date('M j, g:i A', strtotime($b['session_date'])) . '. Reason: ' . $reason,
+            url('mentee-sessions')
+        );
+        $told++;
+    }
+
+    // The slot goes last: if anything above failed, it is still there to try
+    // again rather than gone with its bookings left hanging.
+    AvailabilityRepository::deleteForMentor($con, $slotId, $mentor_id);
+
+    $bounce(
+        'success',
+        $told > 0
+            ? 'The slot was cancelled and ' . $told . ' mentee' . ($told === 1 ? ' was' : 's were') . ' told why.'
+            : 'That availability slot was cancelled. Nobody had booked it, so there was nobody to tell.',
+        'Availability cancelled'
+    );
 }
 
 // ── Edit ──────────────────────────────────────────────────────────────
@@ -207,6 +298,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['edit_id'])) {
         $error = "Each time slot needs a valid start and end time.";
     } elseif ($mins <= 0) {
         $error = "The end time has to be after the start time.";
+    } elseif ($mins < CAL_MIN_MINUTES && $mins !== (int)$row['duration']) {
+        // Unless it is the length the slot already had. A slot saved before
+        // this rule existed can still have its topics corrected; what is
+        // refused is setting a new length below the floor. A booked slot has
+        // its length forced from the row above, so it always takes this
+        // exemption.
+        $error = CAL_TOO_SHORT;
     } elseif (($problem = cal_text_problem($subject, $topics, $about)) !== '') {
         $error = $problem;
     } elseif ($date !== $row['date'] && $date < date('Y-m-d')) {
@@ -272,7 +370,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subject']) && empty($
         $end_times    = cal_list('end_time');
         $capacity     = $session_type === 'group' ? 15 : 1;
         $inserted     = 0;
-        $badRange     = false;
 
         // Every row is checked before any is saved, so a clash anywhere in
         // the form leaves the calendar exactly as it was.
@@ -292,8 +389,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subject']) && empty($
             // what the mentor actually thinks in.
             $duration = (int)round(($to - $from) / 60);
             if ($duration <= 0) {
-                $badRange = true;
-                continue;
+                $error = "Each time slot needs an end time later than its start.";
+                break;
+            }
+            if ($duration < CAL_MIN_MINUTES) {
+                $error = CAL_TOO_SHORT;
+                break;
             }
             $rows[] = ['start' => $start, 'duration' => $duration, 'from' => $from, 'to' => $from + $duration * 60];
         }
@@ -344,8 +445,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subject']) && empty($
             pc_flash('success',
                 $inserted . ' time slot' . ($inserted === 1 ? '' : 's') . ' added for ' . date('F j', strtotime($date)) . '.',
                 'Availability saved');
-        } elseif ($badRange) {
-            $error = "Each time slot needs an end time later than its start.";
         } else {
             $error = "Please add at least one time slot.";
         }
@@ -355,9 +454,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['subject']) && empty($
 // ── Saved slots ───────────────────────────────────────────────────────
 $saved = [];
 foreach (AvailabilityRepository::allForMentor($con, $mentor_id) as $row) {
-    $row['booked'] = SessionRepository::countLiveInSlot($con, $mentor_id, $row['subject'], $row['date'], $row['start_time']) > 0;
+    // The count, not just the fact: the cancel dialog says how many people
+    // it is about to write to, and "1 mentee" reads very differently from "6".
+    $row['booked_n'] = SessionRepository::countLiveInSlot($con, $mentor_id, $row['subject'], $row['date'], $row['start_time']);
+    $row['booked']   = $row['booked_n'] > 0;
     $saved[] = $row;
 }
+
+/*
+ * Saved Availability is today and beyond; anything earlier has been and gone
+ * and belongs to History. The line is the date rather than the end time, so a
+ * slot at nine this morning stays on the Saved tab for the rest of the day —
+ * the mentor is still working from today's list. Nothing has to be moved by
+ * hand: the split is recomputed on every load, so a slot crosses over by
+ * itself the moment the date does.
+ */
+$todayYmd  = date('Y-m-d');
+$savedOpen = [];
+$savedPast = [];
+foreach ($saved as $row) {
+    if ($row['date'] < $todayYmd) {
+        $savedPast[] = $row;
+    } else {
+        $savedOpen[] = $row;
+    }
+}
+// History reads best newest-first, which is already how they arrive.
 
 // ── What the calendar plots ───────────────────────────────────────────
 $calEvents = [];
@@ -384,7 +506,7 @@ foreach (SessionRepository::approvedWithMenteeForMentor($con, $mentor_id) as $s)
     ];
 }
 
-$activeTab = ($_GET['tab'] ?? 'calendar') === 'saved' ? 'saved' : 'calendar';
+$activeTab = in_array($_GET['tab'] ?? '', ['saved', 'history'], true) ? $_GET['tab'] : 'calendar';
 
 // Whatever the handlers above rejected is shown as a toast, the same way a
 // success is — one place for "what just happened", instead of a banner here
@@ -516,7 +638,7 @@ $active_page = 'calendar';
         }
 
         .cal-tab-btn.active {
-            background: var(--forest);
+            background: var(--primary);
             border-color: var(--forest);
             color: #fff;
         }
@@ -612,7 +734,7 @@ $active_page = 'calendar';
         }
 
         .cal-view.active {
-            background: var(--forest);
+            background: var(--primary);
             color: #fff;
         }
 
@@ -674,7 +796,7 @@ $active_page = 'calendar';
         }
 
         .cal-cell.today .cal-num {
-            background: var(--forest);
+            background: var(--primary);
             color: #fff;
         }
 
@@ -1031,6 +1153,35 @@ $active_page = 'calendar';
         .sv-del:hover { filter: brightness(.97); }
         .sv-btn[disabled] { opacity: .45; cursor: not-allowed; }
 
+        /* Past the point of no return: shown, not hidden, so the mentor can
+           see the rule rather than wonder where the control went. */
+        .sv-shut { background: var(--gray-100); color: var(--gray-400); cursor: default; }
+
+        /* History: the date range */
+        .hs-range { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .hs-range label {
+            display: inline-flex; align-items: center; gap: 7px; height: 38px; padding: 0 12px;
+            border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+            font-size: 12.5px; color: var(--gray-400);
+        }
+        .hs-range label:focus-within { border-color: var(--mint); }
+        .hs-range input { border: 0; outline: 0; background: none; font-family: inherit; font-size: 13px; color: var(--gray-800); }
+        .hs-clear { border: 0; background: none; font-family: inherit; font-size: 12.5px; font-weight: 600; color: var(--gray-500); cursor: pointer; }
+        .hs-clear:hover { color: var(--danger); }
+
+        /* Cancel dialog */
+        .cx-back { display: none; position: fixed; inset: 0; z-index: 400; background: rgba(7,27,77,.45); align-items: center; justify-content: center; padding: 20px; }
+        .cx-back.open { display: flex; }
+        .cx-card { background: var(--surface); border-radius: 16px; padding: 24px; width: 470px; max-width: 95vw; box-shadow: 0 18px 50px rgba(16,40,70,.22); }
+        .cx-card h3 { margin: 0 0 6px; font-size: 17px; font-weight: 700; color: var(--forest); }
+        .cx-when { font-size: 13px; color: var(--gray-500); margin: 0 0 14px; }
+        .cx-warn { display: flex; gap: 10px; padding: 12px 14px; border-radius: 11px; background: var(--danger-bg); color: var(--danger); font-size: 12.5px; line-height: 1.5; margin-bottom: 14px; }
+        .cx-warn svg { width: 17px; height: 17px; flex: none; margin-top: 1px; }
+        .cx-card label { display: block; font-size: 12px; font-weight: 600; color: var(--gray-700); margin-bottom: 5px; }
+        .cx-card textarea { width: 100%; font-family: inherit; font-size: 13px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; resize: vertical; }
+        .cx-hint { font-size: 11.5px; color: var(--gray-400); margin: 6px 0 0; }
+        .cx-acts { display: flex; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+
         /* Pinned while a booking exists — readonly, and it should look it. */
         .form-input.is-locked,
         input.is-locked {
@@ -1184,7 +1335,11 @@ $active_page = 'calendar';
                 </button>
                 <button type="button" class="cal-tab-btn <?= $activeTab === 'saved' ? 'active' : '' ?>" id="ctab-saved" onclick="switchTab('saved')">
                     <?= mp_svg('book') ?> Saved Availability
-                    <?php if (count($saved) > 0): ?><span class="n"><?= count($saved) ?></span><?php endif; ?>
+                    <?php if (count($savedOpen) > 0): ?><span class="n"><?= count($savedOpen) ?></span><?php endif; ?>
+                </button>
+                <button type="button" class="cal-tab-btn <?= $activeTab === 'history' ? 'active' : '' ?>" id="ctab-history" onclick="switchTab('history')">
+                    <?= mp_svg('clock') ?> History
+                    <?php if (count($savedPast) > 0): ?><span class="n"><?= count($savedPast) ?></span><?php endif; ?>
                 </button>
                 <span class="cal-tip">Set your regular availability so mentees can book sessions with you.</span>
             </div>
@@ -1228,7 +1383,7 @@ $active_page = 'calendar';
                         <div class="cal-foot">
                             <span class="cal-key"><i style="background:#12784A;"></i> Scheduled Session</span>
                             <span class="cal-key"><i style="background:#1D4ED8;"></i> Your Availability</span>
-                            <span class="cal-key"><i style="background:var(--forest);"></i> Today</span>
+                            <span class="cal-key"><i style="background:var(--primary);"></i> Today</span>
                             <span class="cal-key"><i style="background:var(--mint-faint);border:1px solid var(--mint);"></i> Selected date</span>
                             <button class="gcal-btn" type="button" onclick="goToday()" style="margin-left:auto;">Go to Today</button>
                         </div>
@@ -1290,6 +1445,7 @@ $active_page = 'calendar';
                                 <label>Time Slots</label>
                                 <div id="slots"></div>
                                 <button type="button" class="slot-add" onclick="addSlot()">+ Add Another Time Slot</button>
+                                <p class="hint">Each slot has to be at least <?= CAL_MIN_MINUTES ?> minutes long.</p>
                             </div>
 
                             <div class="form-actions">
@@ -1303,7 +1459,7 @@ $active_page = 'calendar';
 
             <!-- ══ TAB: SAVED ══ -->
             <div id="tab-saved" <?= $activeTab !== 'saved' ? 'hidden' : '' ?>>
-                <?php if (!$saved): ?>
+                <?php if (!$savedOpen): ?>
                     <div class="card empty-state-lg">
                         <span class="es-icon"><?= mp_svg('calendar') ?></span>
                         <h3 class="es-title">No availability saved yet</h3>
@@ -1315,7 +1471,7 @@ $active_page = 'calendar';
                         <span class="mp-hd-ico"><?= mp_svg('book') ?></span>
                         <div class="mp-hd-txt">
                             <h2>Saved Availability</h2>
-                            <p>Slots you have opened. Booked ones cannot be edited — the booking is matched on the date and time.</p>
+                            <p>Today and everything ahead. Booked slots cannot be edited — the booking is matched on the date and time. Past slots move to History on their own.</p>
                         </div>
                         <div class="mp-tools">
                             <label class="mp-search">
@@ -1334,11 +1490,13 @@ $active_page = 'calendar';
                     </div>
 
                     <div class="sv-list" id="svList">
-                        <?php foreach ($saved as $av):
+                        <?php foreach ($savedOpen as $av):
                             $ts     = strtotime($av['date'] . ' ' . $av['start_time']);
                             $isPast = $av['date'] < date('Y-m-d');
                             $booked = !empty($av['booked']);
                             $endTs  = $ts + ((int)$av['duration'] * 60);
+                            // Late enough and the mentee may already be on their way.
+                            $canCancel = ($ts - time()) >= CAL_CANCEL_LEAD_HOURS * 3600;
                         ?>
                             <article class="card sv-card <?= $isPast ? 'is-past' : '' ?> <?= $booked ? 'is-booked' : '' ?>"
                                 data-search="<?= htmlspecialchars(strtolower($av['subject'] . ' ' . $av['topics'] . ' ' . $av['session_type'] . ' ' . date('M d Y', $ts))) ?>"
@@ -1413,12 +1571,28 @@ $active_page = 'calendar';
                                                 </svg>
                                                 Edit
                                             </button>
-                                            <button type="button" class="sv-btn sv-del" onclick="deleteAvailability(<?= (int)$av['id'] ?>, <?= $booked ? 'true' : 'false' ?>)">
-                                                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 7h14M10 7V5h4v2M6.5 7l.8 12a1.5 1.5 0 0 0 1.5 1.4h6.4a1.5 1.5 0 0 0 1.5-1.4l.8-12" />
-                                                </svg>
-                                                Delete
-                                            </button>
+                                            <?php if ($canCancel): ?>
+                                                <button type="button" class="sv-btn sv-del" onclick='openCancel(<?= json_encode([
+                                                    "id"     => (int)$av["id"],
+                                                    "when"   => date("l j F, g:i A", $ts),
+                                                    "subject" => $av["subject"],
+                                                    "booked" => (int)$av["booked_n"],
+                                                ], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG) ?>)'>
+                                                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                        <circle cx="12" cy="12" r="9" />
+                                                        <path stroke-linecap="round" d="m9 9 6 6m0-6-6 6" />
+                                                    </svg>
+                                                    Cancel
+                                                </button>
+                                            <?php else: ?>
+                                                <span class="sv-btn sv-shut" title="A slot can only be cancelled more than <?= CAL_CANCEL_LEAD_HOURS ?> hours before it starts. Message your mentee instead.">
+                                                    <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                                                        <rect x="5" y="11" width="14" height="9" rx="2" />
+                                                        <path stroke-linecap="round" d="M8 11V8a4 4 0 0 1 8 0v3" />
+                                                    </svg>
+                                                    Too late to cancel
+                                                </span>
+                                            <?php endif; ?>
                                         </div>
                                     </div>
                                 </div>
@@ -1436,13 +1610,122 @@ $active_page = 'calendar';
                     <p class="mp-none" id="svCount"></p>
                 <?php endif; ?>
             </div>
+
+            <!-- ══ TAB: HISTORY ══ -->
+            <div id="tab-history" <?= $activeTab !== 'history' ? 'hidden' : '' ?>>
+                <?php if (!$savedPast): ?>
+                    <div class="card empty-state-lg">
+                        <span class="es-icon"><?= mp_svg('clock') ?></span>
+                        <h3 class="es-title">Nothing here yet</h3>
+                        <p class="es-body">Slots move here by themselves once their date has passed. Everything you have opened is still ahead.</p>
+                    </div>
+                <?php else: ?>
+                    <div class="mp-hd">
+                        <span class="mp-hd-ico"><?= mp_svg('clock') ?></span>
+                        <div class="mp-hd-txt">
+                            <h2>History</h2>
+                            <p>Availability whose date has passed. Kept as a record — these cannot be edited or cancelled.</p>
+                        </div>
+                        <div class="mp-tools">
+                            <span class="hs-range">
+                                <label>From <input type="date" id="hsFrom" aria-label="From date"></label>
+                                <label>To <input type="date" id="hsTo" aria-label="To date"></label>
+                                <button type="button" class="hs-clear" id="hsClear" hidden>Clear</button>
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="sv-list" id="hsList">
+                        <?php foreach ($savedPast as $av):
+                            $hts    = strtotime($av['date'] . ' ' . $av['start_time']);
+                            $hEndTs = $hts + ((int)$av['duration'] * 60);
+                        ?>
+                            <article class="card sv-card is-past" data-date="<?= htmlspecialchars($av['date']) ?>">
+                                <div class="sv-date">
+                                    <?= mp_svg('calendar') ?>
+                                    <div>
+                                        <div class="sv-mon"><?= strtoupper(date('M', $hts)) ?></div>
+                                        <div class="sv-dd"><?= date('d', $hts) ?></div>
+                                        <div class="sv-yy"><?= date('Y', $hts) ?></div>
+                                    </div>
+                                    <div style="margin-top:8px;">
+                                        <?php if (!empty($av['booked'])): ?>
+                                            <span class="badge badge-approved">Was booked</span>
+                                        <?php else: ?>
+                                            <span class="badge badge-gray">Nobody booked</span>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+
+                                <div class="sv-body">
+                                    <div class="sv-facts">
+                                        <div class="sv-fact">
+                                            <?= mp_svg('clock') ?>
+                                            <span><b>Time</b><?= date('g:i A', $hts) ?> &ndash; <?= date('g:i A', $hEndTs) ?></span>
+                                        </div>
+                                        <div class="sv-fact">
+                                            <?= mp_svg('clock') ?>
+                                            <span><b>Duration</b><?= (int)$av['duration'] ?> mins</span>
+                                        </div>
+                                        <div class="sv-fact">
+                                            <?= mp_svg('book') ?>
+                                            <span><b>Subject</b><?= htmlspecialchars($av['subject']) ?></span>
+                                        </div>
+                                        <div class="sv-fact">
+                                            <?= mp_svg('doc') ?>
+                                            <span><b>Topics</b><?= htmlspecialchars($av['topics'] ?: '—') ?></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="sv-side">
+                                    <span class="sv-pill <?= $av['session_type'] === 'group' ? 'group' : '' ?>">
+                                        <?= mp_svg('users', 'width="13" height="13"') ?>
+                                        <?= $av['session_type'] === 'group' ? 'Group' : '1v1' ?>
+                                    </span>
+                                    <div class="sv-cap">Capacity<b><?= (int)$av['capacity'] ?></b></div>
+                                </div>
+                            </article>
+                        <?php endforeach; ?>
+                    </div>
+                    <p class="mp-none" id="hsCount"></p>
+                <?php endif; ?>
+            </div>
         </main>
     </div>
 
-    <form method="POST" id="delForm" action="<?= htmlspecialchars($self_url) ?>" style="display:none;">
-        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
-        <input type="hidden" name="delete_id" id="delId">
-    </form>
+    <!--
+        Cancelling a slot people have booked is not a delete with a scarier
+        label: their sessions end, and they are owed a reason. So the reason
+        is part of the dialog rather than an afterthought, and the server
+        refuses without one whenever anybody is booked.
+    -->
+    <div class="cx-back" id="cxBack">
+        <form method="POST" class="cx-card" action="<?= htmlspecialchars($self_url) ?>">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
+            <input type="hidden" name="cancel_id" id="cxId">
+
+            <h3 id="cxTitle">Cancel this slot?</h3>
+            <p class="cx-when" id="cxWhen"></p>
+
+            <div class="cx-warn" id="cxWarn" hidden>
+                <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.3 3.9 2.5 17.4A2 2 0 0 0 4.2 20.4h15.6a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" />
+                </svg>
+                <span id="cxWarnTxt"></span>
+            </div>
+
+            <label for="cxReason">Reason <span id="cxReq" style="color:var(--danger);" hidden>*</span></label>
+            <textarea id="cxReason" name="cancel_reason" rows="3" maxlength="500"
+                      placeholder="Why are you cancelling? This is sent to everyone booked."></textarea>
+            <p class="cx-hint" id="cxHint"></p>
+
+            <div class="cx-acts">
+                <button type="button" class="btn btn-outline" onclick="closeCancel()">Keep the slot</button>
+                <button type="submit" class="btn btn-red" id="cxGo">Cancel slot</button>
+            </div>
+        </form>
+    </div>
 
     <script>
         const CAL_EVENTS = <?= json_encode($calEvents, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;
@@ -1477,11 +1760,11 @@ $active_page = 'calendar';
 
         /* ── Tabs ── */
         function switchTab(tab) {
-            document.getElementById('tab-calendar').hidden = tab !== 'calendar';
-            document.getElementById('tab-saved').hidden = tab !== 'saved';
-            document.getElementById('ctab-calendar').classList.toggle('active', tab === 'calendar');
-            document.getElementById('ctab-saved').classList.toggle('active', tab === 'saved');
-            history.replaceState(null, '', '?tab=' + tab);
+            ['calendar', 'saved', 'history'].forEach(function (t) {
+                document.getElementById('tab-' + t).hidden = tab !== t;
+                document.getElementById('ctab-' + t).classList.toggle('active', tab === t);
+            });
+            window.history.replaceState(null, '', '?tab=' + tab);
         }
 
         /* ── Calendar ── */
@@ -1797,21 +2080,55 @@ $active_page = 'calendar';
 
         // async because pcConfirm returns a promise where confirm() blocked.
         // Nothing reads the return value — both callers are onclick handlers.
-        async function deleteAvailability(id, booked) {
-            const asked = booked ? {
-                title: 'Delete this slot even though it is booked?',
-                body: 'A mentee has already booked it. Deleting the slot will not cancel their session, but you will lose the slot details.',
-                tone: 'danger',
-                ok: 'Delete anyway'
-            } : {
-                title: 'Delete this availability slot?',
-                tone: 'danger',
-                ok: 'Delete slot'
-            };
-            if (!await pcConfirm(asked)) return;
-            document.getElementById('delId').value = id;
-            document.getElementById('delForm').submit();
+        /* ── Cancelling a slot ──
+           A booked slot is not a delete with a scarier label: people lose a
+           session and are owed a reason, so the dialog asks for one and the
+           server refuses without it. The counts are spelled out because
+           "6 mentees" should give you more pause than "1". */
+        function openCancel(slot) {
+            const back = document.getElementById('cxBack');
+            const reason = document.getElementById('cxReason');
+            const warn = document.getElementById('cxWarn');
+            const req = document.getElementById('cxReq');
+            const hint = document.getElementById('cxHint');
+            const one = slot.booked === 1;
+
+            document.getElementById('cxId').value = slot.id;
+            document.getElementById('cxWhen').textContent = slot.subject + ' · ' + slot.when;
+            reason.value = '';
+
+            if (slot.booked > 0) {
+                document.getElementById('cxTitle').textContent =
+                    one ? 'Cancel this slot and the session in it?' : 'Cancel this slot and the ' + slot.booked + ' sessions in it?';
+                document.getElementById('cxWarnTxt').textContent =
+                    slot.booked + (one ? ' mentee has' : ' mentees have') + ' booked this slot. Cancelling ends ' +
+                    (one ? 'their session' : 'their sessions') + ' and sends ' + (one ? 'them' : 'each of them') + ' your reason.';
+                warn.hidden = false;
+                req.hidden = false;
+                reason.required = true;
+                hint.textContent = 'Required — this is what they will read.';
+            } else {
+                document.getElementById('cxTitle').textContent = 'Cancel this availability slot?';
+                warn.hidden = true;
+                req.hidden = true;
+                reason.required = false;
+                hint.textContent = 'Nobody has booked this slot, so there is nobody to tell. A note is optional.';
+            }
+
+            back.classList.add('open');
+            reason.focus();
         }
+
+        function closeCancel() {
+            document.getElementById('cxBack').classList.remove('open');
+        }
+
+        document.getElementById('cxBack').addEventListener('click', function (e) {
+            if (e.target === this) closeCancel();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeCancel();
+        });
 
         document.getElementById('availForm').addEventListener('submit', function(e) {
             if (!document.getElementById('dateInput').value) {
@@ -1819,13 +2136,25 @@ $active_page = 'calendar';
                 pcToast('Pick a date on the calendar first.', 'error');
                 return;
             }
-            // Mirror the server's check so a bad range does not cost a round trip.
+            // Mirror the server's checks so a bad range does not cost a round
+            // trip. The server applies both again — this is only the faster
+            // way to hear about it.
+            const MIN_MINUTES = <?= CAL_MIN_MINUTES ?>;
+            const mins = (v) => { const [h, m] = v.split(':').map(Number); return h * 60 + m; };
+
             const starts = [...document.querySelectorAll('input[name="start_time[]"]')];
             const ends = [...document.querySelectorAll('input[name="end_time[]"]')];
             for (let i = 0; i < starts.length; i++) {
-                if (starts[i].value && ends[i].value && ends[i].value <= starts[i].value) {
+                if (!starts[i].value || !ends[i].value) continue;
+                if (ends[i].value <= starts[i].value) {
                     e.preventDefault();
                     pcToast('Each slot needs an end time later than its start.', 'error');
+                    ends[i].focus();
+                    return;
+                }
+                if (mins(ends[i].value) - mins(starts[i].value) < MIN_MINUTES) {
+                    e.preventDefault();
+                    pcToast(<?= json_encode(CAL_TOO_SHORT) ?>, 'error');
                     ends[i].focus();
                     return;
                 }
@@ -1863,6 +2192,47 @@ $active_page = 'calendar';
             }
             search.addEventListener('input', apply);
             sort.addEventListener('change', apply);
+            apply();
+        })();
+
+        /* ── History: filter by date range ──
+           ISO dates, so a plain string compare is the right compare. */
+        (function () {
+            const list = document.getElementById('hsList');
+            if (!list) return;
+            const from = document.getElementById('hsFrom');
+            const to = document.getElementById('hsTo');
+            const clear = document.getElementById('hsClear');
+            const count = document.getElementById('hsCount');
+            const cards = Array.from(list.children);
+
+            function apply() {
+                const a = from.value;
+                const b = to.value;
+                let shown = 0;
+                cards.forEach(function (c) {
+                    const dt = c.dataset.date;
+                    const ok = (!a || dt >= a) && (!b || dt <= b);
+                    c.hidden = !ok;
+                    if (ok) shown++;
+                });
+                clear.hidden = !a && !b;
+                if (a && b && a > b) {
+                    count.textContent = 'That range ends before it starts.';
+                } else if (shown === cards.length) {
+                    count.textContent = 'Showing all ' + cards.length + ' past slot' + (cards.length === 1 ? '' : 's');
+                } else {
+                    count.textContent = 'Showing ' + shown + ' of ' + cards.length + ' past slots';
+                }
+            }
+
+            from.addEventListener('change', apply);
+            to.addEventListener('change', apply);
+            clear.addEventListener('click', function () {
+                from.value = '';
+                to.value = '';
+                apply();
+            });
             apply();
         })();
 

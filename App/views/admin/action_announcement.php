@@ -36,7 +36,14 @@ $id     = (int)($_POST['announcement_id'] ?? 0);
 $action = $_POST['action'] ?? '';
 $back   = $_POST['back'] ?? '';
 
-if ($back === '' || strpos($back, BASE_URL . '/') !== 0) {
+// Only back to a page inside this install, never wherever a form says. Also
+// refused: an address a redirect header cannot carry (control characters),
+// and "//host" or a backslash, which a browser reads as another site — the
+// prefix check alone would let those through for an install at a domain's
+// root, where BASE_URL is empty. Same rule as admin/action_session.php.
+if ($back === '' || strpos($back, BASE_URL . '/') !== 0
+    || strpos($back, '//') === 0 || strpos($back, '\\') !== false
+    || preg_match('/[\x00-\x1F\x7F]/', $back)) {
     $back = url('admin-announcements');
 }
 
@@ -94,6 +101,31 @@ $cats  = pc_ann_categories();
 $auds  = pc_ann_audiences();
 $cat   = array_key_exists($_POST['category'] ?? '', $cats) ? $_POST['category'] : 'General';
 $aud   = array_key_exists($_POST['audience'] ?? '', $auds) ? $_POST['audience'] : 'all';
+
+/*
+ * The club it is aimed at, or null for "any club".
+ *
+ * Checked against the clubs that actually exist rather than taken as typed:
+ * a club nobody is in would address the announcement to nobody, and it would
+ * sit there looking published with a reach of zero.
+ */
+$club = null;
+if (pc_ann_club_enabled($con)) {
+    $wanted = trim((string)($_POST['audience_club'] ?? ''));
+    if ($wanted !== '' && in_array($wanted, pc_ann_clubs($con), true)) {
+        $club = $wanted;
+    }
+}
+
+/*
+ * The column is only named in the SQL when it exists. Both statements below
+ * are written once and bind one more value when it does, rather than being
+ * duplicated — a second copy of an INSERT this long is how the two come to
+ * disagree about some other column entirely.
+ */
+$clubSet = pc_ann_club_enabled($con) ? ', audience_club = ?' : '';
+$clubCol = pc_ann_club_enabled($con) ? ', audience_club'    : '';
+$clubVal = pc_ann_club_enabled($con) ? ', ?'                : '';
 $pin   = !empty($_POST['is_pinned']) ? 1 : 0;
 $whenR = trim((string)($_POST['publish_at'] ?? ''));
 
@@ -185,16 +217,20 @@ if ($id > 0) {
     $up = $con->prepare("
         UPDATE announcements
            SET title = ?, body = ?, category = ?, audience = ?, status = ?, is_pinned = ?,
-               image_path = ?, publish_at = ?, published_at = ?, updated_at = NOW()
+               image_path = ?, publish_at = ?, published_at = ?, updated_at = NOW() $clubSet
          WHERE announcement_id = ?
     ");
-    $up->bind_param('sssssisssi', $title, $body, $cat, $aud, $status, $pin, $img, $publishAt, $pubAt, $id);
+    if ($clubSet !== '') {
+        $up->bind_param('sssssissssi', $title, $body, $cat, $aud, $status, $pin, $img, $publishAt, $pubAt, $club, $id);
+    } else {
+        $up->bind_param('sssssisssi', $title, $body, $cat, $aud, $status, $pin, $img, $publishAt, $pubAt, $id);
+    }
     $up->execute();
     $up->close();
 
     $logRef = 'announcement #' . $id . ' "' . $title . '"';
     if ($goLive) {
-        $n = pc_ann_send($con, $id, $title, $aud);
+        $n = pc_ann_send($con, $id, $title, $aud, $club);
         pc_admin_log('published ' . $logRef . ' to ' . $n . ' ' . ($n === 1 ? 'person' : 'people'));
         pc_flash('success', 'Published and ' . $n . ' ' . ($n === 1 ? 'person was' : 'people were') . ' notified.', 'Announcement sent');
     } elseif ($status === 'scheduled') {
@@ -213,17 +249,21 @@ if ($id > 0) {
 
     $ins = $con->prepare("
         INSERT INTO announcements
-            (title, body, category, audience, status, is_pinned, image_path, created_by, created_at, publish_at, published_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?)
+            (title, body, category, audience, status, is_pinned, image_path, created_by, created_at, publish_at, published_at$clubCol)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?, ?$clubVal)
     ");
-    $ins->bind_param('sssssiisss', $title, $body, $cat, $aud, $status, $pin, $imagePath, $me, $publishAt, $pubAt);
+    if ($clubCol !== '') {
+        $ins->bind_param('sssssiissss', $title, $body, $cat, $aud, $status, $pin, $imagePath, $me, $publishAt, $pubAt, $club);
+    } else {
+        $ins->bind_param('sssssiisss', $title, $body, $cat, $aud, $status, $pin, $imagePath, $me, $publishAt, $pubAt);
+    }
     $ins->execute();
     $newId = (int)$ins->insert_id;
     $ins->close();
 
     $logRef = 'announcement #' . $newId . ' "' . $title . '"';
     if ($status === 'published') {
-        $n = pc_ann_send($con, $newId, $title, $aud);
+        $n = pc_ann_send($con, $newId, $title, $aud, $club);
         pc_admin_log('published ' . $logRef . ' to ' . $n . ' ' . ($n === 1 ? 'person' : 'people'));
         pc_flash('success', $n . ' ' . ($n === 1 ? 'person was' : 'people were') . ' notified.', 'Announcement sent');
     } elseif ($status === 'scheduled') {

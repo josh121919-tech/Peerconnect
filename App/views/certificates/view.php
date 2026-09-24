@@ -85,7 +85,7 @@ $title = $cert ? $cert['title'] : 'Certificate';
             margin-bottom: 20px;
         }
 
-        .cv-bar h1 { margin: 0; font-size: 17px; font-weight: 700; color: #020547; }
+        .cv-bar h1 { margin: 0; font-size: 17px; font-weight: 700; color: #071B4D; }
         .cv-bar p { margin: 2px 0 0; font-size: 12.5px; color: #7A8090; }
 
         .cv-acts { display: flex; gap: 9px; }
@@ -96,9 +96,9 @@ $title = $cert ? $cert['title'] : 'Certificate';
             background: #fff; font-family: inherit; font-size: 13px; font-weight: 600;
             color: #3D424D; text-decoration: none; cursor: pointer;
         }
-        .cv-btn:hover { border-color: #0087CF; color: #0087CF; }
-        .cv-btn.primary { background: #020547; border-color: #020547; color: #fff; }
-        .cv-btn.primary:hover { background: #0B1440; color: #fff; }
+        .cv-btn:hover { border-color: #087FC1; color: #087FC1; }
+        .cv-btn.primary { background: #071B4D; border-color: #071B4D; color: #fff; }
+        .cv-btn.primary:hover { background: #0E2E6B; color: #fff; }
         .cv-btn svg { width: 15px; height: 15px; }
 
         .cv-sheet {
@@ -123,9 +123,9 @@ $title = $cert ? $cert['title'] : 'Certificate';
             background: #fff; border-radius: 16px; padding: 34px 30px;
             box-shadow: 0 12px 32px -18px rgba(16, 24, 40, .3);
         }
-        .cv-msg h2 { margin: 0 0 8px; font-size: 19px; color: #020547; }
+        .cv-msg h2 { margin: 0 0 8px; font-size: 19px; color: #071B4D; }
         .cv-msg p { margin: 0; font-size: 13.5px; line-height: 1.6; color: #565B66; }
-        .cv-msg a { display: inline-block; margin-top: 18px; font-size: 13px; font-weight: 600; color: #0087CF; text-decoration: none; }
+        .cv-msg a { display: inline-block; margin-top: 18px; font-size: 13px; font-weight: 600; color: #087FC1; text-decoration: none; }
 
         @media print {
             /* Only the certificate is printed: no toolbar, no page background,

@@ -496,7 +496,7 @@
         font-size: 15.5px;
         font-weight: 600;
         color: #fff;
-        background: var(--mint-deep);
+        background: var(--primary);
         border: 0;
         border-radius: var(--radius);
         padding: 13px 20px;
@@ -505,7 +505,7 @@
     }
 
     .auth-submit:hover {
-        background: var(--forest);
+        background: var(--primary);
         transform: translateY(-1px);
         box-shadow: 0 6px 18px rgba(0, 83, 155, .26);
     }
@@ -537,8 +537,8 @@
 
     .auth-submit-ghost:hover {
         color: #fff;
-        background: var(--mint-deep);
-        border-color: var(--mint-deep);
+        background: var(--primary);
+        border-color: var(--primary);
     }
 
     /* The round mark above "Check your email". */

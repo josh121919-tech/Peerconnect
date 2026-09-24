@@ -48,6 +48,17 @@ $activity = UserRepository::recentActivityForMentee($con, $user_id, 6);
 // (the badges table is mentor-only: Rising/Experienced/Master Mentor.)
 $counts = UserRepository::menteeMilestoneCounts($con, $user_id);
 
+// When they joined, for the banner. The mentor's profile shows the same.
+$joined_at = UserRepository::joinedAt($con, $user_id);
+
+// How they are scoring on the assessments their mentors set. NULL when
+// nothing has been submitted — not 0, which is a mark someone can actually
+// get and would read as having failed everything.
+$avg_score = AssessmentRepository::averageScorePercentForMentee($con, $user_id);
+if ((int)($counts['assessments'] ?? 0) === 0) {
+    $avg_score = null;
+}
+
 $milestones = [
     ['First Mentorship', 'Complete your first mentoring session', (int)$counts['sessions'] >= 1, 'trophy'],
     ['Active Learner',   'Complete 5 mentoring sessions',          (int)$counts['sessions'] >= 5, 'star'],
@@ -101,78 +112,187 @@ $csrf        = csrf_token();
             min-width: 0;
         }
 
-        /* ── Identity card ── */
+        /* ── Identity banner ──
+           Across the top rather than down the left, matching the mentor's
+           profile: the name, what they study and the actions sit on one line
+           instead of stacking in a narrow column. */
         .pf-hero {
-            background: linear-gradient(160deg, var(--forest) 0%, #0A1560 100%);
-            border-radius: var(--radius-lg);
-            padding: 26px 20px 22px;
-            text-align: center;
-            color: #fff;
+            display: flex;
+            align-items: flex-start;
+            gap: 20px;
+            padding: 22px 24px;
+            margin-bottom: 16px;
         }
 
         .pf-avatar-wrap {
             position: relative;
-            width: 104px;
-            margin: 0 auto 14px;
+            width: 92px;
+            flex-shrink: 0;
         }
 
         .pf-avatar {
-            width: 104px;
-            height: 104px;
+            width: 92px;
+            height: 92px;
             border-radius: 50%;
             object-fit: cover;
-            border: 4px solid rgba(255, 255, 255, .18);
+            border: 3px solid var(--gray-100);
             background: var(--mint-faint);
             color: var(--forest);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 38px;
+            font-size: 34px;
             font-weight: 700;
         }
 
         .pf-cam {
             position: absolute;
-            right: 2px;
-            bottom: 2px;
-            width: 30px;
-            height: 30px;
+            right: 0;
+            bottom: 0;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
             background: var(--mint);
             color: #fff;
-            border: 3px solid var(--forest);
+            border: 3px solid #fff;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
         }
 
-        .pf-hero-name {
-            font-size: 18px;
-            font-weight: 700;
+        .pf-hero-body {
+            flex: 1 1 auto;
+            min-width: 0;
         }
 
-        .pf-hero-chip {
-            display: inline-block;
+        .pf-name {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 21px;
+            font-weight: 800;
+            color: var(--gray-900);
+            margin: 0;
+        }
+
+        .pf-role {
             font-size: 11px;
             font-weight: 700;
-            background: rgba(255, 255, 255, .16);
+            background: var(--mint-faint);
+            color: var(--mint-deep);
             border-radius: 999px;
             padding: 3px 11px;
-            margin: 7px 0 6px;
         }
 
-        .pf-hero-mail {
-            font-size: 12px;
-            color: rgba(255, 255, 255, .6);
+        .pf-headline {
+            font-size: 13px;
+            color: var(--gray-600);
+            margin: 6px 0 0;
         }
 
-        .pf-hero-quote {
+        .pf-quote {
             font-size: 12.5px;
             font-style: italic;
-            color: rgba(255, 255, 255, .85);
-            margin-top: 10px;
+            color: var(--gray-500);
+            margin: 6px 0 0;
             line-height: 1.5;
+        }
+
+        .pf-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 16px;
+            margin-top: 12px;
+            font-size: 12px;
+            color: var(--gray-500);
+        }
+
+        .pf-meta span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .pf-meta a {
+            color: var(--info);
+            font-weight: 600;
+        }
+
+        .pf-live {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .pf-hero-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        /* ── Stat row ── */
+        .pf-stats {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        .pf-stat {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 18px 20px;
+        }
+
+        .pf-stat-ico {
+            width: 42px;
+            height: 42px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .pf-stat-v {
+            font-size: 26px;
+            font-weight: 800;
+            color: var(--gray-900);
+            line-height: 1.1;
+        }
+
+        .pf-stat-k {
+            font-size: 12px;
+            color: var(--gray-500);
+            margin-top: 2px;
+        }
+
+        @media (max-width: 900px) {
+            .pf-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
+        @media (max-width: 640px) {
+            .pf-hero {
+                flex-direction: column;
+                align-items: center;
+                text-align: center;
+            }
+            .pf-name,
+            .pf-meta { justify-content: center; }
+            .pf-hero-actions {
+                flex-direction: row;
+                width: 100%;
+                justify-content: center;
+            }
+        }
+
+        @media (max-width: 420px) {
+            .pf-stats { grid-template-columns: minmax(0, 1fr); }
         }
 
         /* ── Info rows ── */
@@ -324,62 +444,6 @@ $csrf        = csrf_token();
            questionnaire answer can contain a comma of its own ("Science,
            Technology and Society (STS)") and a comma-joined input would split
            it in two the next time this form was saved. */
-        .pf-chipin {
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 8px;
-            background: var(--surface);
-        }
-
-        .pf-chipin:focus-within {
-            border-color: var(--mint-soft);
-        }
-
-        .pf-chipin-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-        }
-
-        .pf-chipin-list:not(:empty) {
-            margin-bottom: 8px;
-        }
-
-        .pf-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            max-width: 100%;
-            font-size: 12px;
-            font-weight: 600;
-            line-height: 1.45;
-            background: var(--mint-faint);
-            color: var(--mint);
-            border-radius: 12px;
-            padding: 4px 5px 4px 11px;
-        }
-
-        .pf-chip-x {
-            border: 0;
-            background: transparent;
-            color: inherit;
-            cursor: pointer;
-            font-size: 15px;
-            line-height: 1;
-            padding: 1px 5px;
-            border-radius: 50%;
-        }
-
-        .pf-chip-x:hover {
-            background: rgba(0, 135, 207, .16);
-        }
-
-        .pf-edit-box .pf-chipin input {
-            border: 0;
-            border-radius: 0;
-            padding: 4px 3px;
-        }
-
         .pf-edit-box {
             border-top: 1px solid var(--border);
             padding-top: 14px;
@@ -423,45 +487,148 @@ $csrf        = csrf_token();
 
         <main class="main fade-in">
 
-            <div class="page-hd" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;">
-                <div>
-                    <h1>My Profile</h1>
-                    <p>Your account information and feedback overview</p>
+            <div id="pfAlert" style="display:none;border-radius:var(--radius);padding:10px 14px;font-size:12.5px;margin-bottom:14px;"></div>
+
+            <?php
+            // Course, year and club on one line, in that order. Only the parts
+            // that exist are joined, so a half-filled profile never renders a
+            // stray separator — the same rule the mentor's banner follows.
+            $headline_bits = array_values(array_filter([
+                $info['course'] ?? '',
+                $info['year_level'] ?? '',
+                $info['club'] ?? '',
+            ], fn($v) => trim((string)$v) !== ''));
+            $location = trim((string)($profile['location'] ?? ''));
+            ?>
+
+            <!-- ══════════ BANNER ══════════ -->
+            <div class="card pf-hero">
+                <?php
+                /*
+                 * The identity fields travel with the photo because the
+                 * endpoint validates them before it looks at the file: this
+                 * form used to send the token and the image alone, so every
+                 * upload was refused with "All required fields must be
+                 * filled" and, being a plain form post to a JSON endpoint,
+                 * printed that reply as raw JSON over the page. Sending the
+                 * values already on the record changes nothing about them and
+                 * lets the upload through.
+                 */
+                ?>
+                <form id="photoForm" enctype="multipart/form-data" style="display:none;">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
+                    <input type="hidden" name="full_name"  value="<?= htmlspecialchars($full_name) ?>">
+                    <input type="hidden" name="student_id" value="<?= htmlspecialchars($info['student_id'] ?? '') ?>">
+                    <input type="hidden" name="course"     value="<?= htmlspecialchars($info['course'] ?? '') ?>">
+                    <input type="hidden" name="year_level" value="<?= htmlspecialchars($info['year_level'] ?? '') ?>">
+                    <input type="hidden" name="club"       value="<?= htmlspecialchars($info['club'] ?? '') ?>">
+                    <input type="file" name="profile_image" id="photoInput" accept="image/*" onchange="uploadPhoto()">
+                </form>
+                <div class="pf-avatar-wrap">
+                    <?php if ($profile_image): ?>
+                        <img class="pf-avatar" src="<?= htmlspecialchars($profile_image) ?>" alt="">
+                    <?php else: ?>
+                        <div class="pf-avatar"><?= htmlspecialchars(strtoupper(substr($full_name, 0, 1))) ?></div>
+                    <?php endif; ?>
+                    <button type="button" class="pf-cam" onclick="document.getElementById('photoInput').click()" aria-label="Change profile photo">
+                        <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" /><circle cx="12" cy="13" r="3" /></svg>
+                    </button>
                 </div>
-                <a href="<?= htmlspecialchars(url('mentee-settings')) ?>" class="btn btn-ghost btn-sm" style="margin-top:4px;">
-                    <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20 16.5 7.5l3 3L7 23H4v-3Z" /></svg>
-                    Edit Profile
-                </a>
+
+                <div class="pf-hero-body">
+                    <h2 class="pf-name">
+                        <?= htmlspecialchars($full_name) ?>
+                        <span class="pf-role">Mentee</span>
+                    </h2>
+
+                    <?php if ($headline_bits): ?>
+                        <p class="pf-headline"><?= htmlspecialchars(implode(' · ', $headline_bits)) ?></p>
+                    <?php endif; ?>
+
+                    <?php if ($bio !== ''): ?>
+                        <p class="pf-quote">&ldquo;<?= htmlspecialchars(mb_strimwidth($bio, 0, 120, '…')) ?>&rdquo;</p>
+                    <?php endif; ?>
+
+                    <div class="pf-meta">
+                        <?php // The mentor's banner shows open slots here. A mentee has none
+                              // to offer, so this says whether one is booked instead. ?>
+                        <span>
+                            <span class="pf-live" style="background:<?= $next_session ? 'var(--success)' : 'var(--gray-300)' ?>;"></span>
+                            <?php if ($next_session): ?>
+                                Next session <?= htmlspecialchars(date('M j, g:i A', strtotime($next_session['session_date']))) ?>
+                            <?php else: ?>
+                                No session booked &mdash; <a href="<?= htmlspecialchars(url('mentee-find')) ?>">find a mentor</a>
+                            <?php endif; ?>
+                        </span>
+                        <span>
+                            <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z" /><circle cx="12" cy="10" r="2.5" /></svg>
+                            <?php if ($location !== ''): ?>
+                                <?= htmlspecialchars($location) ?>
+                            <?php else: ?>
+                                <a href="<?= htmlspecialchars(url('mentee-settings')) ?>">Add your location</a>
+                            <?php endif; ?>
+                        </span>
+                        <?php if ($joined_at): ?>
+                            <span>
+                                <svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2.5" /><path stroke-linecap="round" d="M8 3v4M16 3v4M4 10h16" /></svg>
+                                Joined <?= htmlspecialchars(date('F Y', strtotime($joined_at))) ?>
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="pf-hero-actions">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="openEditModal()">
+                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 20 16.5 7.5l3 3L7 23H4v-3Z" /></svg>
+                        Edit Profile
+                    </button>
+                    <a class="btn btn-ghost btn-sm" href="<?= htmlspecialchars(url('mentee-settings')) ?>">Account settings</a>
+                </div>
             </div>
 
-            <div id="pfAlert" style="display:none;border-radius:var(--radius);padding:10px 14px;font-size:12.5px;margin-bottom:14px;"></div>
+            <!-- ══════════ STATS ══════════ -->
+            <?php
+            // Every one of these is a real count from menteeMilestoneCounts.
+            // A mentee has no rating and no badges — the badges table is
+            // mentor-only — so those two tiles of the mentor's row are
+            // replaced rather than filled with something invented.
+            $pf_tiles = [
+                ['mentors',     'Mentor' . ((int)($counts['mentors'] ?? 0) === 1 ? '' : 's'),
+                 'var(--mint-faint)', 'var(--mint-deep)', 'users'],
+                ['sessions',    'Session' . ((int)($counts['sessions'] ?? 0) === 1 ? '' : 's') . ' completed',
+                 '#EEF2FF', '#4338CA', 'cal'],
+                ['assessments', 'Assessment' . ((int)($counts['assessments'] ?? 0) === 1 ? '' : 's') . ' taken',
+                 '#FEF3C7', '#92400E', 'check'],
+                ['reviews',     'Review' . ((int)($counts['reviews'] ?? 0) === 1 ? '' : 's') . ' given',
+                 '#FCE7F3', '#9D174D', 'star'],
+            ];
+            $pf_paths = [
+                'users' => '<path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"/>',
+                'cal'   => '<rect x="4" y="5" width="16" height="15" rx="2.5"/><path stroke-linecap="round" d="M8 3v4M16 3v4M4 10h16"/>',
+                'check' => '<circle cx="12" cy="12" r="8.5"/><path stroke-linecap="round" stroke-linejoin="round" d="m8.5 12.3 2.4 2.4 4.6-4.9"/>',
+                'star'  => '<path stroke-linecap="round" stroke-linejoin="round" d="m12 4 2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 9.7l5.4-.8L12 4Z"/>',
+            ];
+            ?>
+            <div class="pf-stats">
+                <?php foreach ($pf_tiles as [$key, $label, $bg, $fg, $ico]): ?>
+                    <div class="card pf-stat">
+                        <div class="pf-stat-ico" style="background:<?= $bg ?>;color:<?= $fg ?>;">
+                            <svg width="21" height="21" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><?= $pf_paths[$ico] ?></svg>
+                        </div>
+                        <div>
+                            <div class="pf-stat-v"><?= (int)($counts[$key] ?? 0) ?></div>
+                            <div class="pf-stat-k"><?= htmlspecialchars($label) ?></div>
+                            <?php if ($key === 'assessments' && $avg_score !== null): ?>
+                                <div class="pf-stat-k" style="color:var(--forest);font-weight:600;"><?= (int)$avg_score ?>% average</div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
 
             <div class="pf-layout">
                 <!-- ═══ Left ═══ -->
                 <div class="pf-col">
-                    <div class="pf-hero">
-                        <form id="photoForm" method="POST" action="<?= htmlspecialchars(url('mentee-update-profile')) ?>" enctype="multipart/form-data" style="display:none;">
-                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
-                            <input type="file" name="profile_image" id="photoInput" accept="image/*" onchange="document.getElementById('photoForm').submit()">
-                        </form>
-                        <div class="pf-avatar-wrap">
-                            <?php if ($profile_image): ?>
-                                <img class="pf-avatar" src="<?= htmlspecialchars($profile_image) ?>" alt="">
-                            <?php else: ?>
-                                <div class="pf-avatar"><?= htmlspecialchars(strtoupper(substr($full_name, 0, 1))) ?></div>
-                            <?php endif; ?>
-                            <button type="button" class="pf-cam" onclick="document.getElementById('photoInput').click()" aria-label="Change profile photo">
-                                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 8h3l1.5-2h7L17 8h3v11H4V8Z" /><circle cx="12" cy="13" r="3" /></svg>
-                            </button>
-                        </div>
-                        <div class="pf-hero-name"><?= htmlspecialchars($full_name) ?></div>
-                        <div class="pf-hero-chip">Mentee</div>
-                        <div class="pf-hero-mail"><?= htmlspecialchars($account['email']) ?></div>
-                        <?php if ($bio !== ''): ?>
-                            <div class="pf-hero-quote">“<?= htmlspecialchars(mb_strimwidth($bio, 0, 90, '…')) ?>”</div>
-                        <?php endif; ?>
-                    </div>
-
                     <div class="pcard">
                         <div class="pcard-hd">
                             <span class="pcard-title">Student Info</span>
@@ -531,19 +698,15 @@ $csrf        = csrf_token();
                             <?php else: ?>
                                 <div style="font-size:12.5px;color:var(--gray-400);">No interests added yet.</div>
                             <?php endif; ?>
+                            <?php /* Picked, not typed: matching compares these strings exactly,
+                                     so a hand-typed interest matches nobody. */ ?>
+                            <a href="<?= htmlspecialchars(url('onboarding')) ?>" class="pcard-link" style="display:inline-block;margin-top:10px;font-size:12.5px;">
+                                <?= $tags['interest'] ? 'Change your interests' : 'Choose your interests' ?> &rarr;
+                            </a>
 
                             <div id="aboutEdit" class="pf-edit-box" hidden>
                                 <label style="display:block;font-size:12.5px;font-weight:600;color:var(--gray-700);margin-bottom:6px;">About you</label>
                                 <textarea id="inBio" rows="4" maxlength="500" placeholder="A few sentences about yourself…"><?= htmlspecialchars($bio) ?></textarea>
-                                <label style="display:block;font-size:12.5px;font-weight:600;color:var(--gray-700);margin:12px 0 6px;">Interests <span style="font-weight:400;color:var(--gray-400);">— press Enter to add</span></label>
-                                <div class="pf-chipin" id="inInterests">
-                                    <div class="pf-chipin-list">
-                                        <?php foreach ($tags['interest'] as $t): ?>
-                                            <span class="pf-chip" data-tag="<?= htmlspecialchars($t) ?>"><?= htmlspecialchars($t) ?><button type="button" class="pf-chip-x" aria-label="Remove <?= htmlspecialchars($t) ?>">&times;</button></span>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <input type="text" maxlength="120" placeholder="Type an interest and press Enter">
-                                </div>
                                 <div style="display:flex;gap:10px;margin-top:12px;">
                                     <button class="btn btn-primary btn-sm" type="button" onclick="saveAbout()">Save</button>
                                     <button class="btn btn-ghost btn-sm" type="button" onclick="toggleBox('aboutEdit')">Cancel</button>
@@ -558,7 +721,7 @@ $csrf        = csrf_token();
                                 <svg width="16" height="16" fill="none" stroke="var(--mint)" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M4 20h16" /><path stroke-linecap="round" d="M7 20v-5M12 20V8M17 20v-9" /></svg>
                                 Skills &amp; Interests
                             </span>
-                            <button type="button" class="pcard-link" style="border:none;background:none;cursor:pointer;" onclick="toggleBox('skillsEdit')">Edit</button>
+                            <a href="<?= htmlspecialchars(url('onboarding')) ?>" class="pcard-link">Edit</a>
                         </div>
                         <div class="pcard-body">
                             <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;">
@@ -588,30 +751,14 @@ $csrf        = csrf_token();
                                 </div>
                             </div>
 
-                            <div id="skillsEdit" class="pf-edit-box" hidden>
-                                <label style="display:block;font-size:12.5px;font-weight:600;color:var(--gray-700);margin:0 0 6px;">Skills I'm developing <span style="font-weight:400;color:var(--gray-400);">— press Enter to add</span></label>
-                                <div class="pf-chipin" id="inSkills">
-                                    <div class="pf-chipin-list">
-                                        <?php foreach ($tags['skill'] as $t): ?>
-                                            <span class="pf-chip" data-tag="<?= htmlspecialchars($t) ?>"><?= htmlspecialchars($t) ?><button type="button" class="pf-chip-x" aria-label="Remove <?= htmlspecialchars($t) ?>">&times;</button></span>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <input type="text" maxlength="120" placeholder="Type a skill and press Enter">
-                                </div>
-                                <label style="display:block;font-size:12.5px;font-weight:600;color:var(--gray-700);margin:12px 0 6px;">Areas I want to learn <span style="font-weight:400;color:var(--gray-400);">— press Enter to add</span></label>
-                                <div class="pf-chipin" id="inLearn">
-                                    <div class="pf-chipin-list">
-                                        <?php foreach ($tags['learn'] as $t): ?>
-                                            <span class="pf-chip" data-tag="<?= htmlspecialchars($t) ?>"><?= htmlspecialchars($t) ?><button type="button" class="pf-chip-x" aria-label="Remove <?= htmlspecialchars($t) ?>">&times;</button></span>
-                                        <?php endforeach; ?>
-                                    </div>
-                                    <input type="text" maxlength="120" placeholder="Type a subject and press Enter">
-                                </div>
-                                <div style="display:flex;gap:10px;margin-top:12px;">
-                                    <button class="btn btn-primary btn-sm" type="button" onclick="saveSkills()">Save</button>
-                                    <button class="btn btn-ghost btn-sm" type="button" onclick="toggleBox('skillsEdit')">Cancel</button>
-                                </div>
-                            </div>
+                            <?php /* The questionnaire, not a text box: these two lists are
+                                     what mentor matching actually compares, and it compares
+                                     them exactly. Anything typed here matched nobody. The
+                                     questionnaire arrives pre-filled and keeps whatever was
+                                     typed before as removable tiles, so nothing is lost. */ ?>
+                            <a href="<?= htmlspecialchars(url('onboarding')) ?>" class="pcard-link" style="display:inline-block;margin-top:14px;font-size:12.5px;">
+                                <?= ($tags['skill'] || $tags['learn']) ? 'Change these' : 'Choose yours' ?> &rarr;
+                            </a>
                         </div>
                     </div>
 
@@ -759,8 +906,116 @@ $csrf        = csrf_token();
         </main>
     </div>
 
+    <?php
+    /*
+     * Edit Profile, the same five fields the mentor's modal offers and the
+     * same endpoint they have always posted to — mentee-update-profile
+     * already accepts full_name, student_id, course, year_level and club.
+     * Nothing new is saved here; it is the form that moved, out of Settings
+     * and onto the page the values are shown on.
+     */
+    ?>
+    <div class="modal-overlay" id="editModal" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+        <div class="modal-box" style="max-width:520px;">
+            <div class="modal-hd">
+                <h2 class="modal-hd-title" id="editModalTitle">Edit Profile</h2>
+                <button type="button" class="modal-close" onclick="closeEditModal()" aria-label="Close">&times;</button>
+            </div>
+            <form id="pfEditForm" onsubmit="saveProfile(event)">
+                <div style="padding:18px 20px;display:flex;flex-direction:column;gap:14px;">
+                    <div>
+                        <label class="form-label" for="pfFullName">Full name <span style="color:var(--danger);">*</span></label>
+                        <input class="form-input" type="text" id="pfFullName" name="full_name" maxlength="120" required
+                               value="<?= htmlspecialchars($full_name) ?>">
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+                        <div>
+                            <label class="form-label" for="pfStudentId">Student ID <span style="color:var(--danger);">*</span></label>
+                            <input class="form-input" type="text" id="pfStudentId" name="student_id" maxlength="40" required
+                                   value="<?= htmlspecialchars($info['student_id'] ?? '') ?>">
+                        </div>
+                        <div>
+                            <label class="form-label" for="pfYearLevel">Year level <span style="color:var(--danger);">*</span></label>
+                            <input class="form-input" type="text" id="pfYearLevel" name="year_level" maxlength="40" required
+                                   value="<?= htmlspecialchars($info['year_level'] ?? '') ?>">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="form-label" for="pfCourse">Course / Program <span style="color:var(--danger);">*</span></label>
+                        <input class="form-input" type="text" id="pfCourse" name="course" maxlength="160" required
+                               value="<?= htmlspecialchars($info['course'] ?? '') ?>">
+                    </div>
+                    <div>
+                        <label class="form-label" for="pfClub">Club / Organization <span style="color:var(--gray-400);font-weight:400;">(optional)</span></label>
+                        <input class="form-input" type="text" id="pfClub" name="club" maxlength="120"
+                               value="<?= htmlspecialchars($info['club'] ?? '') ?>">
+                    </div>
+                    <div id="pfEditErr" style="display:none;font-size:12.5px;color:var(--danger);"></div>
+                </div>
+                <div style="display:flex;justify-content:flex-end;gap:10px;padding:0 20px 18px;">
+                    <button type="button" class="btn btn-ghost btn-sm" onclick="closeEditModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary btn-sm" id="pfEditSave">Save changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const PF_CSRF = <?= json_encode($csrf) ?>;
+        const PF_UPDATE_URL = <?= json_encode(url('mentee-update-profile')) ?>;
+
+        function openEditModal() {
+            document.getElementById('editModal').classList.add('open');
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('open');
+            document.getElementById('pfEditErr').style.display = 'none';
+        }
+
+        /* The endpoint answers JSON either way, so a failure has to be read
+           out of the reply rather than assumed from the request going through. */
+        function saveProfile(e) {
+            e.preventDefault();
+            const btn = document.getElementById('pfEditSave');
+            const err = document.getElementById('pfEditErr');
+            const fd  = new FormData(document.getElementById('pfEditForm'));
+            fd.append('csrf_token', PF_CSRF);
+
+            btn.disabled = true;
+            btn.textContent = 'Saving…';
+            err.style.display = 'none';
+
+            fetch(PF_UPDATE_URL, { method: 'POST', body: fd, credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) { location.reload(); return; }
+                    err.textContent = d.message || 'Could not save your changes.';
+                    err.style.display = '';
+                    btn.disabled = false;
+                    btn.textContent = 'Save changes';
+                })
+                .catch(() => {
+                    err.textContent = 'Could not reach the server. Check your connection and try again.';
+                    err.style.display = '';
+                    btn.disabled = false;
+                    btn.textContent = 'Save changes';
+                });
+        }
+
+        /* The photo goes through the same endpoint, carrying the identity
+           fields it validates before it will look at the file. */
+        function uploadPhoto() {
+            const form = document.getElementById('photoForm');
+            fetch(PF_UPDATE_URL, { method: 'POST', body: new FormData(form), credentials: 'same-origin' })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) { location.reload(); return; }
+                    // flash() is this page's own banner helper, declared below.
+                    flash(d.message || 'Could not update your photo.', false);
+                })
+                .catch(() => flash('Could not reach the server. Check your connection and try again.', false));
+        }
 
         function toggleSidebar() {
             document.getElementById('sidebar').classList.toggle('collapsed');
@@ -806,87 +1061,13 @@ $csrf        = csrf_token();
             return res.json();
         }
 
-        // ── Chip editors ────────────────────────────────────────────────
-        // Tags are held as chips, never as one comma-joined string: several
-        // questionnaire answers contain a comma, and re-saving a joined string
-        // would split them into two tags.
-        function pfChips(boxId) {
-            return Array.from(document.querySelectorAll('#' + boxId + ' .pf-chip'))
-                .map(c => c.dataset.tag);
-        }
-
-        function pfAddChip(box, value) {
-            const tag = value.trim().replace(/\s+/g, ' ').slice(0, 120);
-            if (!tag) return;
-            const list = box.querySelector('.pf-chipin-list');
-            const dupe = Array.from(list.querySelectorAll('.pf-chip'))
-                .some(c => c.dataset.tag.toLowerCase() === tag.toLowerCase());
-            if (dupe) return;
-
-            const chip = document.createElement('span');
-            chip.className = 'pf-chip';
-            chip.dataset.tag = tag;
-            chip.textContent = tag;
-            const x = document.createElement('button');
-            x.type = 'button';
-            x.className = 'pf-chip-x';
-            x.setAttribute('aria-label', 'Remove ' + tag);
-            x.innerHTML = '&times;';
-            chip.appendChild(x);
-            list.appendChild(chip);
-        }
-
-        document.addEventListener('click', e => {
-            const x = e.target.closest('.pf-chip-x');
-            if (x) x.closest('.pf-chip').remove();
-        });
-
-        document.addEventListener('keydown', e => {
-            if (!e.target.matches('.pf-chipin input')) return;
-            // Comma commits too, so old muscle memory still works.
-            if (e.key === 'Enter' || e.key === ',') {
-                e.preventDefault();
-                pfAddChip(e.target.closest('.pf-chipin'), e.target.value);
-                e.target.value = '';
-            } else if (e.key === 'Backspace' && e.target.value === '') {
-                const chips = e.target.closest('.pf-chipin').querySelectorAll('.pf-chip');
-                if (chips.length) chips[chips.length - 1].remove();
-            }
-        });
-
-        // Text left in the box when Save is pressed still counts.
-        function pfCommitPending(boxId) {
-            const box = document.getElementById(boxId);
-            const input = box.querySelector('input');
-            if (input.value.trim()) {
-                pfAddChip(box, input.value);
-                input.value = '';
-            }
-            return JSON.stringify(pfChips(boxId));
-        }
-
         async function saveAbout() {
             try {
                 const d = await pfSave({
                     section: 'about',
-                    bio: document.getElementById('inBio').value,
-                    interests: pfCommitPending('inInterests')
+                    bio: document.getElementById('inBio').value
                 });
                 flash(d.success ? 'About Me updated.' : d.message, !!d.success);
-                if (d.success) setTimeout(() => location.reload(), 700);
-            } catch (e) {
-                flash('Network error. Please try again.', false);
-            }
-        }
-
-        async function saveSkills() {
-            try {
-                const d = await pfSave({
-                    section: 'skills',
-                    skills: pfCommitPending('inSkills'),
-                    learn: pfCommitPending('inLearn')
-                });
-                flash(d.success ? 'Skills updated.' : d.message, !!d.success);
                 if (d.success) setTimeout(() => location.reload(), 700);
             } catch (e) {
                 flash('Network error. Please try again.', false);
@@ -902,11 +1083,17 @@ $csrf        = csrf_token();
                 window.location.href = <?= json_encode(url('onboarding')) ?>;
                 return;
             }
-            const needsAbout = <?= ($bio === '' || !$tags['interest']) ? 'true' : 'false' ?>;
-            const needsSkills = <?= (!$tags['skill'] && !$tags['learn']) ? 'true' : 'false' ?>;
+            // Tags are picked in the questionnaire now, so anything missing
+            // there is sent back to it rather than to an editor that can no
+            // longer set them.
+            const needsTags = <?= (!$tags['interest'] || (!$tags['skill'] && !$tags['learn'])) ? 'true' : 'false' ?>;
+            const needsBio = <?= $bio === '' ? 'true' : 'false' ?>;
             const needsPhoto = <?= empty($profile_image) ? 'true' : 'false' ?>;
-            if (needsAbout) return toggleBox('aboutEdit');
-            if (needsSkills) return toggleBox('skillsEdit');
+            if (needsTags) {
+                window.location.href = <?= json_encode(url('onboarding')) ?>;
+                return;
+            }
+            if (needsBio) return toggleBox('aboutEdit');
             if (needsPhoto) return document.getElementById('photoInput').click();
             window.location.href = <?= json_encode(url('mentee-settings')) ?>;
         }

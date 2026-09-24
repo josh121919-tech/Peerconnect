@@ -583,7 +583,9 @@ if (!function_exists('mp_panel_open')) {
                     </div>
                     <div class="mp-fact">
                         <?= mp_svg('clock') ?>
-                        <span><b>Time</b><?= $e($c['time'] ?? '') ?></span>
+                        <?php // An end time only when the caller has one. A card for a
+                              // slot that has not run yet has a start and nothing else. ?>
+                        <span><b>Time</b><?= $e($c['time'] ?? '') ?><?= !empty($c['time_end']) ? ' &ndash; ' . $e($c['time_end']) : '' ?></span>
                     </div>
                 </div>
 

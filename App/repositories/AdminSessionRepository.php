@@ -92,12 +92,19 @@ class AdminSessionRepository extends Repository
         switch ($view) {
             case 'pending':   return "sr.status = 'pending'";
             case 'upcoming':  return "sr.status = 'approved' AND sr.session_date > NOW()";
-            case 'ongoing':   return "sr.status = 'approved' AND sr.session_date <= NOW() AND $end >= NOW()";
+            // 'unfinished' inside the slot means somebody stepped out of a
+            // session that can still be rejoined, so it is still running and
+            // belongs here — the same call ad_session_state() makes for the
+            // badge. Past its end it is an outcome, and drops out of Ongoing.
+            case 'ongoing':   return "sr.status IN ('approved','unfinished') AND sr.session_date <= NOW() AND $end >= NOW()";
+            // Not closed is for sessions still sitting open past their time.
+            // An unfinished one has been closed; it just did not finish.
             case 'overdue':   return "sr.status = 'approved' AND $end < NOW()";
             case 'completed': return "sr.status = 'completed'";
             case 'cancelled': return "sr.status = 'cancelled'";
             case 'declined':  return "sr.status = 'rejected'";
             case 'missed':    return "sr.status = 'missed'";
+            case 'unfinished': return "sr.status = 'unfinished' AND $end < NOW()";
             default:          return '';
         }
     }
@@ -297,7 +304,7 @@ class AdminSessionRepository extends Repository
     /**
      * How many accepted sessions ended more than $minutes ago and are still
      * open. Nobody closes a session by hand: the missed-session job closes it
-     * an hour after it ends and runs every 30 minutes, so a session much
+     * PC_MISSED_GRACE_MINUTES after it ends and runs every 30 minutes, so one
      * older than that means the job is not running. Its end is worked out the
      * way the job works it out (the slot's length, or an hour).
      */

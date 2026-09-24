@@ -17,6 +17,7 @@ if (!isset($_SESSION['user_id']) || (($_SESSION['role'] ?? null) !== 'mentor')) 
     exit;
 }
 require_once __DIR__ . '/includes/session_list.php';
+require_once __DIR__ . '/../includes/pagination.php';
 
 // Served on its own route this file is a bare fragment with no page shell —
 // the notification and end-of-call links that point here landed the mentor on
@@ -30,8 +31,13 @@ if (empty($sr_embedded) && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
 
 $mentor_id_cs = (int)$_SESSION['user_id'];
 
+/*
+ * 'cpage', not 'page'. The History modal on this same page has its own page
+ * number; while both read 'page', stepping through one stepped through the
+ * other.
+ */
 $perPage_cs = 20;
-$page_cs    = max(1, (int)($_GET['page'] ?? 1));
+$page_cs    = max(1, (int)($_GET['cpage'] ?? 1));
 $offset_cs  = ($page_cs - 1) * $perPage_cs;
 
 $totalRows_cs  = SessionRepository::countForMentorInStatuses($con, $mentor_id_cs, ['completed']);
@@ -61,6 +67,7 @@ $sessions_cs = SessionRepository::completedForMentor($con, $mentor_id_cs, $perPa
                 'subject'  => $s['subject'] ?: '—',
                 'date'     => date('M d, Y', $ts),
                 'time'     => date('g:i A', $ts),
+                'time_end' => !empty($s['session_end']) ? date('g:i A', strtotime($s['session_end'])) : '',
                 // session_requests has no mentor-written notes column; this is
                 // the note the MENTEE sent with the booking, labelled as such.
                 'note'       => trim((string)$s['message']),
@@ -91,18 +98,15 @@ $sessions_cs = SessionRepository::completedForMentor($con, $mentor_id_cs, $perPa
     );
     ?>
 
-    <?php if ($totalPages_cs > 1): ?>
-        <div class="card" style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;margin-top:14px;">
-            <span style="font-size:12px;color:var(--gray-400);">Page <?= $page_cs ?> of <?= $totalPages_cs ?> (<?= $totalRows_cs ?> total)</span>
-            <div style="display:flex;gap:8px;">
-                <?php if ($page_cs > 1): ?>
-                    <a href="?page=<?= $page_cs - 1 ?>" class="btn btn-ghost btn-sm">← Prev</a>
-                <?php endif; ?>
-                <?php if ($page_cs < $totalPages_cs): ?>
-                    <a href="?page=<?= $page_cs + 1 ?>" class="btn btn-ghost btn-sm">Next →</a>
-                <?php endif; ?>
-            </div>
-        </div>
-    <?php endif; ?>
+    <?php
+    // Paging carries ?tab=complete, or the next page opens on Received.
+    pc_pagination(
+        $page_cs,
+        $totalPages_cs,
+        fn(int $n) => url('mentor-requests') . '?' . http_build_query(['tab' => 'complete', 'cpage' => $n]),
+        ['summary' => 'Showing ' . ($offset_cs + 1) . '–' . min($offset_cs + $perPage_cs, $totalRows_cs)
+                    . ' of ' . $totalRows_cs, 'label' => 'Completed session pages']
+    );
+    ?>
 </div>
 <?php mp_panel_script('cs'); ?>

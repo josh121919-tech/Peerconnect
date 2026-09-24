@@ -9,6 +9,7 @@ return [
     'mentor-dashboard' => 'App/views/mentorpage/index.php',
     'mentor-settings' => 'App/views/settings/index.php',
     'mentor-upcoming' => 'App/views/mentorpage/upcoming_session.php',
+    'mentor-ongoing' => 'App/views/mentorpage/ongoing_session.php',
     'mentor-verification' => 'App/views/mentorpage/verification.php',
     'mentor-feedback' => 'App/views/mentorpage/feedback.php',
     'mentor-calendar' => 'App/views/mentorpage/calendar.php',
@@ -68,6 +69,7 @@ return [
     'video-room' => 'App/views/VideoConferencing/room.php',
     'video-end' => 'App/views/VideoConferencing/end_session.php',
     'video-join' => 'App/views/VideoConferencing/join_check.php',
+    'video-ping' => 'App/views/VideoConferencing/ping.php',
 
     'messages' => 'App/views/Messages/message.php',
     'messages-send' => 'App/views/Messages/send_message.php',
@@ -78,6 +80,9 @@ return [
     'notifications-get'       => 'App/views/notifications/get.php',
     'notifications-read'      => 'App/views/notifications/mark_read.php',
     'notifications-read-all'  => 'App/views/notifications/mark_all_read.php',
+    // Device notifications: the browser hands us a subscription, we keep it.
+    'push-subscribe'          => 'App/views/notifications/subscribe.php',
+    'push-unsubscribe'        => 'App/views/notifications/unsubscribe.php',
 
     // Assessments — mentors write them, their mentees take them
     'assessments'         => 'App/views/assessments/index.php',
@@ -114,6 +119,10 @@ return [
     'verify-email'            => 'App/views/auth/verify_email.php',
     'email-pending'           => 'App/views/auth/email_pending.php',
     'resend-verification'     => 'App/views/auth/resend_verification.php',
+    // Correcting a mistyped address without leaving the confirmation stage.
+    // This exists so Settings does not have to be open to an account that has
+    // not proved its address yet — see pc_gate_open_routes() in helpers.php.
+    'change-email'            => 'App/views/auth/change_email.php',
 
     // Leaderboard — top mentors, ranked from real session/feedback data
     'leaderboard'             => 'App/views/leaderboard/index.php',
@@ -181,6 +190,9 @@ return [
     'admin-settings-backup-run'   => 'App/views/admin/settings_backup_run.php',
     'admin-settings-logs'         => 'App/views/admin/settings_logs.php',
     'admin-settings-logs-export'  => 'App/views/admin/settings_logs_export.php',
+    'admin-users-export'          => 'App/views/admin/users_export.php',
+    'admin-resources'             => 'App/views/admin/resources.php',
+    'admin-resource-remove'       => 'App/views/admin/action_resource.php',
     'admin-action-settings'       => 'App/views/admin/action_settings.php',
 
     // Announcements — the admin writes them, mentors and mentees read them.

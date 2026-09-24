@@ -26,9 +26,9 @@
 /* Color Palette */
 :root {
   /* Brand Colors */
-  --color-primary: #0A1A7B; /* Deep navy/indigo */
-  --color-primary-dark: #05051B;
-  --color-primary-light: #142B9E;
+  --color-primary: #071B4D; /* Deep navy — the rail */
+  --color-primary-dark: #041233;
+  --color-primary-light: #0868AD; /* Primary buttons */
 
   /* Accent Colors */
   --color-accent: #FF5A5F; /* Coral - primary CTA color */
@@ -61,8 +61,8 @@
   --color-neutral-900: #111827;
   
   /* Backgrounds */
-  --color-bg-primary: #FFFFFF;
-  --color-bg-secondary: #F9FAFB;
+  --color-bg-primary: #EAF6FC; /* Light sections */
+  --color-bg-secondary: #F7F9FC; /* Main background */
   --color-bg-tertiary: #F3F4F6;
   
   /* Shadows */

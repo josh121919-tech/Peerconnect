@@ -58,6 +58,7 @@ $filters = [
 // lead, and the old activity ordering breaks ties. Ordering happens in SQL so
 // pagination still works.
 require_once __DIR__ . '/../../services/MentorScoreService.php';
+require_once __DIR__ . '/../includes/pagination.php';
 $viewer_id     = (($_SESSION['role'] ?? '') === 'mentee') ? (int)($_SESSION['user_id'] ?? 0) : 0;
 $viewer_weight = $viewer_id > 0 ? MentorScoreService::menteeTagWeight($con, $viewer_id) : 0;
 
@@ -828,9 +829,19 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
                         $ini  = strtoupper(substr($m['firstname'] ?? 'M', 0, 1));
                         $uid  = (int)$m['user_id'];
 
-                        if ($m['next_available']) {
-                            $days = (int)round((strtotime($m['next_available']) - strtotime(date('Y-m-d'))) / 86400);
-                            $avail_label = $days <= 7 ? 'This week' : ($days <= 14 ? 'Next week' : date('M j', strtotime($m['next_available'])));
+                        /*
+                         * A count, not just a word. "This week" told a mentee
+                         * nothing about whether there was one slot left or nine,
+                         * which is the thing they are deciding on.
+                         */
+                        $slotsWeek = (int)($m['slots_week'] ?? 0);
+                        $slotsOpen = (int)($m['slots_open'] ?? 0);
+
+                        if ($slotsWeek > 0) {
+                            $avail_label = $slotsWeek . ' slot' . ($slotsWeek === 1 ? '' : 's') . ' this week';
+                        } elseif ($slotsOpen > 0) {
+                            $avail_label = $slotsOpen . ' slot' . ($slotsOpen === 1 ? '' : 's')
+                                . ' from ' . date('M j', strtotime($m['next_available']));
                         } else {
                             $avail_label = 'No open slots';
                         }
@@ -930,28 +941,18 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
                     <?php endforeach; ?>
                 </div>
 
-                <?php if ($total_pages > 1):
-                    $page_qs = $_GET;
-                    unset($page_qs['page']);
-                    $window_start = max(1, $page - 2);
-                    $window_end   = min($total_pages, $page + 2);
+                <?php
+                // The search filters live in the query string; paging has to
+                // carry them or page 2 comes back unfiltered.
+                $page_qs = $_GET;
+                unset($page_qs['page']);
+                pc_pagination(
+                    $page,
+                    $total_pages,
+                    fn(int $n) => '?' . http_build_query(array_merge($page_qs, ['page' => $n])),
+                    ['label' => 'Mentor result pages']
+                );
                 ?>
-                    <div style="display:flex;align-items:center;justify-content:center;gap:6px;margin-top:28px;flex-wrap:wrap;">
-                        <a class="btn btn-ghost btn-sm" style="<?= $page <= 1 ? 'pointer-events:none;opacity:.4;' : '' ?>" href="?<?= htmlspecialchars(http_build_query(array_merge($page_qs, ['page' => max(1, $page - 1)]))) ?>">‹</a>
-                        <?php if ($window_start > 1): ?>
-                            <a class="btn btn-ghost btn-sm" href="?<?= htmlspecialchars(http_build_query(array_merge($page_qs, ['page' => 1]))) ?>">1</a>
-                            <?php if ($window_start > 2): ?><span style="color:var(--gray-400);padding:0 2px;">…</span><?php endif; ?>
-                        <?php endif; ?>
-                        <?php for ($p = $window_start; $p <= $window_end; $p++): ?>
-                            <a class="btn <?= $p === $page ? 'btn-primary' : 'btn-ghost' ?> btn-sm" href="?<?= htmlspecialchars(http_build_query(array_merge($page_qs, ['page' => $p]))) ?>"><?= $p ?></a>
-                        <?php endfor; ?>
-                        <?php if ($window_end < $total_pages): ?>
-                            <?php if ($window_end < $total_pages - 1): ?><span style="color:var(--gray-400);padding:0 2px;">…</span><?php endif; ?>
-                            <a class="btn btn-ghost btn-sm" href="?<?= htmlspecialchars(http_build_query(array_merge($page_qs, ['page' => $total_pages]))) ?>"><?= $total_pages ?></a>
-                        <?php endif; ?>
-                        <a class="btn btn-ghost btn-sm" style="<?= $page >= $total_pages ? 'pointer-events:none;opacity:.4;' : '' ?>" href="?<?= htmlspecialchars(http_build_query(array_merge($page_qs, ['page' => min($total_pages, $page + 1)]))) ?>">›</a>
-                    </div>
-                <?php endif; ?>
             <?php else: ?>
                 <div id="no-mentors-state" class="empty-state-lg" style="margin-top:44px;">
                     <div class="es-icon">
@@ -970,7 +971,7 @@ $mentor_badges = AchievementRepository::badgeNamesFor($con, array_column($mentor
                     </p>
                     <?php if ($has_filters): ?>
                         <a href="<?= htmlspecialchars($find_mentor_url) ?>"
-                            style="display:inline-flex;align-items:center;gap:6px;background:var(--forest);color:white;padding:10px 20px;border-radius:9px;text-decoration:none;font-size:13px;font-weight:600;margin-top:4px;">
+                            style="display:inline-flex;align-items:center;gap:6px;background:var(--primary);color:white;padding:10px 20px;border-radius:9px;text-decoration:none;font-size:13px;font-weight:600;margin-top:4px;">
                             Clear filters
                         </a>
                     <?php endif; ?>

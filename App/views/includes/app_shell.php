@@ -195,12 +195,39 @@ if ($leftover) {
         <?php pc_logo($homeUrl); ?>
     </div>
     <div class="topbar-actions">
-        <a class="icon-btn" href="<?= htmlspecialchars($searchUrl) ?>" aria-label="Search mentors">
-            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="11" cy="11" r="7" />
-                <path stroke-linecap="round" d="m20 20-4-4" />
+        <?php
+        /*
+         * Install the app. pwa.php shows this only when the browser has
+         * actually offered beforeinstallprompt, so it is not a control that
+         * does nothing on a device that cannot install.
+         *
+         * It lives in the topbar rather than on a dashboard: it belongs to the
+         * app, not to one page. It was in the mentee dashboard's header row,
+         * alone in a flex row with nothing to sit opposite, which left it
+         * floating above the welcome banner — and mentors had no way to
+         * install at all.
+         */
+        ?>
+        <button id="pwa-install-btn" class="icon-btn soft pwa-install" type="button"
+                style="display:none;" aria-label="Install PeerConnect as an app"
+                title="Install PeerConnect as an app">
+            <svg width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1m-4-4-4 4m0 0-4-4m4 4V4" />
             </svg>
-        </a>
+            <span class="pwa-install-label">Install</span>
+        </button>
+
+        <?php // Not for mentors. It goes to Find a Mentor, which is the mentee's
+              //  page for browsing mentors to book with — nothing a mentor has
+              //  any use for. The bottom nav already leaves it out for them. ?>
+        <?php if (!$isMentor): ?>
+            <a class="icon-btn" href="<?= htmlspecialchars($searchUrl) ?>" aria-label="Search mentors">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7" />
+                    <path stroke-linecap="round" d="m20 20-4-4" />
+                </svg>
+            </a>
+        <?php endif; ?>
         <button class="icon-btn soft" type="button" aria-label="Notifications" id="notif-btn" style="position:relative;" onclick="toggleNotifPanel()" aria-haspopup="true" aria-expanded="false">
             <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0 1 18 14.158V11a6 6 0 0 0-5-5.917V4a1 1 0 0 0-2 0v1.083A6 6 0 0 0 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 0 1-6 0v-1m6 0H9" />

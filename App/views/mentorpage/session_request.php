@@ -31,6 +31,8 @@ include __DIR__ . "/../db.php";
 require_once __DIR__ . '/../../services/NotificationService.php';
 require_once __DIR__ . '/../../services/GoogleCalendarService.php';
 require_once __DIR__ . '/includes/session_list.php';
+// ongoing_session.php and upcoming_session.php below offer the call.
+require_once __DIR__ . '/../includes/join_control.php';
 
 if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'mentor') {
     header("Location: " . url('welcomepage'));
@@ -71,11 +73,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
         $nr = SessionRepository::menteeAndMentorName($con, $id, $mentor_id);
 
         if ($nr) {
-            $link = url('mentee-sessions');
+            // An approved session is on the sessions page itself. A declined
+            // one is not — it is only in Session History, which opens on
+            // ?status. Sending it to the plain page, or to My Requests, left
+            // the mentee looking at a list their session was not in.
             if ($action === 'approve') {
-                NotificationService::sessionApproved($con, (int)$nr['mentee_id'], $nr['mentor_name'], $link);
+                NotificationService::sessionApproved($con, (int)$nr['mentee_id'], $nr['mentor_name'],
+                    url('mentee-sessions'));
             } elseif ($action === 'reject') {
-                NotificationService::sessionRejected($con, (int)$nr['mentee_id'], $nr['mentor_name'], $link);
+                NotificationService::sessionRejected($con, (int)$nr['mentee_id'], $nr['mentor_name'],
+                    url('mentee-sessions') . '?status=all');
             }
         }
     }
@@ -91,6 +98,58 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
     }
 
     header("Location: " . $self_url);
+    exit;
+}
+
+/*
+ * Removing a student from a group session.
+ *
+ * This handler lived in group_sessions.php, which was included as the Group
+ * tab. That tab is gone — a group session is now a card in Upcoming and
+ * Ongoing — so the handler moved here, to the page its form still posts to.
+ * The behaviour is unchanged: cancel the booking, tell the student, and
+ * refuse once the session has closed.
+ */
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['remove_request_id'])) {
+    if (!verify_csrf()) {
+        http_response_code(403);
+        exit('CSRF token mismatch.');
+    }
+    $reqId  = (int)$_POST['remove_request_id'];
+    $target = SessionRepository::findForMentor($con, $reqId, $mentor_id);
+
+    $removed = false;
+    if ($target) {
+        // Only a session that has not closed yet can have a student removed.
+        // Without the state guard a mentor could "remove" someone from a
+        // session that already completed, which rewrote a finished session as
+        // cancelled and moved the mentor's own completion score.
+        $removed = SessionRepository::cancelByMentor($con, $reqId, $mentor_id) > 0;
+
+        // Only tell the student if something actually changed. Notifying on a
+        // refused removal would announce a cancellation that never happened.
+        if ($removed) {
+            $mentorName = UserRepository::names($con, $mentor_id);
+            if ($mentorName) {
+                NotificationService::sessionRejected(
+                    $con,
+                    (int)$target['mentee_id'],
+                    trim($mentorName['firstname'] . ' ' . $mentorName['lastname']),
+                    url('mentee-sessions') . '?status=all'
+                );
+            }
+        }
+    }
+
+    if (!$target) {
+        pc_flash('error', 'That reservation could not be found.');
+    } elseif ($removed) {
+        pc_flash('success', 'That student was removed from the group session and told.', 'Reservation removed');
+    } else {
+        pc_flash('warning', 'That reservation could not be removed — the session has already finished or been closed.');
+    }
+
+    header('Location: ' . $self_url . '?tab=upcoming');
     exit;
 }
 
@@ -130,11 +189,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk'], $_POST['ids']
 // created_at there is no honest "vs last week" to put under them.
 $statRow = SessionRepository::statsForMentor($con, $mentor_id);
 
-$stat_pending   = (int)($statRow['pending']   ?? 0);
-$stat_upcoming  = (int)($statRow['upcoming']  ?? 0);
-$stat_completed = (int)($statRow['completed'] ?? 0);
-$stat_declined  = (int)($statRow['declined']  ?? 0);
-$stat_mentees   = (int)($statRow['mentees']   ?? 0);
+/*
+ * The tab counts come from the same rules the tabs themselves list by, so a
+ * card and the tab under it cannot disagree. They used to be taken from
+ * statsForMentor(), whose "upcoming" counts every approved session ahead
+ * including group ones — which is how a mentor was shown "1 upcoming
+ * session" above a list that filtered group sessions out.
+ */
+$tabCounts = SessionRepository::tabCountsForMentor($con, $mentor_id);
+
+$stat_pending   = $tabCounts['received'];
+$stat_upcoming  = $tabCounts['upcoming'];
+$stat_completed = $tabCounts['completed'];
+$stat_mentees   = (int)($statRow['mentees'] ?? 0);
 
 // Kept for the tab badge and the partials included further down.
 $cnt = $stat_pending;
@@ -217,12 +284,249 @@ $active_page = 'sessions';
     <title>Sessions — PeerConnect Mentor</title>
     <?php include __DIR__ . '/includes/style.php'; ?>
     <style>
-        /* ── Tabs ── */
+        /* ── Page header ──
+           A badge beside the title, the way the reference opens the page. */
+        .sx-hd {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            margin-bottom: 22px;
+        }
+
+        .sx-hd-ico {
+            width: 54px;
+            height: 54px;
+            border-radius: 18px;
+            background: var(--info-bg);
+            color: var(--info);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .sx-hd-text {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        /* ── Stat cards ──
+           Tinted rather than white-on-white, each one its own colour. The
+           shared .stat-card classes are left alone: six other pages use them
+           and this is meant to change two. */
+        .sx-stats {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .sx-stat {
+            position: relative;
+            background: #fff;
+            border: 1px solid var(--stat-border);
+            border-radius: var(--stat-radius);
+            box-shadow: var(--stat-shadow);
+            transition: box-shadow .16s ease;
+            padding: 18px;
+            min-width: 0;
+            overflow: hidden;
+        }
+
+        .sx-stat:hover {
+            box-shadow: var(--stat-shadow-hover);
+        }
+
+        .sx-stat-ico {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 14px;
+        }
+
+        .sx-stat-ico svg {
+            width: 19px;
+            height: 19px;
+        }
+
+        .sx-stat-v {
+            font-size: 26px;
+            font-weight: 600;
+            line-height: 1.15;
+            letter-spacing: -0.03em;
+            font-variant-numeric: tabular-nums;
+            color: var(--forest);
+        }
+
+        .sx-stat-k {
+            font-size: 12px;
+            font-weight: 500;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+            color: var(--gray-500);
+            margin-top: 4px;
+        }
+
+        .sx-stat-s {
+            font-size: 12px;
+            color: var(--gray-500);
+            margin-top: 4px;
+        }
+
+        /* Only rendered where it leads somewhere — see the markup. */
+        .sx-stat-go {
+            position: absolute;
+            top: 18px;
+            right: 18px;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: var(--gray-50);
+            border: 1px solid var(--gray-100);
+            border: 0;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: inherit;
+        }
+
+        .sx-stat-go:hover {
+            background: var(--mint-faint);
+            border-color: var(--mint-soft);
+        }
+
+        /* The tint is the icon's, not the card's — the card is white like
+           every other figure tile in the product. */
+        .sx-teal   .sx-stat-ico { background: #D3EDE1; color: #17654B; }
+        .sx-teal   .sx-stat-go  { color: #17654B; }
+
+        .sx-blue   .sx-stat-ico { background: #DBE7FD; color: #1A5C9A; }
+        .sx-blue   .sx-stat-go  { color: #1A5C9A; }
+        .sx-purple .sx-stat-ico { background: #E3DDFB; color: #5B4FCF; }
+        .sx-purple .sx-stat-go  { color: #5B4FCF; }
+        .sx-amber  .sx-stat-ico { background: #F8E7C4; color: #8A6400; }
+        .sx-amber  .sx-stat-go  { color: #8A6400; }
+
+        @media (max-width: 1000px) {
+            .sx-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        }
+
+        /* Phones: the tile goes icon-beside-number, the same compaction the
+           dashboards' .stat-card-icon uses at this width, so the two pages
+           do not disagree about what a figure tile looks like on a phone.
+           Grid rather than flex because the children are flat — icon, value,
+           label — with no wrapper to make a column of. */
+        @media (max-width: 700px) {
+            .sx-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+
+            .sx-stat {
+                display: grid;
+                grid-template-columns: auto minmax(0, 1fr);
+                grid-template-areas: "ico val" "ico lbl";
+                align-items: center;
+                column-gap: 10px;
+                padding: 12px 32px 12px 14px;
+                border-radius: 12px;
+            }
+
+            .sx-stat-ico {
+                grid-area: ico;
+                width: 34px;
+                height: 34px;
+                margin-bottom: 0;
+            }
+
+            .sx-stat-ico svg { width: 16px; height: 16px; }
+
+            .sx-stat-v {
+                grid-area: val;
+                font-size: 18px;
+                align-self: end;
+            }
+
+            .sx-stat-k {
+                grid-area: lbl;
+                font-size: 10px;
+                text-transform: none;
+                letter-spacing: 0;
+                line-height: 1.25;
+                margin-top: 1px;
+                align-self: start;
+            }
+
+            .sx-stat-s { display: none; }
+
+            .sx-stat-go {
+                top: 50%;
+                right: 7px;
+                bottom: auto;
+                transform: translateY(-50%);
+                width: 22px;
+                height: 22px;
+            }
+
+            .sx-stat-go svg { width: 11px; height: 11px; }
+        }
+
+        /* Two across on a phone, scaled down to fit, rather than one per row:
+           four full-size cards stacked pushed everything below them off the
+           first screen. Same approach as the onboarding grid. */
+        @media (max-width: 560px) {
+            .sx-stats { gap: 10px; }
+            .sx-hd { gap: 12px; }
+            .sx-hd-ico { width: 42px; height: 42px; border-radius: 13px; }
+            .sx-hd-ico svg { width: 21px; height: 21px; }
+        }
+
+        /* Only at the very narrowest does a single column beat a cramped pair. */
+        @media (max-width: 340px) {
+            .sx-stats { grid-template-columns: minmax(0, 1fr); }
+        }
+
+        /* ── Empty state ──
+           The shared .empty-state-lg, given the reference's larger, softer
+           treatment on this page only: six other screens use those classes
+           and are not part of this change. */
+        .empty-state-lg .es-icon {
+            width: 104px;
+            height: 104px;
+            background: var(--info-bg);
+        }
+
+        .empty-state-lg .es-icon svg {
+            width: 42px;
+            height: 42px;
+            stroke: var(--info);
+        }
+
+        .empty-state-lg .es-title {
+            font-size: 19px;
+            font-weight: 800;
+            color: var(--gray-900);
+        }
+
+        .empty-state-lg .es-body {
+            max-width: 390px;
+            line-height: 1.65;
+        }
+
+        /* ── Tabs ──
+           A pill bar sitting on its own card rather than an underlined strip.
+           The class names are the ones filterSessions() toggles, so this is
+           the look changing and nothing else. */
         .tabs {
             display: flex;
             align-items: center;
             gap: 4px;
-            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+            border: 1px solid var(--gray-100);
+            border-radius: 16px;
+            padding: 7px;
             margin-bottom: 20px;
             overflow-x: auto;
             scrollbar-width: none;
@@ -233,8 +537,9 @@ $active_page = 'sessions';
         }
 
         .tab-btn {
-            padding: 11px 16px;
+            padding: 10px 15px;
             border: 0;
+            border-radius: 12px;
             background: transparent;
             font: inherit;
             font-size: 13.5px;
@@ -242,20 +547,20 @@ $active_page = 'sessions';
             color: var(--gray-500);
             cursor: pointer;
             white-space: nowrap;
-            border-bottom: 2px solid transparent;
-            margin-bottom: -1px;
             display: inline-flex;
             align-items: center;
-            gap: 7px;
+            gap: 8px;
+            transition: background .15s, color .15s;
         }
 
         .tab-btn:hover:not(.active) {
-            color: var(--gray-700);
+            background: var(--gray-50);
+            color: var(--gray-800);
         }
 
         .tab-btn.active {
-            color: white;
-            border-bottom-color: var(--mint);
+            background: var(--primary);
+            color: #fff;
         }
 
         .tab-btn .tab-n {
@@ -271,9 +576,11 @@ $active_page = 'sessions';
             font-weight: 700;
         }
 
+        /* Translucent white rather than a fixed colour, so the count reads on
+           the dark pill without needing a second tint per tab. */
         .tab-btn.active .tab-n {
-            background: var(--mint-faint);
-            color: var(--mint-deep, var(--forest));
+            background: rgba(255, 255, 255, .22);
+            color: #fff;
         }
 
         .session-section.hidden {
@@ -370,6 +677,7 @@ $active_page = 'sessions';
 
         /* ── Request card ── */
         .sr-list {
+            max-width: 300px;
             display: flex;
             flex-direction: column;
             gap: 12px;
@@ -713,8 +1021,8 @@ $active_page = 'sessions';
             }
 
             .tab-btn.active {
-                background: var(--forest);
-                border-color: var(--forest);
+                background: var(--primary);
+                border-color: var(--primary);
                 color: #fff;
             }
 
@@ -742,84 +1050,102 @@ $active_page = 'sessions';
 
         <main class="main fade-in">
 
-            <div class="page-hd">
-                <h1>Mentorship Requests</h1>
-                <p>Review people who are interested in learning from you, and manage your sessions.</p>
-            </div>
-
-            <!-- Stats: plain counts, no invented trends. -->
-            <div class="stats-grid">
-                <div class="stat-card stat-card-icon">
-                    <div class="stat-icon si-teal">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM19 8v6M22 11h-6" />
-                        </svg>
-                    </div>
-                    <div>
-                        <div class="stat-val"><?= $stat_pending ?></div>
-                        <div class="stat-lbl">Pending Requests</div>
-                        <div class="stat-fact"><?= $stat_pending ? 'Waiting on your reply' : 'Nothing to review' ?></div>
-                    </div>
-                </div>
-
-                <div class="stat-card stat-card-icon">
-                    <div class="stat-icon si-blue">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                            <rect x="5" y="4" width="14" height="16" rx="3" />
-                            <path stroke-linecap="round" d="M8 2v4M16 2v4M5 9h14" />
-                        </svg>
-                    </div>
-                    <div>
-                        <div class="stat-val"><?= $stat_upcoming ?></div>
-                        <div class="stat-lbl">Upcoming Sessions</div>
-                        <div class="stat-fact">Approved and still ahead</div>
-                    </div>
-                </div>
-
-                <div class="stat-card stat-card-icon">
-                    <div class="stat-icon si-purple">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                            <circle cx="12" cy="12" r="8.5" />
-                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.5 12.3 2.4 2.4 4.6-4.9" />
-                        </svg>
-                    </div>
-                    <div>
-                        <div class="stat-val"><?= $stat_completed ?></div>
-                        <div class="stat-lbl">Completed</div>
-                        <div class="stat-fact">Sessions you have finished</div>
-                    </div>
-                </div>
-
-                <div class="stat-card stat-card-icon">
-                    <div class="stat-icon si-orange">
-                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M15.5 19c0-2.1-1.7-3.8-3.8-3.8h-.4C9.2 15.2 7.5 16.9 7.5 19M11.5 12.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4ZM17.5 12.2a2.6 2.6 0 0 0 0-5M20.5 18c0-1.6-1-3-2.5-3.5" />
-                        </svg>
-                    </div>
-                    <div>
-                        <div class="stat-val"><?= $stat_mentees ?></div>
-                        <div class="stat-lbl">Total Mentees</div>
-                        <div class="stat-fact">People you have worked with</div>
-                    </div>
+            <div class="sx-hd">
+                <span class="sx-hd-ico">
+                    <svg width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24" aria-hidden="true">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.5 19c0-2.1-1.7-3.8-3.8-3.8h-.4C9.2 15.2 7.5 16.9 7.5 19" />
+                        <circle cx="11.5" cy="9" r="3.2" />
+                        <path stroke-linecap="round" d="M17.5 12.2a2.6 2.6 0 0 0 0-5M20.5 18c0-1.6-1-3-2.5-3.5" />
+                    </svg>
+                </span>
+                <div class="sx-hd-text page-hd" style="margin:0;">
+                    <h1>Mentorship Requests</h1>
+                    <p>Review people who are interested in learning from you, and manage your sessions.</p>
                 </div>
             </div>
 
-            <!-- Tabs. No "Sent": mentees request mentors, not the other way round. -->
+            <?php
+            /*
+             * Stats: plain counts, no invented trends.
+             *
+             * The arrow on a card switches to the tab that card counts, using
+             * the same filterSessions() the tabs themselves call. Total
+             * Mentees has no arrow: there is no mentees tab on this page, and
+             * a button that went nowhere would be worse than none.
+             */
+            $sx_cards = [
+                ['sx-teal',   $stat_pending,   'Pending Requests',
+                 $stat_pending ? 'Waiting on your reply' : 'Nothing to review', 'request',
+                 '<path stroke-linecap="round" stroke-linejoin="round" d="M16 19c0-2.2-1.8-4-4-4s-4 1.8-4 4M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM19 8v6M22 11h-6"/>'],
+                ['sx-blue',   $stat_upcoming,  'Upcoming Sessions', 'Approved and still ahead', 'upcoming',
+                 '<rect x="5" y="4" width="14" height="16" rx="3"/><path stroke-linecap="round" d="M8 2v4M16 2v4M5 9h14"/>'],
+                ['sx-purple', $stat_completed, 'Completed', 'Sessions you have finished', 'complete',
+                 '<circle cx="12" cy="12" r="8.5"/><path stroke-linecap="round" stroke-linejoin="round" d="m8.5 12.3 2.4 2.4 4.6-4.9"/>'],
+                ['sx-amber',  $stat_mentees,   'Total Mentees', 'People you have worked with', null,
+                 '<path stroke-linecap="round" stroke-linejoin="round" d="M15.5 19c0-2.1-1.7-3.8-3.8-3.8h-.4C9.2 15.2 7.5 16.9 7.5 19M11.5 12.2a3.2 3.2 0 1 0 0-6.4 3.2 3.2 0 0 0 0 6.4ZM17.5 12.2a2.6 2.6 0 0 0 0-5M20.5 18c0-1.6-1-3-2.5-3.5"/>'],
+            ];
+            ?>
+            <div class="sx-stats">
+                <?php foreach ($sx_cards as [$tint, $value, $label, $sub, $tab, $path]): ?>
+                    <div class="sx-stat <?= $tint ?>">
+                        <?php if ($tab !== null): ?>
+                            <button type="button" class="sx-stat-go" onclick="filterSessions('<?= $tab ?>')"
+                                    aria-label="Show <?= htmlspecialchars($label) ?>">
+                                <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.1" viewBox="0 0 24 24" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6" />
+                                </svg>
+                            </button>
+                        <?php endif; ?>
+                        <div class="sx-stat-ico">
+                            <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24" aria-hidden="true"><?= $path ?></svg>
+                        </div>
+                        <div class="sx-stat-v"><?= (int)$value ?></div>
+                        <div class="sx-stat-k"><?= htmlspecialchars($label) ?></div>
+                        <div class="sx-stat-s"><?= htmlspecialchars($sub) ?></div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+
+            <?php
+            /*
+             * Four tabs, one per stage a session passes through, and History
+             * beside them as a button rather than a tab — the mentee's
+             * Sessions page works the same way.
+             *
+             * Declined is gone: a declined request is not a stage, it is an
+             * outcome, and it lives in History with the cancelled and missed
+             * ones. Group is gone too: a group session is a session, so it
+             * appears in Upcoming and Ongoing like any other, as one card for
+             * the slot rather than one per booking.
+             */
+            ?>
             <div class="tabs" role="tablist">
                 <button type="button" onclick="filterSessions('request')" id="tab-request" class="tab-btn active" role="tab">
                     <?= mp_svg('chat', 'width="15" height="15"') ?>
                     Received
-                    <?php if ($stat_pending > 0): ?><span class="tab-n"><?= $stat_pending ?></span><?php endif; ?>
+                    <?php if ($tabCounts['received'] > 0): ?><span class="tab-n"><?= $tabCounts['received'] ?></span><?php endif; ?>
                 </button>
-                <button type="button" onclick="filterSessions('upcoming')" id="tab-upcoming" class="tab-btn" role="tab"><?= mp_svg('calendar', 'width="15" height="15"') ?>Upcoming</button>
-                <button type="button" onclick="filterSessions('complete')" id="tab-complete" class="tab-btn" role="tab"><?= mp_svg('check', 'width="15" height="15"') ?>Completed</button>
-                <button type="button" onclick="filterSessions('declined')" id="tab-declined" class="tab-btn" role="tab">
-                    <?= mp_svg('x', 'width="15" height="15"') ?>
-                    Declined
-                    <?php if ($stat_declined > 0): ?><span class="tab-n"><?= $stat_declined ?></span><?php endif; ?>
+                <button type="button" onclick="filterSessions('upcoming')" id="tab-upcoming" class="tab-btn" role="tab">
+                    <?= mp_svg('calendar', 'width="15" height="15"') ?>
+                    Upcoming
+                    <?php if ($tabCounts['upcoming'] > 0): ?><span class="tab-n"><?= $tabCounts['upcoming'] ?></span><?php endif; ?>
                 </button>
-                <button type="button" onclick="filterSessions('group')" id="tab-group" class="tab-btn" role="tab"><?= mp_svg('users', 'width="15" height="15"') ?>Group</button>
-                <button type="button" onclick="filterSessions('history')" id="tab-history" class="tab-btn" role="tab"><?= mp_svg('clock', 'width="15" height="15"') ?>History</button>
+                <button type="button" onclick="filterSessions('ongoing')" id="tab-ongoing" class="tab-btn" role="tab">
+                    <?= mp_svg('video', 'width="15" height="15"') ?>
+                    Ongoing
+                    <?php if ($tabCounts['ongoing'] > 0): ?><span class="tab-n"><?= $tabCounts['ongoing'] ?></span><?php endif; ?>
+                </button>
+                <button type="button" onclick="filterSessions('complete')" id="tab-complete" class="tab-btn" role="tab">
+                    <?= mp_svg('check', 'width="15" height="15"') ?>
+                    Completed
+                    <?php if ($tabCounts['completed'] > 0): ?><span class="tab-n"><?= $tabCounts['completed'] ?></span><?php endif; ?>
+                </button>
+
+                <button type="button" id="sr-history-open" class="tab-btn sr-history-btn" style="margin-left:auto;">
+                    <?= mp_svg('clock', 'width="15" height="15"') ?>
+                    History
+                    <?php if ($tabCounts['history'] > 0): ?><span class="tab-n"><?= $tabCounts['history'] ?></span><?php endif; ?>
+                </button>
             </div>
 
             <!-- ── Received ── -->
@@ -952,57 +1278,97 @@ $active_page = 'sessions';
                 <?php endif; ?>
             </div>
 
-            <!-- ── Declined ── -->
-            <div id="section-declined" class="session-section hidden">
-                <?php mp_panel_open('dc', 'x', 'Declined Requests', 'Requests you turned down, with the reason the mentee was given.'); ?>
-
-                <?php if (!$declined_rows): ?>
-                    <div class="card empty-state-lg">
-                        <span class="es-icon"><?= mp_svg('x') ?></span>
-                        <h3 class="es-title">Nothing declined</h3>
-                        <p class="es-body">Requests you turn down are kept here, along with the reason you gave.</p>
-                    </div>
-                <?php else: ?>
-                    <?php foreach ($declined_rows as $r):
-                        $d  = $details[(int)$r['request_id']];
-                        $ts = strtotime($r['session_date']);
-                        $hasReason = trim((string)$r['rejection_reason']) !== '';
-                        mp_session_card([
-                            'initials' => strtoupper(substr($r['firstname'], 0, 1) . substr($r['lastname'], 0, 1)),
-                            'tint'     => (int)$r['mentee_id'] % 5,
-                            'name'     => $d['name'],
-                            'email'    => $declined_email[(int)$r['mentee_id']] ?? '',
-                            'course'   => $d['headline'],
-                            'subject'  => $r['subject'] ?: '—',
-                            'date'     => date('M d, Y', $ts),
-                            'time'     => date('g:i A', $ts),
-                            'note'       => $hasReason ? trim((string)$r['rejection_reason']) : trim((string)$r['message']),
-                            'note_label' => $hasReason ? 'Reason you gave' : "Mentee's note",
-                            'badge'       => 'Declined',
-                            'badge_class' => 'badge-rejected',
-                            'search'   => $d['name'] . ' ' . $r['subject'] . ' ' . $r['rejection_reason'] . ' ' . $r['message'],
-                            'sortkey'  => $ts,
-                            'actions'  => [
-                                ['kind' => 'icon', 'icon' => 'chat', 'title' => 'Message this mentee',
-                                 'href' => url('messages') . '?chat=' . (int)$r['mentee_id']],
-                            ],
-                        ]);
-                    endforeach; ?>
-                <?php endif; ?>
-
-                <?php mp_panel_close('dc'); ?>
-                <?php mp_panel_script('dc'); ?>
-            </div>
-
             <?php // Tells the four tab bodies they are embedded here. On their
             //     own routes they redirect back to this page instead of
             //     serving a bare, unstyled fragment. ?>
-            <?php $sr_embedded = true; ?>
+            <?php
+            $sr_embedded = true;
+            /*
+             * Filled by the Upcoming and Ongoing tabs as they render, and
+             * emitted as JSON further down for the detail modal. They are
+             * included above the script block, so anything they add here is
+             * in place by the time it runs.
+             */
+            $sr_session_details = [];
+            ?>
             <div id="section-upcoming" class="session-section hidden"><?php include "upcoming_session.php"; ?></div>
+            <div id="section-ongoing" class="session-section hidden"><?php include "ongoing_session.php"; ?></div>
             <div id="section-complete" class="session-section hidden"><?php include "completed_session.php"; ?></div>
-            <div id="section-history" class="session-section hidden"><?php include "session_history.php"; ?></div>
-            <div id="section-group" class="session-section hidden"><?php include "group_sessions.php"; ?></div>
         </main>
+    </div>
+
+    <?php
+    /*
+     * History, behind a button rather than in a tab — the same shape the
+     * mentee's Sessions page uses. It holds the outcomes: declined,
+     * cancelled, missed, and sessions left unfinished once their time has
+     * passed. Nothing in here can still be run.
+     */
+    ?>
+    <?php
+    /*
+     * Session details, opened by clicking View details on an Upcoming or
+     * Ongoing card. A one-to-one shows the mentee and their note; a group
+     * shows every participant with the control to remove one, which is where
+     * that moved to when the Group tab was folded away.
+     *
+     * Separate from the Received tab's panel on purpose: that one is built
+     * around a mentee's bio, interests and goals, which a group session has
+     * no single version of.
+     */
+    ?>
+    <div class="modal-overlay" id="sesDetailModal" role="dialog" aria-modal="true" aria-labelledby="sesDetailTitle">
+        <div class="modal-box" style="max-width:560px;width:95vw;">
+            <div class="modal-hd">
+                <h2 class="modal-hd-title" id="sesDetailTitle">Session details</h2>
+                <button type="button" class="modal-close" id="ses-detail-close" aria-label="Close">&times;</button>
+            </div>
+            <div style="padding:18px 20px;max-height:74vh;overflow-y:auto;">
+                <div id="sdKind" style="font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gray-400);"></div>
+                <div id="sdSubject" style="font-size:18px;font-weight:800;color:var(--gray-900);margin:4px 0 14px;"></div>
+
+                <div class="ss-kv" style="display:grid;gap:10px;margin-bottom:16px;">
+                    <div style="display:flex;justify-content:space-between;gap:14px;font-size:13px;">
+                        <span style="color:var(--gray-500);">When</span><span id="sdWhen" style="font-weight:600;text-align:right;"></span>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;gap:14px;font-size:13px;">
+                        <span style="color:var(--gray-500);">Status</span><span id="sdStatus" style="font-weight:600;text-align:right;"></span>
+                    </div>
+                    <div id="sdSeatsRow" style="display:none;justify-content:space-between;gap:14px;font-size:13px;">
+                        <span style="color:var(--gray-500);">Seats</span><span id="sdSeats" style="font-weight:600;text-align:right;"></span>
+                    </div>
+                </div>
+
+                <div id="sdSoloWrap" style="display:none;">
+                    <div style="font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gray-400);margin-bottom:8px;">Mentee</div>
+                    <div id="sdMentee" style="font-size:14px;font-weight:700;color:var(--gray-900);"></div>
+                    <div id="sdMenteeMail" style="font-size:12.5px;color:var(--gray-500);margin-top:2px;"></div>
+                    <div id="sdMenteeCourse" style="font-size:12.5px;color:var(--gray-500);margin-top:2px;"></div>
+                    <div id="sdNoteWrap" style="margin-top:14px;display:none;">
+                        <div style="font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gray-400);margin-bottom:6px;">Mentee's note</div>
+                        <p id="sdNote" style="font-size:13px;color:var(--gray-700);line-height:1.6;margin:0;"></p>
+                    </div>
+                </div>
+
+                <div id="sdGroupWrap" style="display:none;">
+                    <div style="font-size:11.5px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--gray-400);margin-bottom:8px;">Participants</div>
+                    <div id="sdParticipants"></div>
+                    <p id="sdNobody" style="font-size:13px;color:var(--gray-400);margin:0;display:none;">Nobody has booked this slot yet.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="srHistoryModal" role="dialog" aria-modal="true" aria-labelledby="srHistoryTitle">
+        <div class="modal-box" style="max-width:940px;width:95vw;">
+            <div class="modal-hd">
+                <h2 class="modal-hd-title" id="srHistoryTitle">Session History</h2>
+                <button type="button" class="modal-close" id="sr-history-close" aria-label="Close">&times;</button>
+            </div>
+            <div style="padding:18px 20px;max-height:74vh;overflow-y:auto;">
+                <?php include "session_history.php"; ?>
+            </div>
+        </div>
     </div>
 
     <!-- Detail panel -->
@@ -1334,14 +1700,162 @@ $active_page = 'sessions';
             closePanel();
         });
 
+        /* ── Session details, for an Upcoming or Ongoing card ── */
+        const SES_DETAILS = <?= json_encode($sr_session_details, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+        const SES_POST_URL = <?= json_encode(url('mentor-requests')) ?>;
+
+        function openSessionDetail(key) {
+            const d = SES_DETAILS[key];
+            if (!d) return;
+
+            document.getElementById('sdKind').textContent = d.is_group ? 'Group session' : 'One-to-one session';
+            document.getElementById('sdSubject').textContent = d.subject || 'Session';
+            document.getElementById('sdWhen').textContent = d.when;
+            document.getElementById('sdStatus').textContent = d.status_label;
+
+            const seatsRow = document.getElementById('sdSeatsRow');
+            seatsRow.style.display = d.is_group ? 'flex' : 'none';
+            if (d.is_group) document.getElementById('sdSeats').textContent = d.seats;
+
+            document.getElementById('sdSoloWrap').style.display  = d.is_group ? 'none' : 'block';
+            document.getElementById('sdGroupWrap').style.display = d.is_group ? 'block' : 'none';
+
+            if (!d.is_group) {
+                document.getElementById('sdMentee').textContent = d.mentee;
+                document.getElementById('sdMenteeMail').textContent = d.email || '';
+                document.getElementById('sdMenteeCourse').textContent = d.course || '';
+                const noteWrap = document.getElementById('sdNoteWrap');
+                noteWrap.style.display = d.note ? 'block' : 'none';
+                if (d.note) document.getElementById('sdNote').textContent = d.note;
+            } else {
+                const list = document.getElementById('sdParticipants');
+                list.replaceChildren();
+                document.getElementById('sdNobody').style.display = d.participants.length ? 'none' : 'block';
+
+                d.participants.forEach(function (p) {
+                    const row = document.createElement('div');
+                    row.style.cssText = 'display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--gray-100);';
+
+                    const who = document.createElement('div');
+                    who.style.cssText = 'min-width:0;';
+                    const nm = document.createElement('div');
+                    nm.style.cssText = 'font-size:13.5px;font-weight:600;color:var(--gray-900);';
+                    nm.textContent = p.name;
+                    who.appendChild(nm);
+                    if (p.email) {
+                        const em = document.createElement('div');
+                        em.style.cssText = 'font-size:12px;color:var(--gray-500);';
+                        em.textContent = p.email;
+                        who.appendChild(em);
+                    }
+                    row.appendChild(who);
+
+                    /* Removing cancels that mentee's booking. Offered only
+                       while the booking is still live — the server refuses it
+                       on a closed session anyway, and a button that is always
+                       refused is worse than none. */
+                    if (p.removable) {
+                        const btn = document.createElement('button');
+                        btn.type = 'button';
+                        btn.className = 'btn btn-ghost btn-sm';
+                        btn.style.color = 'var(--danger)';
+                        btn.textContent = 'Remove';
+                        btn.addEventListener('click', function () { removeParticipant(p.id, p.name); });
+                        row.appendChild(btn);
+                    }
+                    list.appendChild(row);
+                });
+            }
+
+            document.getElementById('sesDetailModal').classList.add('open');
+        }
+
+        function removeParticipant(requestId, name) {
+            // pcConfirm takes { title, body, tone, ok, cancel } and resolves
+            // to a boolean — the same dialog the rest of the page uses.
+            pcConfirm({
+                title: 'Remove ' + name + '?',
+                body: 'Their booking is cancelled and they are told. This cannot be undone.',
+                tone: 'danger',
+                ok: 'Remove',
+                cancel: 'Keep them'
+            }).then(function (yes) {
+                if (!yes) return;
+                const f = document.createElement('form');
+                f.method = 'POST';
+                f.action = SES_POST_URL;
+                f.style.display = 'none';
+                [['csrf_token', CSRF_TOKEN], ['remove_request_id', String(requestId)]].forEach(function (pair) {
+                    const i = document.createElement('input');
+                    i.type = 'hidden';
+                    i.name = pair[0];
+                    i.value = pair[1];
+                    f.appendChild(i);
+                });
+                document.body.appendChild(f);
+                f.submit();
+            });
+        }
+
+        (function () {
+            const m = document.getElementById('sesDetailModal');
+            const c = document.getElementById('ses-detail-close');
+            if (!m) return;
+            if (c) c.addEventListener('click', function () { m.classList.remove('open'); });
+            m.addEventListener('click', function (e) { if (e.target === m) m.classList.remove('open'); });
+        })();
+
+        /* ── History, behind a button rather than a tab ── */
+        (function () {
+            var modal = document.getElementById('srHistoryModal');
+            var open  = document.getElementById('sr-history-open');
+            var close = document.getElementById('sr-history-close');
+            if (!modal || !open) return;
+
+            open.addEventListener('click', function () { modal.classList.add('open'); });
+            if (close) close.addEventListener('click', function () { modal.classList.remove('open'); });
+            // Clicking the backdrop closes it; clicking the panel does not.
+            modal.addEventListener('click', function (e) {
+                if (e.target === modal) modal.classList.remove('open');
+            });
+        })();
+
         /* Deep links. Notifications, the video-call end screen and the
            group "remove student" flow all send the mentor back here as
-           ?tab=group / ?tab=upcoming / ..., and the standalone tab routes
+           ?tab=upcoming / ?tab=ongoing / ..., and the standalone tab routes
            redirect here the same way. Nothing read the parameter, so every
-           one of those links dropped the mentor on Requests instead. */
+           one of those links dropped the mentor on Requests instead.
+
+           'history' and 'group' are no longer sections: History is a modal
+           and group sessions live in Upcoming and Ongoing. Old links to
+           either still have somewhere sensible to land rather than being
+           silently ignored. */
         (function () {
-            var want = new URLSearchParams(location.search).get('tab');
-            if (want && document.getElementById('section-' + want)) filterSessions(want);
+            var qs   = new URLSearchParams(location.search);
+            var want = qs.get('tab');
+
+            /* History is a modal, so its own links — the filter chips and
+               the pager inside it — carry hstatus/hpage rather than a tab.
+               Without this the mentor picked "Missed", the page reloaded
+               filtered correctly, and the modal was shut. */
+            if (qs.has('hstatus') || qs.has('hpage')) {
+                var hm = document.getElementById('srHistoryModal');
+                if (hm) hm.classList.add('open');
+                if (!want) return;
+            }
+
+            if (!want) return;
+
+            // Declined sessions are in History now, so an old ?tab=declined
+            // opens it there rather than landing on a tab that no longer
+            // exists. Group sessions are in Upcoming.
+            if (want === 'history' || want === 'declined') {
+                var m = document.getElementById('srHistoryModal');
+                if (m) m.classList.add('open');
+                return;
+            }
+            if (want === 'group') { want = 'upcoming'; }
+            if (document.getElementById('section-' + want)) filterSessions(want);
         })();
     </script>
 </body>

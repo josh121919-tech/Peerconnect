@@ -27,12 +27,16 @@ $justReleased = pc_ann_release($con);
 if ($justReleased) {
     require_once __DIR__ . '/../../services/NotificationService.php';
     foreach ($justReleased as $rid) {
-        $rs = $con->prepare("SELECT title, audience FROM announcements WHERE announcement_id = ?");
+        $rs = $con->prepare("SELECT title, audience" . pc_ann_club_col($con, 'announcements')
+                            . " FROM announcements WHERE announcement_id = ?");
         $rs->bind_param('i', $rid);
         $rs->execute();
         $row = $rs->get_result()->fetch_assoc();
         $rs->close();
-        if ($row) pc_ann_send($con, $rid, $row['title'], $row['audience']);
+        // The club goes with it, or a scheduled post releasing itself would
+        // notify everybody while the same post published by hand notified one
+        // club — the two paths have to reach the same people.
+        if ($row) pc_ann_send($con, $rid, $row['title'], $row['audience'], $row['audience_club'] ?? null);
     }
 }
 
@@ -86,7 +90,7 @@ foreach ($counts as $k => $v) $counts[$k] = (int)$v;
 
 /* ── Reach across everything published ────────────────────────────────── */
 $reachRows = $con->query("
-    SELECT a.announcement_id, a.audience,
+    SELECT a.announcement_id, a.audience" . pc_ann_club_col($con, 'a') . ",
            (SELECT COUNT(*) FROM announcement_reads r WHERE r.announcement_id = a.announcement_id) reads_n
     FROM announcements a WHERE a.status = 'published'
 ")->fetch_all(MYSQLI_ASSOC);
@@ -95,7 +99,7 @@ $reachRead = 0;
 $reachOf   = 0;
 foreach ($reachRows as $r) {
     $reachRead += (int)$r['reads_n'];
-    $reachOf   += pc_ann_audience_size($con, $r['audience']);
+    $reachOf   += pc_ann_audience_size($con, $r['audience'], $r['audience_club'] ?? null);
 }
 $reachPct = $reachOf > 0 ? round($reachRead / $reachOf * 100) : null;
 
@@ -201,7 +205,7 @@ include __DIR__ . '/includes/sessions_ui.php';
     .an-btn:hover { border-color: var(--mint); color: var(--mint-deep, #00539B); }
     .an-btn svg { width: 14px; height: 14px; }
     .an-btn.solid { background: var(--mint); border-color: var(--mint); color: #fff; }
-    .an-btn.solid:hover { background: #0077B6; color: #fff; }
+    .an-btn.solid:hover { background: #0868AD; color: #fff; }
     .an-btn.danger { color: #A6301F; border-color: #F3C9C0; }
 
     .an-form label { display: block; font-size: 12px; font-weight: 600; color: var(--gray-700); margin-bottom: 5px; margin-top: 12px; }
@@ -252,7 +256,7 @@ include __DIR__ . '/includes/sessions_ui.php';
         ['Announcements', number_format($allC), 'Written so far', '#EAF1FB', '#1A5C9A', 'cal'],
         ['Published', number_format($pubC), $pubC > 0 ? 'Live for their audience' : 'Nothing live yet', '#E6F5EE', '#17654B', 'check'],
         ['Scheduled', number_format($schC), $nextUp ? 'Next: ' . date('M j, g:i A', strtotime($nextUp['publish_at'])) : 'None queued', '#FEF6DC', '#B7791F', 'clock'],
-        ['Read rate', $reachPct !== null ? $reachPct . '%' : '—', $reachOf > 0 ? $reachRead . ' of ' . $reachOf . ' possible reads' : 'Nothing published yet', '#EAF6FB', '#0087CF', 'star'],
+        ['Read rate', $reachPct !== null ? $reachPct . '%' : '—', $reachOf > 0 ? $reachRead . ' of ' . $reachOf . ' possible reads' : 'Nothing published yet', '#EAF6FC', '#087FC1', 'star'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
             <span class="ss-stat-ico" style="background:<?= $bg ?>;color:<?= $fg ?>;"><?= ss_icon($ico) ?></span>
@@ -303,6 +307,40 @@ include __DIR__ . '/includes/sessions_ui.php';
                         </select>
                     </div>
                 </div>
+
+                <?php
+                /*
+                 * Narrowing to one club. Left as its own field rather than
+                 * folded into "Who sees it" so the two compose: a post can go
+                 * to everyone in a club, or to that club's mentors only.
+                 *
+                 * The list is the clubs members are actually in — there is no
+                 * club catalogue, a club exists because somebody is in it —
+                 * plus whatever this announcement already carries, so editing
+                 * an old one cannot quietly drop its club.
+                 */
+                if (pc_ann_club_enabled($con)):
+                    $annClubs = pc_ann_clubs($con, $editing['audience_club'] ?? null);
+                    $annClub  = $editing['audience_club'] ?? '';
+                ?>
+                    <div class="an-form-row">
+                        <div>
+                            <label for="an-club">Club</label>
+                            <select id="an-club" name="audience_club">
+                                <option value="">Any club</option>
+                                <?php foreach ($annClubs as $cl): ?>
+                                    <option value="<?= htmlspecialchars($cl, ENT_QUOTES) ?>" <?= $annClub === $cl ? 'selected' : '' ?>>
+                                        <?= htmlspecialchars($cl) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="hint" style="margin-top:6px;font-size:12px;color:var(--gray-400);">
+                                Pick a club and only its members are notified and shown it.
+                                Members with no club set are not in any club.
+                            </p>
+                        </div>
+                    </div>
+                <?php endif; ?>
 
                 <div class="an-form-row">
                     <div>
@@ -397,7 +435,7 @@ include __DIR__ . '/includes/sessions_ui.php';
                     [$sl, $sfg, $sbg] = pc_ann_state($a);
                     [$cfg, $cbg] = pc_ann_category_color($a['category']);
                     $id = (int)$a['announcement_id'];
-                    $size = pc_ann_audience_size($con, $a['audience']);
+                    $size = pc_ann_audience_size($con, $a['audience'], $a['audience_club'] ?? null);
                     $pct = ($a['status'] === 'published' && $size > 0) ? round($a['reads_n'] / $size * 100) : null;
                 ?>
                     <div class="an-row<?= (int)$a['is_pinned'] ? ' pinned' : '' ?>">
@@ -459,16 +497,7 @@ include __DIR__ . '/includes/sessions_ui.php';
 
             <div class="ss-foot">
                 <span>Showing <?= $offset + 1 ?>–<?= min($offset + $perPage, $total) ?> of <?= number_format($total) ?> announcement<?= $total === 1 ? '' : 's' ?></span>
-                <?php if ($totalPages > 1): ?>
-                    <div class="ss-pages">
-                        <?php if ($page > 1): ?><a href="<?= an_url(['page' => $page - 1]) ?>">‹</a><?php else: ?><span class="off">‹</span><?php endif; ?>
-                        <?php $lo = max(1, $page - 2); $hi = min($totalPages, $lo + 4); $lo = max(1, $hi - 4);
-                        for ($i = $lo; $i <= $hi; $i++): ?>
-                            <?php if ($i === $page): ?><span class="on"><?= $i ?></span><?php else: ?><a href="<?= an_url(['page' => $i]) ?>"><?= $i ?></a><?php endif; ?>
-                        <?php endfor; ?>
-                        <?php if ($page < $totalPages): ?><a href="<?= an_url(['page' => $page + 1]) ?>">›</a><?php else: ?><span class="off">›</span><?php endif; ?>
-                    </div>
-                <?php endif; ?>
+                <?php pc_pagination($page, $totalPages, fn(int $n) => an_url(['page' => $n]), ['label' => 'Announcement pages']); ?>
             </div>
         <?php endif; ?>
     </div>
@@ -487,7 +516,7 @@ include __DIR__ . '/includes/sessions_ui.php';
                             <circle cx="58" cy="58" r="<?= $R ?>" fill="none" stroke="#EDEDED" stroke-width="12" />
                             <circle cx="58" cy="58" r="<?= $R ?>" fill="none" stroke="#1B6FD1" stroke-width="12" stroke-linecap="round"
                                     stroke-dasharray="<?= round($len, 2) ?> <?= round($C - $len, 2) ?>" transform="rotate(-90 58 58)" />
-                            <text x="58" y="58" text-anchor="middle" font-size="20" font-weight="700" fill="#020547"><?= $reachPct ?>%</text>
+                            <text x="58" y="58" text-anchor="middle" font-size="20" font-weight="700" fill="#071B4D"><?= $reachPct ?>%</text>
                             <text x="58" y="72" text-anchor="middle" font-size="9" fill="#9A9EA6">read</text>
                         </svg>
                     </div>
@@ -536,3 +565,5 @@ include __DIR__ . '/includes/sessions_ui.php';
         </div>
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

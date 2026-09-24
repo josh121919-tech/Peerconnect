@@ -135,7 +135,7 @@ include __DIR__ . '/includes/sessions_ui.php';
     .cv-title { font-size: 15px; font-weight: 700; color: var(--forest); padding: 0 6px; }
     .cv-modes { margin-left: auto; display: flex; padding: 3px; border: 1px solid var(--gray-200); border-radius: 11px; background: #fff; }
     .cv-mode { padding: 7px 20px; border-radius: 8px; font-size: 13px; font-weight: 600; color: var(--gray-600); text-decoration: none; }
-    .cv-mode.on { background: var(--forest); color: #fff; }
+    .cv-mode.on { background: var(--primary); color: #fff; }
 
     /* ── Grid ── */
     .cv-grid { background: #fff; border: 1px solid var(--gray-100); border-radius: 14px; overflow: hidden; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
@@ -146,7 +146,7 @@ include __DIR__ . '/includes/sessions_ui.php';
     .cv-head .cv-dnum { display: block; font-size: 17px; font-weight: 700; color: var(--forest); margin-top: 2px; }
     .cv-head .today .cv-dnum { width: 30px; height: 30px; margin: 2px auto 0; border-radius: 50%; background: var(--mint); color: #fff; display: grid; place-items: center; }
     .cv-head a { text-decoration: none; color: inherit; display: block; }
-    .cv-head .sel { background: #EAF6FB; }
+    .cv-head .sel { background: #EAF6FC; }
 
     .cv-body { display: grid; position: relative; }
     .cv-hours { border-right: 1px solid var(--gray-100); }
@@ -170,7 +170,7 @@ include __DIR__ . '/includes/sessions_ui.php';
     .cv-cell { min-height: 108px; padding: 7px; border-top: 1px solid var(--gray-100); border-left: 1px solid var(--gray-100); }
     .cv-cell:nth-child(7n+1) { border-left: 0; }
     .cv-cell.out { background: var(--gray-50, #FAFAFB); }
-    .cv-cell.sel { background: #EAF6FB; }
+    .cv-cell.sel { background: #EAF6FC; }
     .cv-cell-d { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; font-size: 12px; font-weight: 600; color: var(--gray-600); text-decoration: none; }
     .cv-cell.out .cv-cell-d { color: var(--gray-300); }
     .cv-cell-d.today { background: var(--mint); color: #fff; }
@@ -209,7 +209,7 @@ include __DIR__ . '/includes/sessions_ui.php';
     .cv-item-a a { flex: 1; text-align: center; padding: 8px 10px; border: 1px solid var(--gray-200); border-radius: 9px; font-size: 12.5px; font-weight: 600; color: var(--gray-700); text-decoration: none; }
     .cv-item-a a.primary { background: var(--mint); border-color: var(--mint); color: #fff; }
     .cv-item-a a:hover { border-color: var(--mint); }
-    .cv-item-a a.primary:hover { background: #0077B6; }
+    .cv-item-a a.primary:hover { background: #0868AD; }
 
     @media (max-width: 1400px) { .cv-wrap { flex-direction: column; } .cv-panel { width: 100%; position: static; max-height: none; } }
 </style>
@@ -418,3 +418,5 @@ include __DIR__ . '/includes/sessions_ui.php';
         </div>
     </aside>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

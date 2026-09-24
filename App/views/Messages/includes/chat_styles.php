@@ -250,7 +250,7 @@
     }
 
     .me .bubble {
-      background: var(--forest);
+      background: var(--primary);
       color: #fff;
       border-bottom-right-radius: 4px;
     }

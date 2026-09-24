@@ -179,7 +179,7 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     .aw-search input:focus { border-color: var(--mint); box-shadow: 0 0 0 3px rgba(0,135,207,.13); }
     .aw-bar select { padding: 10px 12px; border: 1px solid var(--gray-200); border-radius: 10px; background: #fff;
                      font-family: inherit; font-size: 13px; color: var(--gray-700); outline: none; }
-    .aw-bar button.go { padding: 10px 16px; border: 1px solid var(--forest); border-radius: 10px; background: var(--forest);
+    .aw-bar button.go { padding: 10px 16px; border: 1px solid var(--primary); border-radius: 10px; background: var(--primary);
                         color: #fff; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
     .aw-reset { display: inline-flex; align-items: center; gap: 7px; padding: 10px 15px; border: 1px solid var(--gray-200);
                 border-radius: 10px; background: #fff; font-size: 13px; font-weight: 600; color: var(--gray-600); text-decoration: none; }
@@ -233,13 +233,6 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     /* Pager */
     .aw-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
     .aw-pager-n { font-size: 12.5px; color: var(--gray-400); }
-    .aw-pages { display: flex; gap: 5px; align-items: center; }
-    .aw-pages a, .aw-pages span { min-width: 32px; height: 32px; padding: 0 9px; border: 1px solid var(--gray-200); border-radius: 9px;
-                                  background: #fff; display: inline-flex; align-items: center; justify-content: center;
-                                  font-size: 12.5px; font-weight: 600; color: var(--gray-600); text-decoration: none; }
-    .aw-pages a:hover { border-color: var(--mint); color: var(--mint); }
-    .aw-pages .on { background: var(--forest); border-color: var(--forest); color: #fff; }
-    .aw-pages .dead { opacity: .4; }
 
     /* Side */
     .aw-donut { display: flex; align-items: center; gap: 16px; }
@@ -298,12 +291,12 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     .aw-pick label { display: grid; place-items: center; aspect-ratio: 1; border: 1px solid var(--gray-200);
                      border-radius: 10px; cursor: pointer; margin: 0; }
     .aw-pick label svg { width: 19px; height: 19px; }
-    .aw-pick input:checked + label { border-color: var(--forest); box-shadow: 0 0 0 2px var(--forest); }
+    .aw-pick input:checked + label { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
     .aw-pick.tones label { aspect-ratio: 1.4; }
 
     .aw-btn { padding: 10px 18px; border-radius: 10px; border: 1px solid var(--gray-200); background: #fff;
               font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--gray-700); cursor: pointer; }
-    .aw-btn.primary { background: var(--forest); border-color: var(--forest); color: #fff; }
+    .aw-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
     .aw-btn.danger { background: #A6301F; border-color: #A6301F; color: #fff; }
 
     @media (max-width: 1240px) { .aw-grid { grid-template-columns: minmax(0, 1fr); } }
@@ -464,18 +457,7 @@ require_once __DIR__ . '/includes/sessions_ui.php';
                         Showing <?= $offset + 1 ?> to <?= min($offset + $perPage, $total) ?> of <?= $total ?> badge<?= $total === 1 ? '' : 's' ?>
                     </span>
                     <div style="display:flex;align-items:center;gap:10px;">
-                        <?php if ($pages > 1): ?>
-                            <span class="aw-pages">
-                                <?php if ($page > 1): ?><a href="<?= bg_url(['p' => $page - 1]) ?>" aria-label="Previous page">‹</a>
-                                <?php else: ?><span class="dead">‹</span><?php endif; ?>
-                                <?php for ($i = 1; $i <= $pages; $i++): ?>
-                                    <?php if ($i === $page): ?><span class="on"><?= $i ?></span>
-                                    <?php else: ?><a href="<?= bg_url(['p' => $i]) ?>"><?= $i ?></a><?php endif; ?>
-                                <?php endfor; ?>
-                                <?php if ($page < $pages): ?><a href="<?= bg_url(['p' => $page + 1]) ?>" aria-label="Next page">›</a>
-                                <?php else: ?><span class="dead">›</span><?php endif; ?>
-                            </span>
-                        <?php endif; ?>
+                        <?php pc_pagination($page, $pages, fn(int $n) => bg_url(['p' => $n]), ['label' => 'Badge pages']); ?>
                         <form method="get" action="<?= url('admin-badges') ?>" style="margin:0;">
                             <?php foreach (['tab' => $tab === 'all' ? '' : $tab, 'q' => $q, 'crit' => $critFil] as $k => $v): ?>
                                 <?php if ($v !== '') : ?><input type="hidden" name="<?= $k ?>" value="<?= htmlspecialchars($v) ?>"><?php endif; ?>
@@ -823,3 +805,5 @@ require_once __DIR__ . '/includes/sessions_ui.php';
 
     bdCritChange();
 </script>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

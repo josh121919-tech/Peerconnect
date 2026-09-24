@@ -99,7 +99,7 @@ define('PC_DIALOG_RENDERED', true);
         font-size: 17.5px;
         font-weight: 700;
         line-height: 1.35;
-        color: var(--forest, #020547);
+        color: var(--forest, #071B4D);
     }
 
     .pc-dlg p {
@@ -151,7 +151,7 @@ define('PC_DIALOG_RENDERED', true);
     }
 
     .pc-dlg-btn:focus-visible {
-        outline: 2px solid var(--mint, #0087CF);
+        outline: 2px solid var(--mint, #087FC1);
         outline-offset: 2px;
     }
 
@@ -160,7 +160,7 @@ define('PC_DIALOG_RENDERED', true);
     .pc-dlg-back[data-tone="danger"]  { --pc-dlg-tone: #A6301F; --pc-dlg-soft: #FBE5E1; }
     .pc-dlg-back[data-tone="success"] { --pc-dlg-tone: #17654B; --pc-dlg-soft: #E6F5EE; }
     .pc-dlg-back[data-tone="warning"] { --pc-dlg-tone: #9A7100; --pc-dlg-soft: #FBF0D4; }
-    .pc-dlg-back[data-tone="primary"] { --pc-dlg-tone: var(--forest, #020547); --pc-dlg-soft: var(--mint-faint, #EAF6FB); }
+    .pc-dlg-back[data-tone="primary"] { --pc-dlg-tone: var(--forest, #071B4D); --pc-dlg-soft: var(--mint-faint, #EAF6FC); }
 
     @media (prefers-reduced-motion: reduce) {
         .pc-dlg { animation: none; }

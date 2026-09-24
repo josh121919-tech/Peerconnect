@@ -1,12 +1,24 @@
 <?php
 // Resources — shared study material (reviewers, handouts) organised by club.
-// One page for both mentees and mentors: either role can upload and download.
+// One page for every role. Mentors and admins add to it; mentees read,
+// download and bookmark. See $can_upload below.
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 include __DIR__ . "/../db.php";
 
 $role = $_SESSION['role'] ?? '';
+
+/*
+ * Who may add to the library. Mentors and admins: it is teaching material, and
+ * a mentee uploading into it was the one way a study file could arrive without
+ * anyone having vouched for it. Mentees still search, download and bookmark
+ * everything.
+ *
+ * resources/upload.php refuses the same roles. This only decides whether to
+ * offer the control — a hidden button is a suggestion, not a rule.
+ */
+$can_upload = in_array($role, ['mentor', 'admin'], true);
 if (empty($_SESSION['user_id']) || !in_array($role, ['mentee', 'mentor'], true)) {
     header("Location: " . url('welcomepage'));
     exit;
@@ -516,11 +528,14 @@ function pc_filesize(int $bytes): string
                     <h1>Resources</h1>
                     <p>Share reviewers and handouts with your club, and download what others have shared.</p>
                 </div>
-                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;margin-top:4px;">
-                    <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('uploadModal').classList.add('open')">
-                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0L8 8m4-4 4 4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" /></svg>
-                        Upload Resource
-                    </button>                </div>
+                <?php if ($can_upload): ?>
+                    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;margin-top:4px;">
+                        <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('uploadModal').classList.add('open')">
+                            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0L8 8m4-4 4 4M4 17v1a3 3 0 003 3h10a3 3 0 003-3v-1" /></svg>
+                            Upload Resource
+                        </button>
+                    </div>
+                <?php endif; ?>
             </div>
 
 
@@ -607,11 +622,18 @@ function pc_filesize(int $bytes): string
                         <div class="pcard">
                             <div class="prow-empty">
                                 <p style="margin:0 0 12px;">
-                                    <?= $search !== '' || $club !== '' || $type !== '' || $saved_only
-                                        ? 'No resources match your filters yet.'
-                                        : 'No resources have been shared yet. Be the first to upload a reviewer for your club.' ?>
+                                    <?php if ($search !== '' || $club !== '' || $type !== '' || $saved_only): ?>
+                                        No resources match your filters yet.
+                                    <?php elseif ($can_upload): ?>
+                                        No resources have been shared yet. Be the first to upload a reviewer for your club.
+                                    <?php else: ?>
+                                        <?php // Nothing to do about it from here, so do not suggest there is. ?>
+                                        No resources have been shared yet. Your mentors post reviewers and handouts here.
+                                    <?php endif; ?>
                                 </p>
-                                <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('uploadModal').classList.add('open')">Upload a resource</button>
+                                <?php if ($can_upload): ?>
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="document.getElementById('uploadModal').classList.add('open')">Upload a resource</button>
+                                <?php endif; ?>
                             </div>
                         </div>
                     <?php else: ?>
@@ -721,7 +743,8 @@ function pc_filesize(int $bytes): string
         </main>
     </div>
 
-    <!-- Upload modal -->
+    <!-- Upload modal — only rendered for the roles that may post. -->
+    <?php if ($can_upload): ?>
     <div id="uploadModal" class="modal-overlay">
         <div style="background:var(--surface);border-radius:var(--radius-lg);padding:26px;width:520px;max-width:95vw;max-height:88vh;overflow-y:auto;box-shadow:var(--shadow-lg);">
             <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
@@ -763,6 +786,7 @@ function pc_filesize(int $bytes): string
             </form>
         </div>
     </div>
+    <?php endif; ?>
 
     <script>
         const RESOURCE_CSRF = <?= json_encode(csrf_token()) ?>;
@@ -784,7 +808,11 @@ function pc_filesize(int $bytes): string
         });
 
         // Close the upload modal when clicking the backdrop.
-        document.getElementById('uploadModal').addEventListener('click', function(e) {
+        // Only rendered for the roles that may post, so a mentee has no
+        // such element — without this guard the TypeError stopped the rest
+        // of this script, taking the view toggle and spotlight with it.
+        const upModal = document.getElementById('uploadModal');
+        if (upModal) upModal.addEventListener('click', function(e) {
             if (e.target === this) this.classList.remove('open');
         });
 

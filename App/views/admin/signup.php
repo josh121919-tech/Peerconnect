@@ -68,9 +68,9 @@ function adm_new_code(): string
 function adm_send_code(string $to, string $name, string $code): array
 {
     $html = '<div style="font-family:Arial,Helvetica,sans-serif;max-width:520px;margin:auto">'
-        . '<h2 style="color:#020547;margin:0 0 6px">Confirm your admin account</h2>'
+        . '<h2 style="color:#071B4D;margin:0 0 6px">Confirm your admin account</h2>'
         . '<p style="color:#3d424d;font-size:14px;line-height:1.6">Hi ' . htmlspecialchars($name) . ', use this code to finish creating your PeerConnect admin account.</p>'
-        . '<p style="font-size:30px;letter-spacing:8px;font-weight:700;color:#020547;background:#eaf6fb;'
+        . '<p style="font-size:30px;letter-spacing:8px;font-weight:700;color:#071B4D;background:#EAF6FC;'
         . 'padding:16px;text-align:center;border-radius:12px;margin:18px 0">' . htmlspecialchars($code) . '</p>'
         . '<p style="color:#717680;font-size:12.5px;line-height:1.6">The code is valid for 15 minutes. '
         . 'If you did not request an admin account, you can ignore this email — nothing has been created.</p>'

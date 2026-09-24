@@ -168,6 +168,10 @@ include __DIR__ . '/includes/settings_ui.php';
     <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M4 19h16" /></svg>
     Export <?= number_format($total) ?> row<?= $total === 1 ? '' : 's' ?>
 </a>
+<a class="ss-export is-pdf" href="<?= url('admin-settings-logs-export') . ($exportQs ? '?' . $exportQs . '&amp;' : '?') ?>format=pdf">
+    <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8v-7Z" /></svg>
+    Export PDF
+</a>
 <?php $actions = ob_get_clean(); ?>
 
 <?php st_header('admin-settings-logs', 'Activity Logs',
@@ -177,7 +181,7 @@ include __DIR__ . '/includes/settings_ui.php';
     <?php foreach ([
         ['Entries', number_format($allN), 'Since the platform started', '#EAF1FB', '#1A5C9A', 'chart'],
         ['Today', number_format($today), $week . ' in the last 7 days', '#E6F5EE', '#17654B', 'clock'],
-        ['People seen', number_format($people), 'Distinct email addresses', '#EAF6FB', '#0087CF', 'cal'],
+        ['People seen', number_format($people), 'Distinct email addresses', '#EAF6FC', '#087FC1', 'cal'],
         ['Admin activity', number_format($adminN), 'Admin sign-ins, changes and exports', '#F3E8FF', '#6B21A8', 'star'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
@@ -262,16 +266,7 @@ include __DIR__ . '/includes/settings_ui.php';
 
                 <div class="ss-foot">
                     <span>Showing <?= $offset + 1 ?>–<?= min($offset + $perPage, $total) ?> of <?= number_format($total) ?></span>
-                    <?php if ($totalPages > 1): ?>
-                        <div class="ss-pages">
-                            <?php if ($page > 1): ?><a href="<?= lg_url(['page' => $page - 1]) ?>">‹</a><?php else: ?><span class="off">‹</span><?php endif; ?>
-                            <?php $lo = max(1, $page - 2); $hi = min($totalPages, $lo + 4); $lo = max(1, $hi - 4);
-                            for ($i = $lo; $i <= $hi; $i++): ?>
-                                <?php if ($i === $page): ?><span class="on"><?= $i ?></span><?php else: ?><a href="<?= lg_url(['page' => $i]) ?>"><?= $i ?></a><?php endif; ?>
-                            <?php endfor; ?>
-                            <?php if ($page < $totalPages): ?><a href="<?= lg_url(['page' => $page + 1]) ?>">›</a><?php else: ?><span class="off">›</span><?php endif; ?>
-                        </div>
-                    <?php endif; ?>
+                    <?php pc_pagination($page, $totalPages, fn(int $n) => lg_url(['page' => $n]), ['label' => 'Log pages']); ?>
                 </div>
             <?php endif; ?>
         </div>
@@ -360,3 +355,5 @@ include __DIR__ . '/includes/settings_ui.php';
         </div>
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

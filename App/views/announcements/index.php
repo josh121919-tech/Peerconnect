@@ -40,23 +40,33 @@ if ($role === 'admin') {
 // told — the same release the admin page performs, from whichever side of the
 // app happens to be visited first.
 foreach (pc_ann_release($con) as $rid) {
-    $rs = $con->prepare("SELECT title, audience FROM announcements WHERE announcement_id = ?");
+    $rs = $con->prepare("SELECT title, audience" . pc_ann_club_col($con, 'announcements')
+                        . " FROM announcements WHERE announcement_id = ?");
     $rs->bind_param('i', $rid);
     $rs->execute();
     $row = $rs->get_result()->fetch_assoc();
     $rs->close();
-    if ($row) pc_ann_send($con, $rid, $row['title'], $row['audience']);
+    if ($row) pc_ann_send($con, $rid, $row['title'], $row['audience'], $row['audience_club'] ?? null);
 }
 
 $CATS = pc_ann_categories();
+
+/*
+ * The club this member is in, which decides whether a club-targeted
+ * announcement reaches them. Worked out once: every query below asks the same
+ * question, and pc_ann_visible() hands back the bindings with the clause so
+ * none of them can bind a different answer.
+ */
+$myClub = pc_ann_club_of($con, $uid);
+[$visSql, $visTypes, $visArgs] = pc_ann_visible($con, $role, $myClub, 'a');
 
 /* ── Opening one marks it read ────────────────────────────────────────── */
 $open = (int)($_GET['open'] ?? 0);
 if ($open > 0) {
     // Only if it is genuinely visible to this person — a read must not be
     // recorded for something they are not allowed to see.
-    $ck = $con->prepare("SELECT announcement_id FROM announcements a WHERE a.announcement_id = ? AND " . pc_ann_visible_sql('a'));
-    $ck->bind_param('is', $open, $role);
+    $ck = $con->prepare("SELECT announcement_id FROM announcements a WHERE a.announcement_id = ? AND " . $visSql);
+    $ck->bind_param('i' . $visTypes, $open, ...$visArgs);
     $ck->execute();
     $allowed = (bool)$ck->get_result()->fetch_row();
     $ck->close();
@@ -77,9 +87,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
         $mk = $con->prepare("
             INSERT IGNORE INTO announcement_reads (announcement_id, user_id, read_at)
             SELECT a.announcement_id, ?, NOW() FROM announcements a
-            WHERE " . pc_ann_visible_sql('a')
+            WHERE " . $visSql
         );
-        $mk->bind_param('is', $uid, $role);
+        $mk->bind_param('i' . $visTypes, $uid, ...$visArgs);
         $mk->execute();
         $n = $mk->affected_rows;
         $mk->close();
@@ -97,9 +107,9 @@ $view  = in_array($_GET['tab'] ?? '', $VIEWS, true) ? $_GET['tab'] : 'all';
 $cat   = array_key_exists($_GET['cat'] ?? '', $CATS) ? $_GET['cat'] : '';
 $q     = trim((string)($_GET['q'] ?? ''));
 
-$clauses = [pc_ann_visible_sql('a')];
-$types   = 'is';               // read-join user id, then role
-$args    = [$uid, $role];
+$clauses = [$visSql];
+$types   = 'i' . $visTypes;    // read-join user id, then whatever visibility binds
+$args    = array_merge([$uid], $visArgs);
 
 if ($cat !== '') { $clauses[] = 'a.category = ?'; $types .= 's'; $args[] = $cat; }
 if ($q !== '')   { $clauses[] = "CONCAT_WS(' ', a.title, a.body) LIKE ?"; $types .= 's'; $args[] = '%' . $q . '%'; }
@@ -132,18 +142,18 @@ $cs = $con->prepare("
     SELECT COUNT(*) all_c, SUM(r.user_id IS NULL) unread_c
     FROM announcements a
     LEFT JOIN announcement_reads r ON r.announcement_id = a.announcement_id AND r.user_id = ?
-    WHERE " . pc_ann_visible_sql('a')
+    WHERE " . $visSql
 );
-$cs->bind_param('is', $uid, $role);
+$cs->bind_param('i' . $visTypes, $uid, ...$visArgs);
 $cs->execute();
 $tabCounts = $cs->get_result()->fetch_assoc();
 $cs->close();
 
 $byCat = $con->prepare("
     SELECT a.category, COUNT(*) c FROM announcements a
-    WHERE " . pc_ann_visible_sql('a') . " GROUP BY a.category ORDER BY c DESC
+    WHERE " . $visSql . " GROUP BY a.category ORDER BY c DESC
 ");
-$byCat->bind_param('s', $role);
+$byCat->bind_param($visTypes, ...$visArgs);
 $byCat->execute();
 $cats = $byCat->get_result()->fetch_all(MYSQLI_ASSOC);
 $byCat->close();
@@ -178,7 +188,7 @@ $active_page = 'announcements';
     .ma-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
     .ma-tab { display: inline-flex; align-items: center; gap: 8px; padding: 8px 15px; border: 1px solid var(--gray-200);
               border-radius: 10px; background: #fff; font-size: 13px; font-weight: 600; color: var(--gray-600); text-decoration: none; }
-    .ma-tab.on { background: var(--forest); border-color: var(--forest); color: #fff; }
+    .ma-tab.on { background: var(--primary); border-color: var(--primary); color: #fff; }
     .ma-tab-n { padding: 1px 7px; border-radius: 999px; background: var(--gray-100); color: var(--gray-600); font-size: 11.5px; }
     .ma-tab.on .ma-tab-n { background: rgba(255,255,255,.22); color: #fff; }
 

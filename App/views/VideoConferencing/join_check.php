@@ -39,6 +39,8 @@ if (!$session) {
 }
 
 $status  = $session['status'];
+$live_statuses = ['approved', 'unfinished'];
+$is_live_session = in_array($status, $live_statuses, true);
 $appTz   = new DateTimeZone('Asia/Manila');
 
 $sessionDt    = new DateTime($session['session_date'], $appTz);
@@ -49,9 +51,9 @@ $minutes_until = ($session_date - $now) / 60;
 $session_end  = $session_date + (int)$session['duration'] * 60;
 // room.php turns people away once the session's time is over and sends them
 // back here, so the lobby must not offer a Join that can only bounce.
-$has_ended    = $status === 'approved' && $now > $session_end;
+$has_ended    = $is_live_session && $now > $session_end;
 
-$can_join = ($status === 'approved') && ($minutes_until <= 15) && !$has_ended;
+$can_join = $is_live_session && ($minutes_until <= SessionRepository::JOIN_WINDOW_MINUTES) && !$has_ended;
 
 // What to say about a session that can no longer be joined, by what became of it.
 $closed_text = [
@@ -95,9 +97,38 @@ $other_person = $role === 'mentor'
             font-family: 'DM Serif Display', serif;
         }
 
-        body {
-            background: #f5f5f3;
+        /*
+         * The app's palette. This page is outside the shell and does not load
+         * pc-app.css, so it was drawing itself in Tailwind's stock blue and a
+         * warm grey that appear nowhere else in PeerConnect.
+         */
+        :root {
+            --bg: #F7F9FC;
+            --primary: #0868AD;
+            --primary-2: #06527F;
+            --navy: #071B4D;
+            --navy-2: #0A2A6E;
+            --mint-faint: #EAF6FC;
         }
+
+        body {
+            background: var(--bg);
+        }
+
+        /* A group call is the same screen in the deeper of the two brand
+           blues, so the two are told apart without leaving the palette. */
+        .vc-head { background: var(--primary); }
+        .vc-head.group { background: var(--navy); }
+
+        .vc-cta { background: var(--primary); }
+        .vc-cta:hover { background: var(--primary-2); }
+        .vc-cta.group { background: var(--navy); }
+        .vc-cta.group:hover { background: var(--navy-2); }
+
+        .vc-wait { background: var(--mint-faint); border-color: #CBE4F5; }
+        .vc-wait-k { color: var(--primary); }
+        .vc-wait-v { color: var(--primary); }
+        .vc-wait-s { color: #4C7FA3; }
     </style>
 </head>
 
@@ -109,7 +140,7 @@ $other_person = $role === 'mentor'
         <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
 
             <!-- Header strip -->
-            <div class="<?= $is_group ? 'bg-purple-500' : 'bg-blue-500' ?> px-6 py-5">
+            <div class="vc-head<?= $is_group ? ' group' : '' ?> px-6 py-5">
                 <div class="flex items-center gap-3">
                     <div class="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center">
                         <?php if ($is_group): ?>
@@ -204,7 +235,7 @@ $other_person = $role === 'mentor'
                         </div>
                         <div>
                             <p class="text-xs text-gray-400">Status</p>
-                            <p class="font-medium <?= $status === 'approved' ? 'text-green-600' : 'text-yellow-600' ?> capitalize">
+                            <p class="font-medium <?= $is_live_session ? 'text-green-600' : 'text-yellow-600' ?> capitalize">
                                 <?= htmlspecialchars($status) ?>
                             </p>
                         </div>
@@ -216,19 +247,23 @@ $other_person = $role === 'mentor'
                     <div class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-600">
                         <?= htmlspecialchars($closed_text) ?>
                     </div>
-                <?php elseif ($status !== 'approved'): ?>
-                    <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4 mb-4 text-sm text-yellow-700">
-                        This session is not yet approved. You can only join once the mentor approves the request.
-                    </div>
                 <?php elseif ($has_ended): ?>
                     <div class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-600">
                         This session's time is over, so the room is closed.
                     </div>
-                <?php elseif ($minutes_until > 15): ?>
-                    <div class="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-4">
-                        <p class="text-sm text-blue-700 font-medium mb-1">Session starts in</p>
-                        <p class="text-2xl font-bold text-blue-600" id="countdown">–</p>
-                        <p class="text-xs text-blue-400 mt-1">You can join 15 minutes before the session starts.</p>
+                <?php elseif ($status === 'unfinished'): ?>
+                    <div class="bg-green-50 border border-green-100 rounded-xl p-4 mb-4 text-sm text-green-700">
+                        Someone left before the session ended. The room is still open, so you can rejoin until the scheduled end time.
+                    </div>
+                <?php elseif (!$is_live_session): ?>
+                    <div class="bg-yellow-50 border border-yellow-100 rounded-xl p-4 mb-4 text-sm text-yellow-700">
+                        This session is not yet approved. You can only join once the mentor approves the request.
+                    </div>
+                <?php elseif ($minutes_until > SessionRepository::JOIN_WINDOW_MINUTES): ?>
+                    <div class="vc-wait border rounded-xl p-4 mb-4">
+                        <p class="vc-wait-k text-sm font-medium mb-1">Session starts in</p>
+                        <p class="vc-wait-v text-2xl font-bold" id="countdown">–</p>
+                        <p class="vc-wait-s text-xs mt-1">You can join <?= SessionRepository::JOIN_WINDOW_MINUTES ?> minutes before the session starts.</p>
                     </div>
                 <?php else: ?>
                     <div class="bg-green-50 border border-green-100 rounded-xl p-4 mb-4 flex items-center gap-3">
@@ -248,11 +283,11 @@ $other_person = $role === 'mentor'
                     ?>
                     <?php if ($can_join): ?>
                         <a href="<?= $room_url ?>"
-                            class="flex items-center justify-center gap-2 w-full py-3 rounded-xl <?= $is_group ? 'bg-purple-500 hover:bg-purple-600' : 'bg-blue-500 hover:bg-blue-600' ?> text-white text-sm font-medium transition">
+                            class="vc-cta<?= $is_group ? ' group' : '' ?> flex items-center justify-center gap-2 w-full py-3 rounded-xl text-white text-sm font-medium transition">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.069A1 1 0 0121 8.867v6.266a1 1 0 01-1.447.9L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z" />
                             </svg>
-                            <?= $is_group ? 'Start Group Session' : 'Join Video Session' ?>
+                            <?= $status === 'unfinished' ? 'Rejoin Video Session' : ($is_group ? 'Start Group Session' : 'Join Video Session') ?>
                         </a>
                     <?php else: ?>
                         <button disabled
@@ -281,7 +316,7 @@ $other_person = $role === 'mentor'
         </p>
     </div>
 
-    <?php if ($status === 'approved' && $minutes_until > 0): ?>
+    <?php if ($is_live_session && $minutes_until > 0): ?>
         <script>
             const sessionDate = <?= $session_date * 1000 ?>;
 

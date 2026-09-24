@@ -96,6 +96,48 @@ class NotificationService
      * Insert a notification for one user, unless they've turned this
      * category off in Settings.
      */
+    /**
+     * send(), unless this person has already been told the same thing since
+     * $since. Returns false when it was suppressed, as it does when the
+     * recipient has the type switched off.
+     *
+     * For events that can fire more than once for one occasion. Leaving a
+     * call is the case this was written for: the endpoint runs every time
+     * somebody closes the tab or steps out, so a mentor who came and went a
+     * few times sent the mentee that many identical notices. The message is
+     * the key, together with the link, which carries the session id: without
+     * it two sessions running at once between the same two people would share
+     * a sentence and the second notice would be swallowed. $since scopes the
+     * whole thing to the one session rather than for ever.
+     *
+     * Two genuinely simultaneous requests can still both find nothing and
+     * both insert; closing that would need a unique index on the table.
+     */
+    public static function sendOnceSince(
+        mysqli $con,
+        int    $user_id,
+        string $type,
+        string $title,
+        string $message,
+        string $link,
+        string $since
+    ): bool {
+        $stmt = $con->prepare("
+            SELECT 1 FROM notifications
+            WHERE user_id = ? AND type = ? AND message = ? AND link = ? AND created_at >= ?
+            LIMIT 1
+        ");
+        $stmt->bind_param('issss', $user_id, $type, $message, $link, $since);
+        $stmt->execute();
+        $already = (bool)$stmt->get_result()->fetch_row();
+        $stmt->close();
+
+        if ($already) {
+            return false;
+        }
+        return self::send($con, $user_id, $type, $title, $message, $link);
+    }
+
     public static function send(
         mysqli $con,
         int    $user_id,
@@ -119,6 +161,14 @@ class NotificationService
 
         if ($ok) {
             self::dispatchEmail($con, $notification_id, $user_id, $title, $message, $link);
+            /*
+             * And to whatever devices they have allowed. This sits after the
+             * isAllowed() check above, so the categories they switched off in
+             * Settings are already excluded — a device notification is the same
+             * notice on a different screen, never an extra one. It cannot throw
+             * and does nothing at all until VAPID keys are configured.
+             */
+            PushService::sendToUser($con, $user_id, $title, $message, $link);
         }
 
         return $ok;
@@ -197,9 +247,19 @@ class NotificationService
         if ($link === '') {
             return '';
         }
-        $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-        $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-        return $scheme . '://' . $host . $link;
+        // APP_URL, not $_SERVER['HTTP_HOST'].
+        //
+        // The 30-minute job (scripts/maintenance.php, which runs the missed-
+        // session detector) sends these from the command line, where there is
+        // no host header at all — so every "View in PeerConnect" button it
+        // emailed pointed at http://localhost, which is the recipient's own
+        // machine. A Host header is also the sender's to choose, so a forged
+        // one could have aimed an emailed link at somebody else's site.
+        //
+        // pc_site_url() takes the address from .env and strips the install
+        // folder that url() already put in $link, so nothing is doubled. The
+        // password-reset and address-confirmation emails have always used it.
+        return pc_site_url(ltrim($link, '/'));
     }
 
     /**

@@ -128,6 +128,10 @@ include __DIR__ . '/includes/assessments_ui.php';
                     <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M4 19h16" /></svg>
                     Export <?= $total ?> row<?= $total === 1 ? '' : 's' ?>
                 </a>
+                <a class="ss-export is-pdf" href="<?= url('admin-assessments-export') ?>?what=assessments&amp;format=pdf">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8v-7Z" /></svg>
+                    Export PDF
+                </a>
             </div>
         </div>
 
@@ -136,7 +140,7 @@ include __DIR__ . '/includes/assessments_ui.php';
             <?php foreach ([
                 ['Assessments', number_format($totalAll), $mentorsAll . ' mentor' . ($mentorsAll === 1 ? '' : 's') . ' writing', '#EAF1FB', '#1A5C9A', 'paper'],
                 ['Published', number_format($pubAll), $draftAll . ' still in draft', '#E6F5EE', '#17654B', 'check'],
-                ['Attempts', number_format($attTotal), $attOpen > 0 ? $attOpen . ' still in progress' : 'All submitted', '#EAF6FB', '#0087CF', 'user'],
+                ['Attempts', number_format($attTotal), $attOpen > 0 ? $attOpen . ' still in progress' : 'All submitted', '#EAF6FC', '#087FC1', 'user'],
                 ['Average score', $avgPct !== null ? $avgPct . '%' : '—', $attSub > 0 ? 'Across ' . $attSub . ' submitted attempt' . ($attSub === 1 ? '' : 's') : 'Nothing submitted yet', '#FEF6DC', '#B7791F', 'star'],
             ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
                 <div class="ss-stat">
@@ -264,16 +268,7 @@ include __DIR__ . '/includes/assessments_ui.php';
 
             <div class="ss-foot">
                 <span>Showing <?= $offset + 1 ?>–<?= min($offset + $perPage, $total) ?> of <?= number_format($total) ?> assessment<?= $total === 1 ? '' : 's' ?></span>
-                <?php if ($totalPages > 1): ?>
-                    <div class="ss-pages">
-                        <?php if ($page > 1): ?><a href="<?= ab_url(['page' => $page - 1]) ?>">‹</a><?php else: ?><span class="off">‹</span><?php endif; ?>
-                        <?php $lo = max(1, $page - 2); $hi = min($totalPages, $lo + 4); $lo = max(1, $hi - 4);
-                        for ($i = $lo; $i <= $hi; $i++): ?>
-                            <?php if ($i === $page): ?><span class="on"><?= $i ?></span><?php else: ?><a href="<?= ab_url(['page' => $i]) ?>"><?= $i ?></a><?php endif; ?>
-                        <?php endfor; ?>
-                        <?php if ($page < $totalPages): ?><a href="<?= ab_url(['page' => $page + 1]) ?>">›</a><?php else: ?><span class="off">›</span><?php endif; ?>
-                    </div>
-                <?php endif; ?>
+                <?php pc_pagination($page, $totalPages, fn(int $n) => ab_url(['page' => $n]), ['label' => 'Assessment pages']); ?>
             </div>
         <?php endif; ?>
 
@@ -305,7 +300,7 @@ include __DIR__ . '/includes/assessments_ui.php';
                         <?php if (!$byTopic): ?>
                             <p class="ss-none">No assessments yet.</p>
                         <?php else:
-                            $cols = ['#1B6FD1', '#17654B', '#6B21A8', '#B7791F', '#C0392B', '#0087CF']; ?>
+                            $cols = ['#1B6FD1', '#17654B', '#6B21A8', '#B7791F', '#C0392B', '#087FC1']; ?>
                             <div class="as-legend">
                                 <?php foreach ($byTopic as $i => $t): ?>
                                     <div class="as-legend-row">
@@ -331,6 +326,10 @@ include __DIR__ . '/includes/assessments_ui.php';
                         <a class="as-act" href="<?= url('admin-assessments-export') ?>?what=results">
                             <span class="as-act-i" style="background:#E6F5EE;color:#17654B;"><?= ss_icon('check') ?></span>
                             <span><b>Export results</b><span>Every attempt as CSV</span></span>
+                        </a>
+                        <a class="as-act" href="<?= url('admin-assessments-export') ?>?what=results&amp;format=pdf">
+                            <span class="as-act-i" style="background:#EAF6FC;color:#00539B;"><?= ss_icon('check') ?></span>
+                            <span><b>Results as PDF</b><span>Letterheaded, with charts</span></span>
                         </a>
                     </div>
                 </div>
@@ -462,3 +461,5 @@ include __DIR__ . '/includes/assessments_ui.php';
         </aside>
     <?php endif; ?>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

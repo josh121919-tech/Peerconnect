@@ -21,6 +21,11 @@ if ($status === 'pending'): ?>
 
     <head>
         <meta charset="UTF-8">
+        <?php // Without this a phone lays the page out at ~980px and scales the
+              // whole thing down, so the waiting screen rendered as a postage
+              // stamp in the middle of an empty page. The form below has always
+              // had it; this screen was missed. ?>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Waiting for Verification – NEUST</title>
         <?php include __DIR__ . '/../mentorpage/includes/style.php'; ?>
         <style>
@@ -560,8 +565,109 @@ $name_value = function (string $part) use ($existing, $account_name): string {
 
         .ver-wrap {
             width: 100%;
-            max-width: 600px;
+            max-width: 880px;
             animation: fadeIn .35s ease forwards;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Two soft washes behind the card, so the page is not a white slab.
+           Decoration only: pointer-events off, and hidden from assistive tech
+           because it carries no meaning. */
+        .ver-bg {
+            position: fixed;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .ver-bg span {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(60px);
+            opacity: .5;
+        }
+
+        .ver-bg span:nth-child(1) {
+            width: 420px;
+            height: 420px;
+            top: -140px;
+            right: -110px;
+            background: var(--info-bg);
+        }
+
+        .ver-bg span:nth-child(2) {
+            width: 360px;
+            height: 360px;
+            bottom: -150px;
+            left: -120px;
+            background: var(--info-bg);
+        }
+
+        /* Header: back, title, and the assurance pill on the right */
+        .ver-head {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            margin-bottom: 22px;
+        }
+
+        .ver-back {
+            width: 38px;
+            height: 38px;
+            flex: 0 0 38px;
+            border-radius: 50%;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--gray-600);
+            box-shadow: var(--shadow-sm);
+            transition: color .2s, border-color .2s, transform .2s;
+        }
+
+        .ver-back:hover {
+            color: var(--navy);
+            border-color: var(--navy);
+            transform: translateX(-2px);
+        }
+
+        .ver-back svg {
+            width: 17px;
+            height: 17px;
+        }
+
+        .ver-head-text {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .ver-assure {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            flex: 0 0 auto;
+            background: var(--mint-faint, #ECFDF5);
+            border: 1px solid #A7F3D0;
+            border-radius: 999px;
+            padding: 6px 13px;
+            font-size: 11.5px;
+            font-weight: 600;
+            color: #047857;
+            margin-top: 4px;
+        }
+
+        .ver-assure svg {
+            width: 13px;
+            height: 13px;
+        }
+
+        @media (max-width: 640px) {
+            .ver-assure span {
+                display: none;
+            }
         }
 
         /* Top brand bar */
@@ -611,16 +717,16 @@ $name_value = function (string $part) use ($existing, $account_name): string {
 
         .ver-heading {
             font-family: 'Inter', sans-serif;
-            font-size: 22px;
+            font-size: 27px;
             font-weight: 700;
-            color: var(--gray-900);
+            letter-spacing: -.02em;
+            color: var(--navy);
             margin-bottom: 4px;
         }
 
         .ver-sub {
-            font-size: 13px;
-            color: var(--gray-400);
-            margin-bottom: 28px;
+            font-size: 13.5px;
+            color: var(--gray-500);
         }
 
         /* Main form card */
@@ -636,31 +742,51 @@ $name_value = function (string $part) use ($existing, $account_name): string {
             padding: 22px 24px 0;
         }
 
-        .ver-section-title {
-            font-family: 'Inter', sans-serif;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: .07em;
-            text-transform: uppercase;
-            color: var(--gray-400);
-            padding-bottom: 14px;
-            border-bottom: 1px solid var(--gray-100);
-            margin-bottom: 18px;
-        }
-
-        .ver-section-title span {
-            display: inline-flex;
+        /* Section header: an icon that says what the section is about, its
+           name, and a line telling people what is wanted. The old version was
+           a small uppercase label with a coloured tick beside it, which read
+           as a divider rather than a heading. */
+        .ver-sec-head {
+            display: flex;
             align-items: center;
-            gap: 7px;
+            gap: 13px;
+            padding: 20px 24px;
+            background: linear-gradient(180deg, var(--gray-50) 0%, var(--surface) 100%);
+            border-bottom: 1px solid var(--gray-100);
         }
 
-        .ver-section-title span::before {
-            content: '';
-            display: inline-block;
-            width: 3px;
-            height: 14px;
-            background: var(--accent);
-            border-radius: 2px;
+        .ver-sec-ico {
+            width: 42px;
+            height: 42px;
+            flex: 0 0 42px;
+            border-radius: 13px;
+            background: var(--navy);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            box-shadow: 0 6px 14px rgba(15, 42, 90, .18);
+        }
+
+        .ver-sec-ico svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .ver-sec-h {
+            display: block;
+            font-family: 'Inter', sans-serif;
+            font-size: 16px;
+            font-weight: 700;
+            color: var(--navy);
+            line-height: 1.25;
+        }
+
+        .ver-sec-s {
+            display: block;
+            font-size: 12.5px;
+            color: var(--gray-500);
+            margin-top: 2px;
         }
 
         .field-grid {
@@ -676,14 +802,17 @@ $name_value = function (string $part) use ($existing, $account_name): string {
         /* The three name boxes share one full-width row. They collapse to one
            per line well before the rest of the form does — "Middle Name" in a
            third of a phone screen is a label with no room for a name. */
-        .name-row {
+        /* .field-group is declared below this and sets display:flex at the same
+           specificity, so it used to win and the three boxes stacked one per
+           line however wide the screen was. Qualifying the selector settles it. */
+        .field-group.name-row {
             display: grid;
             grid-template-columns: 1fr 1fr 1fr;
             gap: 14px;
         }
 
         @media (max-width: 720px) {
-            .name-row {
+            .field-group.name-row {
                 grid-template-columns: 1fr;
             }
         }
@@ -717,12 +846,67 @@ $name_value = function (string $part) use ($existing, $account_name): string {
         }
 
         .field-input:focus {
-            border-color: var(--accent);
-            box-shadow: 0 0 0 3px rgba(31, 78, 69, .12);
+            border-color: var(--navy);
+            box-shadow: 0 0 0 3px var(--info-bg);
         }
 
         select.field-input {
             cursor: pointer;
+        }
+
+        /* The body of a section, now that its heading runs the full width of
+           the card. */
+        .ver-sec-body {
+            padding: 20px 24px 22px;
+        }
+
+        /* An icon inside the box, so a glance tells you what each one wants.
+           The input keeps its own padding-left so text never sits under it;
+           the icon itself is not focusable and is hidden from screen readers,
+           which have the label. */
+        .field-wrap {
+            position: relative;
+            display: flex;
+        }
+
+        .field-wrap .field-ico {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 16px;
+            height: 16px;
+            color: var(--gray-400);
+            pointer-events: none;
+        }
+
+        .field-wrap .field-input {
+            width: 100%;
+            padding-left: 37px;
+            height: 42px;
+        }
+
+        .field-wrap:focus-within .field-ico {
+            color: var(--navy);
+        }
+
+        /* Native select arrows differ by browser and sit oddly next to a
+           left-hand icon; one chevron, drawn by us, matches every box. */
+        select.field-input {
+            appearance: none;
+            -webkit-appearance: none;
+            padding-right: 34px;
+        }
+
+        .field-wrap .field-caret {
+            position: absolute;
+            right: 13px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 14px;
+            height: 14px;
+            color: var(--gray-400);
+            pointer-events: none;
         }
 
         /* Upload zones */
@@ -804,14 +988,158 @@ $name_value = function (string $part) use ($existing, $account_name): string {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 18px 24px;
-            border-top: 1px solid var(--gray-100);
-            background: var(--gray-50);
+            gap: 16px;
+            padding: 18px 24px 22px;
         }
 
         .ver-footer-note {
-            font-size: 11.5px;
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            flex: 1 1 auto;
+            background: var(--gray-50);
+            border: 1px solid var(--gray-100);
+            border-radius: var(--radius);
+            padding: 11px 14px;
+            font-size: 12.5px;
+            color: var(--gray-500);
+        }
+
+        .ver-footer-note svg {
+            width: 15px;
+            height: 15px;
+            flex: 0 0 15px;
             color: var(--gray-400);
+        }
+
+        .ver-submit {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            flex: 0 0 auto;
+            border: 0;
+            cursor: pointer;
+            padding: 13px 24px;
+            border-radius: var(--radius);
+            background: var(--navy);
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 13.5px;
+            font-weight: 600;
+            box-shadow: 0 8px 18px rgba(15, 42, 90, .22);
+            transition: transform .18s, box-shadow .18s, opacity .18s;
+        }
+
+        .ver-submit:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 11px 22px rgba(15, 42, 90, .28);
+        }
+
+        .ver-submit svg {
+            width: 16px;
+            height: 16px;
+        }
+
+        @media (max-width: 600px) {
+            .ver-footer {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .ver-submit {
+                justify-content: center;
+            }
+        }
+
+        /* ── Phones ──────────────────────────────────────────────────────
+           Two columns of form fields is 150px per box on a 390px screen,
+           which is not enough for "e.g. 2021-00123" or a course name. One
+           column below 640, and the upload tiles follow at 560 — side by
+           side they were two thumbnails too small to check a photograph in. */
+        @media (max-width: 640px) {
+            body {
+                padding: 20px 12px 40px;
+            }
+
+            .ver-heading {
+                font-size: 21px;
+            }
+
+            .ver-sub {
+                font-size: 12.5px;
+            }
+
+            .ver-head {
+                gap: 10px;
+                margin-bottom: 16px;
+            }
+
+            .field-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .ver-sec-head {
+                padding: 16px;
+                gap: 11px;
+            }
+
+            .ver-sec-ico {
+                width: 36px;
+                height: 36px;
+                flex-basis: 36px;
+                border-radius: 11px;
+            }
+
+            .ver-sec-ico svg {
+                width: 17px;
+                height: 17px;
+            }
+
+            .ver-sec-h {
+                font-size: 14.5px;
+            }
+
+            .ver-sec-body {
+                padding: 16px;
+            }
+
+            .upload-grid {
+                padding: 14px 16px 18px;
+            }
+
+            .ver-footer {
+                padding: 14px 16px 18px;
+            }
+        }
+
+        @media (max-width: 560px) {
+            .upload-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .upload-zone {
+                min-height: 112px;
+            }
+        }
+
+        /* Below this the back button, the heading and the assurance pill stop
+           fitting on one line. The pill drops under the heading rather than
+           squeezing the title into two words per line. */
+        @media (max-width: 420px) {
+            .ver-head {
+                flex-wrap: wrap;
+            }
+
+            .ver-assure {
+                order: 3;
+                width: 100%;
+                justify-content: center;
+                margin-top: 10px;
+            }
+
+            .ver-assure span {
+                display: inline;
+            }
         }
 
         /* Alerts — aliased to pc-alert system */
@@ -907,23 +1235,43 @@ $name_value = function (string $part) use ($existing, $account_name): string {
 </head>
 
 <body>
+    <div class="ver-bg" aria-hidden="true"><span></span><span></span></div>
+
     <div class="ver-wrap">
 
-        <!-- Brand -->
-        <div style="text-align:center; margin-bottom:20px;">
-            <div class="ver-brand">
-                <div class="ver-brand-mark">N</div>
-                <span class="ver-brand-name">NEUST · PeerConnect</span>
+        <!-- Header. The arrow is the same exit as the link at the foot of the
+             page — it signs out on the way, because with the session live the
+             verification gate sends this account straight back here. -->
+        <div class="ver-head">
+            <a class="ver-back" href="<?= htmlspecialchars(url('logout') . '?to=login') ?>" aria-label="Back to log in">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M15 5.5 8.5 12l6.5 6.5" />
+                </svg>
+            </a>
+
+            <div class="ver-head-text">
+                <h1 class="ver-heading">Account Verification</h1>
+                <p class="ver-sub">Submit your student details for admin review before accessing the platform.</p>
             </div>
-            <div class="ver-pill">🎓 Mentee Account</div>
-            <h1 class="ver-heading">Account Verification</h1>
-            <p class="ver-sub">Submit your student details for admin review before accessing the platform</p>
+
+            <span class="ver-assure">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 3.2 5 6v5.4c0 4.3 2.9 8.2 7 9.4 4.1-1.2 7-5.1 7-9.4V6l-7-2.8Z" />
+                    <path stroke-linecap="round" stroke-linejoin="round" d="m9.2 12.2 2 2 3.6-3.9" />
+                </svg>
+                <span>Secure &amp; Verified</span>
+            </span>
         </div>
 
         <!-- Rejected banner -->
         <?php if ($status === 'rejected'): ?>
             <div class="alert alert-red">
-                <span class="alert-icon">❌</span>
+                <span class="alert-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;display:block;">
+                        <circle cx="12" cy="12" r="9" />
+                        <path stroke-linecap="round" d="m9.2 9.2 5.6 5.6M14.8 9.2l-5.6 5.6" />
+                    </svg>
+                </span>
                 <div>
                     <div class="alert-title">Verification Rejected</div>
                     <?php if ($admin_notes): ?>
@@ -949,8 +1297,20 @@ $name_value = function (string $part) use ($existing, $account_name): string {
             <div class="ver-card">
 
                 <!-- Personal Info -->
-                <div class="ver-section" style="padding-bottom:22px;">
-                    <div class="ver-section-title"><span>Personal Information</span></div>
+                <div class="ver-sec-head">
+                    <span class="ver-sec-ico" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M14.5 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7.5L14.5 3Z" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M14 3.2V8h4.8M8.5 13h7M8.5 16.5h4.5" />
+                        </svg>
+                    </span>
+                    <span>
+                        <span class="ver-sec-h">Personal Information</span>
+                        <span class="ver-sec-s">Please provide your accurate student details.</span>
+                    </span>
+                </div>
+
+                <div class="ver-sec-body">
                     <div class="field-grid">
 
                         <?php // Three parts rather than one box, and each starts
@@ -958,44 +1318,80 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                         <div class="field-group col-2 name-row">
                             <div class="field-group">
                                 <label class="field-label" for="ver-first">First Name <sup>*</sup></label>
-                                <input type="text" id="ver-first" name="firstname" class="field-input"
-                                    value="<?= htmlspecialchars($name_value('firstname')) ?>"
-                                    maxlength="50" autocomplete="given-name" placeholder="e.g. Juan">
+                                <span class="field-wrap">
+                                    <svg class="field-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 12.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 20.2a7.5 7.5 0 0 1 15 0" />
+                                    </svg>
+                                    <input type="text" id="ver-first" name="firstname" class="field-input"
+                                        value="<?= htmlspecialchars($name_value('firstname')) ?>"
+                                        maxlength="50" autocomplete="given-name" placeholder="e.g. Juan">
+                                </span>
                             </div>
                             <div class="field-group">
                                 <label class="field-label" for="ver-middle">Middle Name</label>
-                                <input type="text" id="ver-middle" name="middlename" class="field-input"
-                                    value="<?= htmlspecialchars($name_value('middlename')) ?>"
-                                    maxlength="100" autocomplete="additional-name" placeholder="optional">
+                                <span class="field-wrap">
+                                    <svg class="field-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 12.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 20.2a7.5 7.5 0 0 1 15 0" />
+                                    </svg>
+                                    <input type="text" id="ver-middle" name="middlename" class="field-input"
+                                        value="<?= htmlspecialchars($name_value('middlename')) ?>"
+                                        maxlength="100" autocomplete="additional-name" placeholder="optional">
+                                </span>
                             </div>
                             <div class="field-group">
                                 <label class="field-label" for="ver-last">Surname <sup>*</sup></label>
-                                <input type="text" id="ver-last" name="lastname" class="field-input"
-                                    value="<?= htmlspecialchars($name_value('lastname')) ?>"
-                                    maxlength="50" autocomplete="family-name" placeholder="e.g. dela Cruz">
+                                <span class="field-wrap">
+                                    <svg class="field-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 12.5a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM4.5 20.2a7.5 7.5 0 0 1 15 0" />
+                                    </svg>
+                                    <input type="text" id="ver-last" name="lastname" class="field-input"
+                                        value="<?= htmlspecialchars($name_value('lastname')) ?>"
+                                        maxlength="50" autocomplete="family-name" placeholder="e.g. dela Cruz">
+                                </span>
                             </div>
                         </div>
 
                         <div class="field-group">
-                            <label class="field-label">Student ID <sup>*</sup></label>
-                            <input type="text" name="student_id" class="field-input"
-                                value="<?= htmlspecialchars($existing['student_id'] ?? '') ?>"
-                                placeholder="e.g. 2021-00123">
+                            <label class="field-label" for="ver-sid">Student ID <sup>*</sup></label>
+                            <span class="field-wrap">
+                                <svg class="field-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                                    <rect x="3" y="5.5" width="18" height="13" rx="2.5" />
+                                    <circle cx="8.8" cy="11.2" r="1.9" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M5.9 16.1a3.3 3.3 0 0 1 5.8 0M14.4 10.4h4.2M14.4 13.6h3" />
+                                </svg>
+                                <input type="text" id="ver-sid" name="student_id" class="field-input"
+                                    value="<?= htmlspecialchars($existing['student_id'] ?? '') ?>"
+                                    placeholder="e.g. 2021-00123">
+                            </span>
                         </div>
 
                         <div class="field-group">
-                            <label class="field-label">Year Level <sup>*</sup></label>
-                            <select name="year_level" class="field-input">
-                                <option value="">Select year</option>
-                                <?php foreach (['1st Year', '2nd Year', '3rd Year', '4th Year'] as $y): ?>
-                                    <option value="<?= $y ?>" <?= ($existing['year_level'] ?? '') === $y ? 'selected' : '' ?>><?= $y ?></option>
-                                <?php endforeach; ?>
-                            </select>
+                            <label class="field-label" for="ver-year">Year Level <sup>*</sup></label>
+                            <span class="field-wrap">
+                                <svg class="field-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                                    <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+                                    <path stroke-linecap="round" d="M8 3.2v3.4M16 3.2v3.4M3.5 10h17" />
+                                </svg>
+                                <select id="ver-year" name="year_level" class="field-input">
+                                    <option value="">Select year</option>
+                                    <?php foreach (['1st Year', '2nd Year', '3rd Year', '4th Year'] as $y): ?>
+                                        <option value="<?= $y ?>" <?= ($existing['year_level'] ?? '') === $y ? 'selected' : '' ?>><?= $y ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <svg class="field-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m6 9.5 6 6 6-6" />
+                                </svg>
+                            </span>
                         </div>
 
                         <div class="field-group col-2">
-                            <label class="field-label">Course <sup>*</sup></label>
-                            <select name="course" class="field-input">
+                            <label class="field-label" for="ver-course">Course <sup>*</sup></label>
+                            <span class="field-wrap">
+                                <svg class="field-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 4 2.5 8.6 12 13.2l9.5-4.6L12 4Z" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6.5 10.8v4.4c0 1.6 2.5 3 5.5 3s5.5-1.4 5.5-3v-4.4" />
+                                </svg>
+                                <select id="ver-course" name="course" class="field-input">
                                 <option value="">Select course</option>
                                 <?php foreach (
                                     [
@@ -1012,12 +1408,21 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                                 ): ?>
                                     <option value="<?= $c ?>" <?= ($existing['course'] ?? '') === $c ? 'selected' : '' ?>><?= $c ?></option>
                                 <?php endforeach; ?>
-                            </select>
+                                </select>
+                                <svg class="field-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m6 9.5 6 6 6-6" />
+                                </svg>
+                            </span>
                         </div>
 
                         <div class="field-group col-2">
-                            <label class="field-label">Club <sup>*</sup></label>
-                            <select name="club" class="field-input">
+                            <label class="field-label" for="ver-club">Club <sup>*</sup></label>
+                            <span class="field-wrap">
+                                <svg class="field-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M9.2 11.5a3.4 3.4 0 1 0 0-6.8 3.4 3.4 0 0 0 0 6.8ZM2.8 19.4a6.4 6.4 0 0 1 12.8 0" />
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M16.2 5.2a3.2 3.2 0 0 1 0 6.2M17.4 13.6a5.6 5.6 0 0 1 3.8 5.3" />
+                                </svg>
+                                <select id="ver-club" name="club" class="field-input">
                                 <option value="">Select club</option>
                                 <?php foreach (
                                     [
@@ -1034,7 +1439,11 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                                 ): ?>
                                     <option value="<?= $cl ?>" <?= ($existing['club'] ?? '') === $cl ? 'selected' : '' ?>><?= $cl ?></option>
                                 <?php endforeach; ?>
-                            </select>
+                                </select>
+                                <svg class="field-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" aria-hidden="true">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m6 9.5 6 6 6-6" />
+                                </svg>
+                            </span>
                         </div>
 
                     </div>
@@ -1044,8 +1453,16 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                 <div style="border-top:1px solid var(--gray-100);"></div>
 
                 <!-- Upload section label -->
-                <div class="ver-section" style="padding-bottom:0;">
-                    <div class="ver-section-title" style="margin-bottom:0;"><span>Upload Documents</span></div>
+                <div class="ver-sec-head">
+                    <span class="ver-sec-ico" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16.5v2.3A2.2 2.2 0 0 0 6.2 21h11.6a2.2 2.2 0 0 0 2.2-2.2v-2.3M12 3.5v12M12 3.5 7.8 7.7M12 3.5l4.2 4.2" />
+                        </svg>
+                    </span>
+                    <span>
+                        <span class="ver-sec-h">Upload Documents</span>
+                        <span class="ver-sec-s">A valid ID and your Certificate of Registration. JPG or PNG, up to 3MB each.</span>
+                    </span>
                 </div>
 
                 <!-- Upload zones -->
@@ -1066,7 +1483,7 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0 4.5 4.5M12 3v13.5" />
                                 </svg>
                             </div>
-                            <div class="upload-title" id="id-label"><?= !empty($existing['id_image']) ? '📎 Change ID' : 'Upload Valid ID' ?></div>
+                            <div class="upload-title" id="id-label"><?= !empty($existing['id_image']) ? 'Change ID' : 'Upload Valid ID' ?></div>
                             <div class="upload-hint">JPG, PNG · max 3MB</div>
                             <input type="file" name="id_image" accept="image/*"
                                 onchange="previewFile(this,'id-preview','id-label','id-icon')">
@@ -1088,7 +1505,7 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                                     <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 0 0-3.375-3.375h-1.5A1.125 1.125 0 0 1 13.5 7.125v-1.5a3.375 3.375 0 0 0-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 0 0-9-9Z" />
                                 </svg>
                             </div>
-                            <div class="upload-title" id="cor-label"><?= !empty($existing['credential_image']) ? '📎 Change COR' : 'Upload COR' ?></div>
+                            <div class="upload-title" id="cor-label"><?= !empty($existing['credential_image']) ? 'Change COR' : 'Upload COR' ?></div>
                             <div class="upload-hint">JPG, PNG · max 3MB</div>
                             <input type="file" name="credential_image" accept="image/*"
                                 onchange="previewFile(this,'cor-preview','cor-label','cor-icon')">
@@ -1099,12 +1516,18 @@ $name_value = function (string $part) use ($existing, $account_name): string {
 
                 <!-- Footer -->
                 <div class="ver-footer">
-                    <span class="ver-footer-note">All fields marked <sup style="color:var(--danger)">*</sup> are required</span>
-                    <button type="submit" class="btn btn-blue" style="padding:10px 22px; font-size:13px;">
-                        <svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    <span class="ver-footer-note">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" aria-hidden="true">
+                            <circle cx="12" cy="12" r="9" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M12 11v5.2M12 7.9h.01" />
                         </svg>
+                        All fields marked <sup style="color:var(--danger)">*</sup> are required.
+                    </span>
+                    <button type="submit" class="ver-submit">
                         <?= $existing ? 'Resubmit for Review' : 'Submit for Verification' ?>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 12h15M13.5 6.2 19.8 12l-6.3 5.8" />
+                        </svg>
                     </button>
                 </div>
 
@@ -1145,7 +1568,7 @@ $name_value = function (string $part) use ($existing, $account_name): string {
                 const img = document.getElementById(previewId);
                 img.src = e.target.result;
                 img.style.display = '';
-                document.getElementById(labelId).textContent = '✅ ' + file.name;
+                document.getElementById(labelId).textContent = file.name;
                 const icon = document.getElementById(iconId);
                 if (icon) icon.style.display = 'none';
             };

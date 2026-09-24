@@ -17,6 +17,7 @@
 date_default_timezone_set('Asia/Manila');
 if (session_status() === PHP_SESSION_NONE) session_start();
 include __DIR__ . "/../db.php";
+require_once __DIR__ . '/../includes/join_control.php';
 require_once __DIR__ . '/../../services/NotificationService.php';
 require_once __DIR__ . '/../../services/GoogleCalendarService.php';
 
@@ -61,11 +62,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'], $_POST['id'
         $nr = SessionRepository::menteeAndMentorName($con, $id, $mentor_id);
 
         if ($notifyMentee && $nr) {
-            $link = url('mentee-sessions');
+            // Declined sessions only appear in Session History, which opens
+            // on ?status — the plain sessions page does not list them.
             if ($action === 'approve') {
-                NotificationService::sessionApproved($con, (int)$nr['mentee_id'], $nr['mentor_name'], $link);
+                NotificationService::sessionApproved($con, (int)$nr['mentee_id'], $nr['mentor_name'],
+                    url('mentee-sessions'));
             } else {
-                NotificationService::sessionRejected($con, (int)$nr['mentee_id'], $nr['mentor_name'], $link);
+                NotificationService::sessionRejected($con, (int)$nr['mentee_id'], $nr['mentor_name'],
+                    url('mentee-sessions') . '?status=all');
             }
         }
     }
@@ -101,13 +105,70 @@ $pending_rows = SessionRepository::pendingSoonestForMentor($con, $mentor_id);
 $pending = count($pending_rows);
 
 // ── Today's schedule ──────────────────────────────────────────────────
-$today_rows = SessionRepository::todayForMentor($con, $mentor_id);
+// One entry per session, not per booking. A group slot that four mentees
+// booked is one session the mentor runs once, and the call they all reach is
+// the same one: VideoConferencing/room.php derives the room name from
+// mentor+subject+slot rather than the booking id, and the missed-session
+// detector already counts the mentor as present for the whole slot once they
+// open any booking in it. Only the dashboard was still listing the bookings,
+// which is how four mentees turned into four Join buttons for one session.
+//
+// Merged only where the slot itself says 'group'. A booking whose slot was
+// edited or deleted afterwards joins on nothing, leaving session_type NULL,
+// and those stay one line each rather than being guessed into a group.
+$today_rows  = SessionRepository::todayForMentor($con, $mentor_id);
+$today_slots = [];
+
+foreach ($today_rows as $r) {
+    $isGroup = ($r['session_type'] ?? null) === 'group';
+
+    // Same key the room name and the attendance checks use. A booking only
+    // shares it with the others of its own group slot; everything else gets a
+    // key of its own and renders exactly as it did before.
+    $key = $isGroup
+        ? 'g|' . $r['subject'] . '|' . $r['session_date']
+        : 'b|' . $r['request_id'];
+
+    if (!isset($today_slots[$key])) {
+        $today_slots[$key] = [
+            'session_date' => $r['session_date'],
+            'subject'      => $r['subject'],
+            'is_group'     => $isGroup,
+            'capacity'     => $isGroup ? (int)$r['capacity'] : 1,
+            'members'      => [],
+            'join_id'      => null,
+            'live'         => 0,   // bookings still simply approved
+            'unfinished'   => 0,   // bookings somebody stepped out of
+        ];
+    }
+    $slot = &$today_slots[$key];
+
+    // Keyed by booking id, so a duplicated availability row — nothing stops
+    // two with the same mentor, subject, date and time — cannot list the same
+    // mentee twice through the LEFT JOIN.
+    $slot['members'][$r['request_id']] = trim($r['firstname'] . ' ' . $r['lastname']);
+
+    if ($r['status'] === 'unfinished') { $slot['unfinished']++; } else { $slot['live']++; }
+
+    // They all start at the same moment and reach the same room, so which
+    // booking carries the link does not matter. Every row here is still to
+    // run, so the first one will do.
+    if ($slot['join_id'] === null) {
+        $slot['join_id'] = (int)$r['request_id'];
+    }
+    unset($slot);
+}
 
 // ── Mentee progress ───────────────────────────────────────────────────
-// `goals` is the table that actually models progress (one row per goal, with
-// a status), so the bar is goals completed over goals set. Most pairs have no
-// goals yet and only a mentee can create one, so those rows show their session
-// count instead of an invented percentage.
+// How each mentee is scoring on this mentor's own assessments: the average of
+// their submitted attempts, as a percentage of the points on offer.
+//
+// This used to read from `goals`, but only a mentee can create a goal and
+// almost none had, so the panel said "no goals set yet" against every name
+// and told the mentor nothing. Assessments are the mentor's own instrument
+// and carry a real mark. A mentee with nothing submitted still shows their
+// session count rather than a 0% bar, because zero is a score someone can
+// genuinely get. `goals` itself is untouched and still used elsewhere.
 $progress_rows = SessionRepository::menteeProgressForMentor($con, $mentor_id, 5);
 
 // ── Recent activity ───────────────────────────────────────────────────
@@ -344,6 +405,26 @@ $active_page = 'dashboard';
             font-size: 12px;
             color: var(--gray-500);
             margin-top: 2px;
+        }
+
+        /* The mentees of a group session, under the "N of C booked" line.
+           Long lists are cut to three names and a count in PHP, so this only
+           has to keep one line tidy on a narrow card. */
+        .md-slot-names {
+            font-size: 11.5px;
+            color: var(--gray-400);
+            margin-top: 2px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Same pair of tokens as the shared .badge-blue. Named for what it
+           marks rather than what colour it is, and kept on this page because
+           the mentor's dashboard is the only place showing it. */
+        .badge-group {
+            background: var(--info-bg);
+            color: var(--info);
         }
 
         .md-slot-badges {
@@ -755,20 +836,36 @@ $active_page = 'dashboard';
                     </div>
 
                     <div class="md-panel-body">
-                        <?php if (!$today_rows): ?>
+                        <?php if (!$today_slots): ?>
                             <p class="md-empty">
-                                Nothing scheduled for today.<br>
+                                <?php // Not "nothing scheduled": the panel only lists what is still
+                                      // to run, so a mentor who has taught all day would be told
+                                      // their day was empty. ?>
+                                Nothing left to run today.<br>
                                 <?= $next_session
                                     ? 'Next session ' . htmlspecialchars(date('D, M j', strtotime($next_session['session_date'])))
                                     : 'Open some availability so mentees can book you.' ?>
                             </p>
                         <?php else: ?>
-                            <?php foreach ($today_rows as $s):
-                                $ts = strtotime($s['session_date']);
-                                $isDone = $s['status'] === 'completed';
-                                // The lobby checks the clock and the session's own
-                                // window, so it is safe to offer at any time today.
-                                $joinUrl = url('video-join') . '?session_id=' . (int)$s['request_id'];
+                            <?php foreach ($today_slots as $s):
+                                $ts     = strtotime($s['session_date']);
+                                // Unfinished only when nobody is left simply
+                                // waiting: one mentee having stepped out does
+                                // not describe a session others are still in.
+                                $isOut  = $s['live'] === 0 && $s['unfinished'] > 0;
+                                $names  = array_values($s['members']);
+                                $booked = count($names);
+
+                                // Enough names to recognise the session, not a
+                                // wall of them. The rest are on View All Sessions.
+                                $shown = array_slice($names, 0, 3);
+                                $whoList = implode(', ', $shown)
+                                    . ($booked > count($shown) ? ' +' . ($booked - count($shown)) . ' more' : '');
+
+                                // The lobby checks the clock, but it cannot do so
+                                // until the button has already been clicked — so the
+                                // control asks the same question up front.
+                                
                             ?>
                                 <div class="md-slot">
                                     <div class="md-time">
@@ -777,16 +874,38 @@ $active_page = 'dashboard';
                                     </div>
                                     <div class="md-slot-main">
                                         <div class="md-slot-title"><?= htmlspecialchars($s['subject'] ?: 'Session') ?></div>
-                                        <div class="md-slot-who">with <?= htmlspecialchars($s['firstname'] . ' ' . $s['lastname']) ?></div>
+                                        <?php if ($s['is_group']): ?>
+                                            <div class="md-slot-who">
+                                                Group session
+                                                <?php // Capacity comes from the slot; without it, say what is known. ?>
+                                                <?php if ($s['capacity'] > 0): ?>
+                                                    &middot; <?= (int)$booked ?> of <?= (int)$s['capacity'] ?> booked
+                                                <?php else: ?>
+                                                    &middot; <?= (int)$booked ?> booked
+                                                <?php endif; ?>
+                                            </div>
+                                            <div class="md-slot-names"><?= htmlspecialchars($whoList) ?></div>
+                                        <?php else: ?>
+                                            <div class="md-slot-who">with <?= htmlspecialchars($whoList) ?></div>
+                                        <?php endif; ?>
                                         <div class="md-slot-badges">
-                                            <span class="badge <?= $isDone ? 'badge-completed' : 'badge-approved' ?>">
-                                                <?= $isDone ? 'Completed' : 'Approved' ?>
+                                            <?php if ($s['is_group']): ?>
+                                                <span class="badge badge-group">Group</span>
+                                            <?php endif; ?>
+                                            <span class="badge <?= $isOut ? 'badge-orange' : 'badge-approved' ?>">
+                                                <?= $isOut ? 'Unfinished' : 'Approved' ?>
                                             </span>
                                         </div>
                                     </div>
-                                    <?php if (!$isDone): ?>
-                                        <a class="btn btn-primary btn-sm" href="<?= htmlspecialchars($joinUrl) ?>" style="flex-shrink:0;">Join</a>
-                                    <?php endif; ?>
+                                    <?php // Join once the call is open, a countdown until then. A
+                                          // live button on a session an hour away could only bounce
+                                          // off the lobby and come back. ?>
+                                    <?php pc_join_control([
+                                        'session_id' => (int)$s['join_id'],
+                                        'starts_at'  => $s['session_date'],
+                                        'status'     => $isOut ? 'unfinished' : 'approved',
+                                        'group'      => !empty($s['is_group']),
+                                    ]); ?>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -813,10 +932,13 @@ $active_page = 'dashboard';
                             <p class="md-empty">No mentees yet.<br>Progress appears once a session is approved.</p>
                         <?php else: ?>
                             <?php foreach ($progress_rows as $p):
-                                $gTotal = (int)$p['goals_total'];
-                                $gDone  = (int)$p['goals_done'];
-                                $pct    = $gTotal > 0 ? (int)round($gDone / $gTotal * 100) : null;
-                                $done   = (int)$p['done'];
+                                // NULL means nothing to average, which is not the
+                                // same as scoring zero — so the bar is only drawn
+                                // when a real average exists.
+                                $pct      = $p['avg_pct'] === null ? null : (int)$p['avg_pct'];
+                                $nAssess  = (int)$p['assess_count'];
+                                $nTries   = (int)$p['attempt_count'];
+                                $done     = (int)$p['done'];
                             ?>
                                 <div class="md-prog">
                                     <span class="pc-avatar"><?= htmlspecialchars(strtoupper(substr($p['firstname'], 0, 1))) ?></span>
@@ -834,13 +956,21 @@ $active_page = 'dashboard';
                                                 <div class="pc-progress-fill" style="width:<?= $pct ?>%"></div>
                                             </div>
                                             <div class="md-prog-fact" style="margin-top:5px;">
-                                                <?= $gDone ?> of <?= $gTotal ?> goal<?= $gTotal === 1 ? '' : 's' ?> completed
+                                                Average across <?= $nAssess ?> assessment<?= $nAssess === 1 ? '' : 's' ?>
+                                                <?php // A mentee may sit the same assessment more than once, and
+                                                      // every submitted attempt counts towards the average. Saying
+                                                      // so only when the two numbers differ keeps the usual case
+                                                      // short without calling three attempts three assessments. ?>
+                                                <?php if ($nTries > $nAssess): ?>
+                                                    &middot; <?= $nTries ?> attempts
+                                                <?php endif; ?>
                                             </div>
                                         <?php else: ?>
-                                            <?php // No goals on record for this pair, and only the mentee can
-                                            //     create one — so state the sessions instead of inventing a bar. ?>
+                                            <?php // Nothing of this mentor's has been submitted and scored, so
+                                            //     state the sessions rather than drawing a 0% bar the mentee
+                                            //     never earned. ?>
                                             <div class="md-prog-fact">
-                                                <?= $done ?> session<?= $done === 1 ? '' : 's' ?> completed &middot; no goals set yet
+                                                <?= $done ?> session<?= $done === 1 ? '' : 's' ?> completed &middot; no assessments taken yet
                                             </div>
                                         <?php endif; ?>
                                     </div>
@@ -951,11 +1081,14 @@ $active_page = 'dashboard';
                                             Since <?= htmlspecialchars(date('M j, Y', strtotime($m['since_on']))) ?>
                                         </div>
                                     </div>
+                                    <?php // Message only. The card says whether this mentee has
+                                          // something upcoming — the dot beside the name and the
+                                          // "N upcoming" count below — and the session itself is
+                                          // reached from Today's Schedule or Sessions, which is
+                                          // also where a group session appears once rather than
+                                          // once per mentee booked into it. ?>
                                     <div class="md-mentee-actions">
                                         <a class="btn btn-outline btn-sm" href="<?= htmlspecialchars($chat) ?>">Message</a>
-                                        <?php if ($upc > 0 && !empty($m['next_id'])): ?>
-                                            <a class="btn btn-primary btn-sm" href="<?= htmlspecialchars(url('video-join') . '?session_id=' . (int)$m['next_id']) ?>">Session</a>
-                                        <?php endif; ?>
                                     </div>
                                 </div>
 

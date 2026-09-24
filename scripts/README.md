@@ -5,7 +5,7 @@ Scheduler runs them; both can also be run by hand from the project root.
 
 | Job | Schedule | What it does |
 |---|---|---|
-| `scripts/backup.php` | Every day at 02:00 | Dumps the whole database with `mysqldump`, and archives `public/uploads` once a week |
+| `scripts/backup.php` | Every day at 02:00 | Dumps the whole database with `mysqldump`, and archives `public/uploads` and `storage` once a week |
 | `scripts/maintenance.php` | Every 30 minutes | Closes sessions that ended over an hour ago (completed, or missed by whoever did not join), removes requests the mentor never answered once their time has passed, lifts restrictions that have run out, then refreshes every mentor's score |
 
 Everything they write goes to **`C:\PeerConnectBackups`** (set `BACKUP_DIR` in
@@ -15,6 +15,7 @@ Everything they write goes to **`C:\PeerConnectBackups`** (set `BACKUP_DIR` in
 C:\PeerConnectBackups\
     database\cs_YYYY-MM-DD_HHMMSS.sql       newest 30 kept
     uploads\uploads_YYYY-MM-DD_HHMMSS.zip   one a week, newest 4 kept
+                                            holds uploads/ and storage/
     logs\backup.log
     logs\maintenance.log
 ```
@@ -59,11 +60,11 @@ both, so a mentor who shows up is not penalised for an absent mentee. In a
 group session the mentor's join counts for every mentee booked into that slot.
 
 "Joined" means opened the call page during its window (15 minutes before the
-start until 5 minutes after the end). The call itself runs in an embedded
+start until the scheduled end). The call itself runs in an embedded
 frame the server cannot see, so a camera or microphone that never connected
 still counts as joined.
 
-Change `PC_MISSED_GRACE_HOURS` in `Framework/bootstrap.php` to wait longer;
+Change `PC_MISSED_GRACE_MINUTES` in `Framework/bootstrap.php` to wait longer;
 the buttons below use the same number.
 
 **Nobody closes a session by hand.** Admins can cancel an open session, but

@@ -17,6 +17,7 @@ if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'mentee') {
 $mentee_id = (int)$_SESSION['user_id'];
 $appTz     = new DateTimeZone('Asia/Manila');
 $menteeAlerts = [];
+$liveSessionStatuses = ['approved', 'unfinished'];
 
 // SECURITY: cancel/remove are state-changing — POST + CSRF only (was GET, forgeable via a link)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cancel' && isset($_POST['id'])) {
@@ -232,9 +233,10 @@ $active_page = 'request';
                                 $session_end   = $session_start + ($durationMins * 60);
                                 $sessionStartDt = new DateTime($r['session_date'], $appTz);
                                 $sessionEndDt   = (clone $sessionStartDt)->modify("+{$durationMins} minutes");
-                                $openJoinDt     = (clone $sessionStartDt)->modify('-10 minutes');
+                                $openJoinDt     = (clone $sessionStartDt)->modify('-' . SessionRepository::JOIN_WINDOW_MINUTES . ' minutes');
                                 $nowDt          = new DateTime('now', $appTz);
-                                $canJoin        = $status === 'approved' && $nowDt >= $openJoinDt && $nowDt <= $sessionEndDt;
+                                $canJoin        = in_array($status, $liveSessionStatuses, true) && $nowDt >= $openJoinDt && $nowDt <= $sessionEndDt;
+                                $joinUrl        = url('video-join') . '?session_id=' . (int)$r['request_id'];
                                 $minsToStart    = (int)floor(($sessionStartDt->getTimestamp() - $nowDt->getTimestamp()) / 60);
                                 if ($status === 'approved' && $minsToStart >= 0 && $minsToStart <= 10) {
                                     $menteeAlerts[] = ['key' => 'mentee-request-' . (int)$r['request_id'], 'message' => 'Session with ' . $r['mentor_name'] . ' starts in ' . $minsToStart . ' minute' . ($minsToStart === 1 ? '' : 's') . '.'];
@@ -256,8 +258,8 @@ $active_page = 'request';
                                     <td>
                                         <?php if ($status === 'pending'): ?>
                                             <button onclick="openCancelModal(<?= $r['request_id'] ?>, <?= pc_js_arg($r['mentor_name']) ?>)" class="btn btn-red" style="font-size:12px;padding:5px 12px;">Cancel</button>
-                                        <?php elseif ($status === 'approved'): ?>
-                                            <button onclick="openSession(<?= pc_js_arg($r['mentor_name']) ?>,<?= pc_js_arg($r['subject'] ?? '') ?>,'<?= date('F j, Y', $session_start) ?>','<?= date('g:i A', $session_start) ?> – <?= date('g:i A', $session_end) ?>','<?= $durationMins ?> min',<?= pc_js_arg($r['session_type'] ?? 'N/A') ?>,<?= $canJoin ? 'true' : 'false' ?>,<?= pc_js_arg($r['meet_link'] ?? '') ?>,'<?= $status ?>')" class="btn btn-ghost" style="font-size:12px;padding:5px 12px;">View</button>
+                                        <?php elseif (in_array($status, $liveSessionStatuses, true)): ?>
+                                            <button onclick="openSession(<?= pc_js_arg($r['mentor_name']) ?>,<?= pc_js_arg($r['subject'] ?? '') ?>,'<?= date('F j, Y', $session_start) ?>','<?= date('g:i A', $session_start) ?> – <?= date('g:i A', $session_end) ?>','<?= $durationMins ?> min',<?= pc_js_arg($r['session_type'] ?? 'N/A') ?>,<?= $canJoin ? 'true' : 'false' ?>,<?= pc_js_arg($joinUrl) ?>,'<?= $status ?>')" class="btn btn-ghost" style="font-size:12px;padding:5px 12px;">View</button>
                                         <?php elseif ($status === 'rejected'): ?>
                                             <button onclick="removeRequest(<?= $r['request_id'] ?>)" class="btn btn-red" style="font-size:12px;padding:5px 12px;">Remove</button>
                                         <?php else: ?>
@@ -532,7 +534,9 @@ $active_page = 'request';
             pill.className = 'badge badge-' + status;
             const joinWrap = document.getElementById('sm-join-wrap');
             if (canJoin && link) {
-                document.getElementById('sm-join-btn').href = link;
+                const joinBtn = document.getElementById('sm-join-btn');
+                joinBtn.href = link;
+                joinBtn.lastChild.textContent = status === 'unfinished' ? 'Rejoin Session' : 'Join Session';
                 joinWrap.style.display = 'block';
             } else {
                 joinWrap.style.display = 'none';

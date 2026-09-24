@@ -43,6 +43,23 @@ if (!defined('DAILY_API_KEY')) {
     define('DAILY_API_KEY', $_ENV['DAILY_API_KEY'] ?? '');
 }
 
+// Web Push. Empty by default: PushService::isConfigured() checks these and
+// does nothing when they are unset, so notifications stay in-app exactly as
+// they are now rather than erroring. Generate a pair with
+// `php scripts/vapid_keys.php` and paste it into .env — once, and the same
+// pair on every environment, because the public key is baked into every
+// subscription a browser has already handed out.
+if (!defined('VAPID_PUBLIC_KEY')) {
+    define('VAPID_PUBLIC_KEY', $_ENV['VAPID_PUBLIC_KEY'] ?? '');
+}
+if (!defined('VAPID_PRIVATE_KEY')) {
+    define('VAPID_PRIVATE_KEY', $_ENV['VAPID_PRIVATE_KEY'] ?? '');
+}
+// Who the push service should contact about our notifications.
+if (!defined('VAPID_SUBJECT')) {
+    define('VAPID_SUBJECT', $_ENV['VAPID_SUBJECT'] ?? 'https://neustpeerconnect.org');
+}
+
 // SMTP for outbound email notifications (see EmailService). Empty by
 // default — EmailService::isConfigured() checks these and skips sending
 // (in-app notifications still work) rather than erroring when unset.
@@ -596,11 +613,15 @@ if (!function_exists('pc_gate_open_routes')) {
             'forgot-password', 'reset-password', 'google-login', 'session-check',
             'verify-email', 'email-pending', 'resend-verification',
             'admin-login', 'admin-signup', 'pwa-manifest',
-            // The address may simply have a typo in it, and Settings is the
-            // only place to correct one. Changing it re-arms the stage rather
-            // than satisfying it — see settings/update_email.php.
-            'settings', 'mentee-settings', 'mentor-settings',
-            'account-update-email', 'account-update-password', 'account-delete',
+            // The address may simply have a typo in it, so there has to be a
+            // way to correct one from inside this stage. That used to be the
+            // whole of Settings — which let an account that had not proved its
+            // address into the member shell, and with it the Security tab,
+            // Download My Data and Delete Account. It is now one page holding
+            // one field, and the endpoint it posts to. Changing the address
+            // re-arms this stage rather than satisfying it; see
+            // settings/update_email.php.
+            'change-email', 'account-update-email',
         ];
 
         // The identity form, what it posts to, and the poller the pending

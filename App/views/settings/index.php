@@ -33,6 +33,11 @@ $visibility    = $profile['visibility'] ?? 'everyone';
 // ── Notification preferences and privacy ────────────────────────────────
 $prefs = PreferenceRepository::notifications($con, $user_id)
     ?: ['session_requests' => 1, 'session_reminders' => 1, 'feedback_received' => 1, 'messages' => 0];
+
+// Device notifications. Unconfigured servers say so plainly rather than
+// offering a switch that silently does nothing.
+$push_ready   = PushService::isConfigured($con);
+$push_devices = PushSubscriptionRepository::countForUser($con, $user_id);
 $privacy = PreferenceRepository::privacy($con, $user_id)
     ?: ['personalized_recommendations' => 1, 'share_activity' => 1, 'third_party_integrations' => 1];
 
@@ -429,6 +434,116 @@ function st_ago(?string $ts): string
             color: var(--danger);
         }
 
+        /* ── Page header ──────────────────────────────────────────────────
+           .page-hd comes from the shared design system and is used on every
+           screen, so the badge is added here rather than there. */
+        /* .page-hd is a shared class with its own flex settings, so direction,
+           wrapping and the text's basis are all stated here — otherwise the
+           title wrapped onto the line below the badge instead of beside it. */
+        .st-pagehd {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .st-pagehd-text {
+            flex: 1 1 auto;
+            min-width: 0;
+        }
+
+        .st-pagehd-ico {
+            width: 48px;
+            height: 48px;
+            flex: 0 0 48px;
+            border-radius: 15px;
+            background: var(--info-bg);
+            color: var(--navy);
+            display: grid;
+            place-items: center;
+        }
+
+        .st-pagehd-ico svg {
+            width: 23px;
+            height: 23px;
+        }
+
+        /* ── Panel heading ── */
+        .st-panel-hd {
+            display: flex;
+            align-items: center;
+            gap: 13px;
+            margin-bottom: 4px;
+        }
+
+        .st-panel-hd-ico {
+            width: 42px;
+            height: 42px;
+            flex: 0 0 42px;
+            border-radius: 13px;
+            background: var(--info-bg);
+            color: var(--navy);
+            display: grid;
+            place-items: center;
+        }
+
+        .st-panel-hd-ico svg {
+            width: 20px;
+            height: 20px;
+        }
+
+        .st-panel-hd .st-panel-sub {
+            margin-top: 1px;
+        }
+
+        /* A bar marks where one group of settings starts, instead of the
+           heading floating above the rule. */
+        .st-section {
+            position: relative;
+            padding-left: 13px;
+        }
+
+        .st-section::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            bottom: 1px;
+            width: 4px;
+            height: 15px;
+            border-radius: 2px;
+            background: var(--navy);
+        }
+
+        /* ── A field with an icon beside its box ──────────────────────────
+           The icon sits outside the input, so nothing overlaps typed text and
+           the input keeps its own padding and width. */
+        .st-field-row {
+            display: flex;
+            align-items: center;
+            gap: 11px;
+        }
+
+        .st-field-ico {
+            width: 42px;
+            height: 42px;
+            flex: 0 0 42px;
+            border-radius: 12px;
+            background: var(--info-bg);
+            color: var(--navy);
+            display: grid;
+            place-items: center;
+        }
+
+        .st-field-ico svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        .st-field-row .st-input {
+            height: 42px;
+        }
+
         @media (max-width: 1180px) {
             .st-layout {
                 grid-template-columns: 200px minmax(0, 1fr);
@@ -440,18 +555,69 @@ function st_ago(?string $ts): string
                 grid-template-columns: minmax(0, 1fr);
             }
 
+            /* Four cards rather than a row that scrolls sideways. A tab you
+               have to swipe to find is a tab most people never open, and there
+               are only four of them — they fit. */
             .st-nav {
-                flex-direction: row;
-                overflow-x: auto;
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 8px;
+                overflow: visible;
+                padding: 8px;
             }
 
             .st-nav a {
-                white-space: nowrap;
+                flex-direction: column;
+                justify-content: center;
+                gap: 6px;
+                padding: 12px 6px;
+                text-align: center;
+                font-size: 11.5px;
+                line-height: 1.25;
+                white-space: normal;
+                border: 1px solid transparent;
+            }
+
+            .st-nav a svg {
+                width: 19px;
+                height: 19px;
+            }
+
+            .st-nav a.active {
+                border-color: var(--mint-soft, var(--mint));
             }
 
             .st-grid,
             .st-rights {
                 grid-template-columns: minmax(0, 1fr);
+            }
+        }
+
+        /* Four across holds down to about 360px, where each tab still gets
+           ~75px and only "Data Privacy" wraps to a second line. Below that it
+           goes two by two rather than shrinking the text any further. */
+        @media (max-width: 360px) {
+            .st-nav {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 480px) {
+            .st-pagehd-ico {
+                width: 42px;
+                height: 42px;
+                flex-basis: 42px;
+                border-radius: 13px;
+            }
+
+            .st-panel {
+                padding: 18px 16px;
+            }
+
+            .st-field-ico {
+                width: 38px;
+                height: 38px;
+                flex-basis: 38px;
             }
         }
     </style>
@@ -463,9 +629,17 @@ function st_ago(?string $ts): string
 
         <main class="main fade-in">
 
-            <div class="page-hd">
-                <h1>Settings</h1>
-                <p>Manage your account, preferences, and privacy settings.</p>
+            <div class="page-hd st-pagehd">
+                <span class="st-pagehd-ico" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                        <circle cx="12" cy="12" r="3.2" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19.4 14.2a1.6 1.6 0 0 0 .32 1.77l.06.06a1.9 1.9 0 1 1-2.7 2.7l-.05-.06a1.6 1.6 0 0 0-1.78-.32 1.6 1.6 0 0 0-.97 1.47v.17a1.9 1.9 0 1 1-3.8 0v-.09a1.6 1.6 0 0 0-1.05-1.46 1.6 1.6 0 0 0-1.77.32l-.06.06a1.9 1.9 0 1 1-2.7-2.7l.06-.06a1.6 1.6 0 0 0 .32-1.77 1.6 1.6 0 0 0-1.47-.97H3.6a1.9 1.9 0 1 1 0-3.8h.09a1.6 1.6 0 0 0 1.46-1.05 1.6 1.6 0 0 0-.32-1.77l-.06-.06a1.9 1.9 0 1 1 2.7-2.7l.06.06a1.6 1.6 0 0 0 1.77.32h.08A1.6 1.6 0 0 0 10.35 4V3.8a1.9 1.9 0 1 1 3.8 0v.09a1.6 1.6 0 0 0 .97 1.46 1.6 1.6 0 0 0 1.77-.32l.06-.06a1.9 1.9 0 1 1 2.7 2.7l-.06.06a1.6 1.6 0 0 0-.32 1.77v.08a1.6 1.6 0 0 0 1.47.97h.17a1.9 1.9 0 1 1 0 3.8h-.09a1.6 1.6 0 0 0-1.46.97Z" />
+                    </svg>
+                </span>
+                <span class="st-pagehd-text">
+                    <h1>Settings</h1>
+                    <p>Manage your account, preferences, and privacy settings.</p>
+                </span>
             </div>
 
             <div class="st-layout">
@@ -491,36 +665,95 @@ function st_ago(?string $ts): string
                     <div id="stAlert" class="st-alert"></div>
 
                     <?php if ($tab === 'account'): ?>
-                        <h2>Account Settings</h2>
-                        <p class="st-panel-sub">Update your personal information and account preferences.</p>
+                        <div class="st-panel-hd">
+                            <span class="st-panel-hd-ico" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                    <circle cx="12" cy="8" r="3.6" />
+                                    <path stroke-linecap="round" d="M5 20c.7-3.5 3.5-5.4 7-5.4s6.3 1.9 7 5.4" />
+                                </svg>
+                            </span>
+                            <span>
+                                <h2>Account Settings</h2>
+                                <p class="st-panel-sub">Update your personal information and account preferences.</p>
+                            </span>
+                        </div>
 
                         <form id="stAccountForm" onsubmit="return saveAccount(event)">
                             <div class="st-section">Profile Information</div>
                             <div class="st-grid">
+                                <?php // Icons sit beside each box, not inside it, so
+                                      //     nothing overlaps what people type. ?>
                                 <div class="st-field">
                                     <label for="f-name">Full Name</label>
-                                    <input class="st-input" id="f-name" name="full_name" maxlength="100" required value="<?= htmlspecialchars($full_name) ?>">
+                                    <div class="st-field-row">
+                                        <span class="st-field-ico" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                                <circle cx="12" cy="8" r="3.6" />
+                                                <path stroke-linecap="round" d="M5 20c.7-3.5 3.5-5.4 7-5.4s6.3 1.9 7 5.4" />
+                                            </svg>
+                                        </span>
+                                        <input class="st-input" id="f-name" name="full_name" maxlength="100" required value="<?= htmlspecialchars($full_name) ?>">
+                                    </div>
                                 </div>
                                 <div class="st-field">
                                     <label for="f-username">Username</label>
-                                    <input class="st-input" id="f-username" name="username" maxlength="30" placeholder="3–30 characters" value="<?= htmlspecialchars((string)$account['username']) ?>">
+                                    <div class="st-field-row">
+                                        <span class="st-field-ico" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                                <circle cx="12" cy="12" r="3.6" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.6 12v1.5a2.6 2.6 0 0 0 5.2 0V12a8.8 8.8 0 1 0-3.4 6.96" />
+                                            </svg>
+                                        </span>
+                                        <input class="st-input" id="f-username" name="username" maxlength="30" placeholder="3–30 characters" value="<?= htmlspecialchars((string)$account['username']) ?>">
+                                    </div>
                                 </div>
                                 <div class="st-field">
                                     <label for="f-email">Email Address</label>
-                                    <input class="st-input" id="f-email" value="<?= htmlspecialchars($account['email']) ?>" disabled>
+                                    <div class="st-field-row">
+                                        <span class="st-field-ico" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                                <rect x="3" y="5.5" width="18" height="13" rx="2.5" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="m3.8 7 8.2 6 8.2-6" />
+                                            </svg>
+                                        </span>
+                                        <input class="st-input" id="f-email" value="<?= htmlspecialchars($account['email']) ?>" disabled>
+                                    </div>
                                     <div class="st-hint">Changed from the Security tab, so we can verify it's you.</div>
                                 </div>
                                 <div class="st-field">
                                     <label for="f-phone">Phone Number</label>
-                                    <input class="st-input" id="f-phone" name="phone" maxlength="25" placeholder="+63 912 345 6789" value="<?= htmlspecialchars((string)($profile['phone'] ?? '')) ?>">
+                                    <div class="st-field-row">
+                                        <span class="st-field-ico" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M6.3 3.5h3l1.5 3.8-1.9 1.2a11.5 11.5 0 0 0 5.6 5.6l1.2-1.9 3.8 1.5v3a1.8 1.8 0 0 1-2 1.8A16.4 16.4 0 0 1 4.5 5.5a1.8 1.8 0 0 1 1.8-2Z" />
+                                            </svg>
+                                        </span>
+                                        <input class="st-input" id="f-phone" name="phone" maxlength="25" placeholder="+63 912 345 6789" value="<?= htmlspecialchars((string)($profile['phone'] ?? '')) ?>">
+                                    </div>
                                 </div>
                                 <div class="st-field">
                                     <label for="f-location">Location</label>
-                                    <input class="st-input" id="f-location" name="location" maxlength="120" placeholder="City, Country" value="<?= htmlspecialchars((string)($profile['location'] ?? '')) ?>">
+                                    <div class="st-field-row">
+                                        <span class="st-field-ico" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                                <path stroke-linecap="round" stroke-linejoin="round" d="M12 21s6.5-5.4 6.5-10.1A6.5 6.5 0 0 0 5.5 10.9C5.5 15.6 12 21 12 21Z" />
+                                                <circle cx="12" cy="10.6" r="2.4" />
+                                            </svg>
+                                        </span>
+                                        <input class="st-input" id="f-location" name="location" maxlength="120" placeholder="City, Country" value="<?= htmlspecialchars((string)($profile['location'] ?? '')) ?>">
+                                    </div>
                                 </div>
                                 <div class="st-field">
                                     <label for="f-dob">Date of Birth</label>
-                                    <input class="st-input" id="f-dob" name="birthdate" type="date" max="<?= date('Y-m-d') ?>" value="<?= htmlspecialchars((string)($profile['birthdate'] ?? '')) ?>">
+                                    <div class="st-field-row">
+                                        <span class="st-field-ico" aria-hidden="true">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                                                <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+                                                <path stroke-linecap="round" d="M8 3.2v3.4M16 3.2v3.4M3.5 10h17" />
+                                            </svg>
+                                        </span>
+                                        <input class="st-input" id="f-dob" name="birthdate" type="date" max="<?= date('Y-m-d') ?>" value="<?= htmlspecialchars((string)($profile['birthdate'] ?? '')) ?>">
+                                    </div>
                                 </div>
                             </div>
 
@@ -584,6 +817,39 @@ function st_ago(?string $ts): string
                                 </label>
                             </div>
                         <?php endforeach; ?>
+
+                        <div class="st-section">On this device</div>
+                        <?php /*
+                            The switches above decide which notices are made at
+                            all; this decides whether they also reach the phone in
+                            your pocket. It is not another category — the same
+                            notice, on a screen you are actually looking at.
+
+                            The browser will only ask permission from a real
+                            click, so this cannot be a toggle that flips itself on
+                            when the page loads.
+                        */ ?>
+                        <?php if (!$push_ready): ?>
+                            <div class="st-row">
+                                <div>
+                                    <div class="st-row-label">Notifications on your devices</div>
+                                    <div class="st-row-desc">Not switched on for this site yet. An administrator has to set it up before devices can be added.</div>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <div class="st-row">
+                                <div>
+                                    <div class="st-row-label">Notifications on your devices</div>
+                                    <div class="st-row-desc" id="pushDesc">
+                                        Get these alerts on this device even when PeerConnect is closed.
+                                        <?php if ($push_devices > 0): ?>
+                                            <br><b><?= (int)$push_devices ?></b> device<?= $push_devices === 1 ? '' : 's' ?> currently set up.
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-primary btn-sm" id="pushBtn" onclick="pushToggle()" disabled>Checking…</button>
+                            </div>
+                        <?php endif; ?>
 
                     <?php elseif ($tab === 'privacy'): ?>
                         <h2>Data Privacy</h2>
@@ -1020,6 +1286,99 @@ function st_ago(?string $ts): string
             return false;
         }
 
+        /* ── Notifications on this device ──
+           The subscription is made by the browser and only becomes ours once
+           it has been posted here; the reverse on the way out, so a device
+           that was told no is not left on a list we keep writing to. */
+        <?php if (!empty($push_ready)): ?>
+        const VAPID_PUBLIC = <?= json_encode(VAPID_PUBLIC_KEY) ?>;
+        const PUSH_SUB_URL = <?= json_encode(url('push-subscribe')) ?>;
+        const PUSH_UNSUB_URL = <?= json_encode(url('push-unsubscribe')) ?>;
+
+        /* The Push API wants the application server key as raw bytes. */
+        function pushKeyBytes(b64) {
+            const pad = '='.repeat((4 - (b64.length % 4)) % 4);
+            const raw = atob((b64 + pad).replace(/-/g, '+').replace(/_/g, '/'));
+            return Uint8Array.from(raw, c => c.charCodeAt(0));
+        }
+
+        async function pushSub() {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) return undefined;
+            const reg = await navigator.serviceWorker.ready;
+            return reg.pushManager.getSubscription();
+        }
+
+        async function pushPaint() {
+            const btn = document.getElementById('pushBtn');
+            if (!btn) return;
+
+            if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) {
+                btn.textContent = 'Not supported';
+                btn.disabled = true;
+                document.getElementById('pushDesc').textContent =
+                    'This browser cannot show notifications when PeerConnect is closed. Try Chrome, Edge or Firefox.';
+                return;
+            }
+            if (Notification.permission === 'denied') {
+                btn.textContent = 'Blocked';
+                btn.disabled = true;
+                document.getElementById('pushDesc').textContent =
+                    'You have blocked notifications for this site. Allow them in your browser\u2019s site settings, then reload this page.';
+                return;
+            }
+
+            const sub = await pushSub();
+            btn.disabled = false;
+            btn.textContent = sub ? 'Turn off' : 'Turn on';
+            btn.classList.toggle('btn-primary', !sub);
+            btn.classList.toggle('btn-ghost', !!sub);
+        }
+
+        async function pushToggle() {
+            const btn = document.getElementById('pushBtn');
+            btn.disabled = true;
+            try {
+                const existing = await pushSub();
+
+                if (existing) {
+                    await post(PUSH_UNSUB_URL, { endpoint: existing.endpoint });
+                    await existing.unsubscribe();
+                    flash('This device will no longer be notified.', true);
+                } else {
+                    // Asked from the click, which is the only time a browser listens.
+                    const perm = await Notification.requestPermission();
+                    if (perm !== 'granted') {
+                        flash('Notifications were not allowed, so nothing changed.', false);
+                        await pushPaint();
+                        return;
+                    }
+                    const reg = await navigator.serviceWorker.ready;
+                    const sub = await reg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: pushKeyBytes(VAPID_PUBLIC),
+                    });
+                    const j = sub.toJSON();
+                    const d = await post(PUSH_SUB_URL, {
+                        endpoint: j.endpoint, p256dh: j.keys.p256dh, auth: j.keys.auth,
+                    });
+                    if (!d || !d.ok) {
+                        // Ours did not take it, so do not leave the browser thinking
+                        // it is subscribed to something that will never arrive.
+                        await sub.unsubscribe();
+                        flash((d && d.error) || 'That device could not be saved.', false);
+                    } else {
+                        flash('This device will now be notified.', true);
+                    }
+                }
+            } catch (e) {
+                flash('Something went wrong setting that up. Please try again.', false);
+            }
+            await pushPaint();
+        }
+
+        pushPaint();
+        <?php endif; ?>
+
         // ── Notifications ────────────────────────────────────────────────
         async function saveNotif(el) {
             el.disabled = true;
@@ -1126,6 +1485,7 @@ function st_ago(?string $ts): string
                         ['Reviews you wrote about mentees', (d.reviews_written_about_mentees || []).length],
                         ['Review drafts', (d.review_drafts || []).length],
                         ['Session attendance records', (d.session_attendance || []).length],
+                        ['Time recorded in calls', (d.session_presence || []).length],
                         ['Availability slots', (d.availability || []).length],
                         ['Assessments you created', (d.assessments_created || []).length],
                         ['Badges', (d.badges || []).length],

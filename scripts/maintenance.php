@@ -9,7 +9,7 @@
  *
  * 1. Missed sessions. Runs App/views/cron/detect_missed_sessions.php, the same
  *    code as the button on Platform analytics. An approved session that ended
- *    more than PC_MISSED_GRACE_HOURS ago and was never closed is marked
+ *    more than PC_MISSED_GRACE_MINUTES ago and was never closed is marked
  *    completed or missed, and a request the mentor never answered is removed
  *    once its start time has passed. Both people are notified, by email too
  *    when it is switched on.

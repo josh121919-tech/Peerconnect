@@ -53,10 +53,19 @@ function ad_session_state(array $s, ?int $now = null): string
     if ($status === 'missed')    return 'missed';
     if ($status === 'pending')   return 'pending';
 
-    // Approved: the clock decides.
+    // Approved and unfinished: the clock decides.
+    //
+    // 'unfinished' is not final while the slot is still open — it means
+    // somebody has stepped out of a session that can still be rejoined, and
+    // to anyone watching the platform that session is running. It only
+    // becomes an outcome once the time has gone.
     $start = strtotime($s['session_date'] ?? '');
-    if (!$start) return 'upcoming';
+    if (!$start) return $status === 'unfinished' ? 'unfinished' : 'upcoming';
     $end = $start + (int)($s['duration'] ?: AD_SESSION_FALLBACK_MINUTES) * 60;
+
+    if ($status === 'unfinished') {
+        return $now > $end ? 'unfinished' : 'ongoing';
+    }
 
     if ($now < $start) return 'upcoming';
     if ($now <= $end)  return 'ongoing';
@@ -78,6 +87,10 @@ function ad_session_states(): array
         'cancelled' => ['Cancelled', '#A6301F', '#FBE5E1'],
         'declined'  => ['Declined',  '#A6301F', '#FBE5E1'],
         'missed'    => ['Missed',    '#6B21A8', '#F3E8FF'],
+        // Both people came and it stopped early — not a no-show, so it does
+        // not borrow Missed's colour, and not an outcome anyone chose, so it
+        // does not borrow Cancelled's either.
+        'unfinished' => ['Unfinished', '#9A4A00', '#FBEDDD'],
     ];
 }
 

@@ -174,7 +174,7 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     .aw-search input:focus { border-color: var(--mint); box-shadow: 0 0 0 3px rgba(0,135,207,.13); }
     .aw-bar select { padding: 10px 12px; border: 1px solid var(--gray-200); border-radius: 10px; background: #fff;
                      font-family: inherit; font-size: 13px; color: var(--gray-700); outline: none; }
-    .aw-bar button.go { padding: 10px 16px; border: 1px solid var(--forest); border-radius: 10px; background: var(--forest);
+    .aw-bar button.go { padding: 10px 16px; border: 1px solid var(--primary); border-radius: 10px; background: var(--primary);
                         color: #fff; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
     .aw-reset { display: inline-flex; align-items: center; padding: 10px 15px; border: 1px solid var(--gray-200);
                 border-radius: 10px; background: #fff; font-size: 13px; font-weight: 600; color: var(--gray-600); text-decoration: none; }
@@ -197,9 +197,9 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     .ct-meta svg { width: 14px; height: 14px; color: var(--gray-400); }
     .ct-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px;
                border-top: 1px solid var(--gray-100); padding: 11px 16px; }
-    .ct-issue { padding: 7px 14px; border: 1px solid var(--forest); border-radius: 9px; background: var(--forest);
+    .ct-issue { padding: 7px 14px; border: 1px solid var(--primary); border-radius: 9px; background: var(--primary);
                 color: #fff; font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; }
-    .ct-issue:hover { background: #0B1440; }
+    .ct-issue:hover { background: var(--primary-2); }
     .ct-off-tag { position: absolute; top: 10px; right: 10px; padding: 3px 10px; border-radius: 999px;
                   background: rgba(9,14,38,.78); color: #fff; font-size: 10.5px; font-weight: 700; }
 
@@ -220,12 +220,6 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     .bd-pop hr { border: 0; border-top: 1px solid var(--gray-100); margin: 4px 2px; }
 
     .aw-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
-    .aw-pages { display: flex; gap: 5px; }
-    .aw-pages a, .aw-pages span { min-width: 32px; height: 32px; padding: 0 9px; border: 1px solid var(--gray-200); border-radius: 9px;
-                                  background: #fff; display: inline-flex; align-items: center; justify-content: center;
-                                  font-size: 12.5px; font-weight: 600; color: var(--gray-600); text-decoration: none; }
-    .aw-pages .on { background: var(--forest); border-color: var(--forest); color: #fff; }
-    .aw-pages .dead { opacity: .4; }
 
     /* Side */
     .aw-donut { display: flex; align-items: center; gap: 16px; }
@@ -285,7 +279,7 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     .ct-designs input { position: absolute; opacity: 0; pointer-events: none; }
     .ct-designs label { display: block; border: 1px solid var(--gray-200); border-radius: 10px; padding: 7px;
                         cursor: pointer; margin: 0; text-align: center; overflow: hidden; }
-    .ct-designs input:checked + label { border-color: var(--forest); box-shadow: 0 0 0 2px var(--forest); }
+    .ct-designs input:checked + label { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
     .ct-designs label i { display: block; height: 34px; border-radius: 6px; margin-bottom: 6px; }
     .ct-designs label span { font-size: 11px; font-weight: 600; color: var(--gray-600); }
 
@@ -294,7 +288,7 @@ require_once __DIR__ . '/includes/sessions_ui.php';
 
     .aw-btn { padding: 10px 18px; border-radius: 10px; border: 1px solid var(--gray-200); background: #fff;
               font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--gray-700); cursor: pointer; }
-    .aw-btn.primary { background: var(--forest); border-color: var(--forest); color: #fff; }
+    .aw-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
     .aw-btn.danger { background: #A6301F; border-color: #A6301F; color: #fff; }
 
     @media (max-width: 1240px) { .aw-grid { grid-template-columns: minmax(0, 1fr); } }
@@ -471,16 +465,7 @@ require_once __DIR__ . '/includes/sessions_ui.php';
                         Showing <?= $offset + 1 ?> to <?= min($offset + $perPage, $total) ?> of <?= $total ?> design<?= $total === 1 ? '' : 's' ?>
                     </span>
                     <div style="display:flex;align-items:center;gap:10px;">
-                        <?php if ($pages > 1): ?>
-                            <span class="aw-pages">
-                                <?php if ($page > 1): ?><a href="<?= ct_url(['p' => $page - 1]) ?>">‹</a><?php else: ?><span class="dead">‹</span><?php endif; ?>
-                                <?php for ($i = 1; $i <= $pages; $i++): ?>
-                                    <?php if ($i === $page): ?><span class="on"><?= $i ?></span>
-                                    <?php else: ?><a href="<?= ct_url(['p' => $i]) ?>"><?= $i ?></a><?php endif; ?>
-                                <?php endfor; ?>
-                                <?php if ($page < $pages): ?><a href="<?= ct_url(['p' => $page + 1]) ?>">›</a><?php else: ?><span class="dead">›</span><?php endif; ?>
-                            </span>
-                        <?php endif; ?>
+                        <?php pc_pagination($page, $pages, fn(int $n) => ct_url(['p' => $n]), ['label' => 'Certificate design pages']); ?>
                         <form method="get" action="<?= url('admin-certificates') ?>" style="margin:0;">
                             <?php foreach (['tab' => $tab === 'all' ? '' : $tab, 'q' => $q, 'st' => $status] as $k => $v): ?>
                                 <?php if ($v !== '') : ?><input type="hidden" name="<?= $k ?>" value="<?= htmlspecialchars($v) ?>"><?php endif; ?>
@@ -885,3 +870,5 @@ require_once __DIR__ . '/includes/sessions_ui.php';
             '</div></div></div>';
     }
 </script>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

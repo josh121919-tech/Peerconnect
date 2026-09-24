@@ -92,14 +92,44 @@ class AdminUserRepository extends Repository
     public static function page(mysqli $con, string $view, string $search, string $status, string $sort, int $limit, int $offset): array
     {
         [$where, $types, $args] = self::listWhere($view, $search, $status);
-        $order = [
+        $order = self::listOrder($sort);
+
+        return self::typedRows($con,
+            self::listSelect() . " $where ORDER BY $order LIMIT ? OFFSET ?",
+            $types . 'ii', array_merge($args, [$limit, $offset]));
+    }
+
+    /**
+     * Every row the same filters match, unpaged — what the export writes.
+     *
+     * Shares listSelect() with page() on purpose. The export is the list as a
+     * file; a second copy of that query is how the file quietly stops being
+     * the thing on screen.
+     */
+    public static function allMatching(mysqli $con, string $view, string $search, string $status, string $sort): array
+    {
+        [$where, $types, $args] = self::listWhere($view, $search, $status);
+        $order = self::listOrder($sort);
+
+        return self::typedRows($con,
+            self::listSelect() . " $where ORDER BY $order", $types, $args);
+    }
+
+    /** The ORDER BY for a list view. */
+    private static function listOrder(string $sort): string
+    {
+        return [
             'newest' => 'u.created_at DESC',
             'oldest' => 'u.created_at ASC',
             'name'   => 'u.firstname ASC, u.lastname ASC',
             'role'   => 'u.role ASC, u.created_at DESC',
         ][$sort] ?? 'u.created_at DESC';
+    }
 
-        return self::typedRows($con, "
+    /** Everything a user row carries, shared by the paged list and the export. */
+    private static function listSelect(): string
+    {
+        return "
             SELECT u.user_id, u.firstname, u.lastname, u.role, u.status, u.verified, u.created_at,
                    u.email,
                    p.profile_image,
@@ -129,10 +159,7 @@ class AdminUserRepository extends Repository
                    (SELECT AVG(m.rating) FROM mentee_reviews m WHERE m.mentee_id = u.user_id) AS rating_as_mentee
             FROM users u
             LEFT JOIN profile p ON p.user_id = u.user_id
-            $where
-            ORDER BY $order
-            LIMIT ? OFFSET ?
-        ", $types . 'ii', array_merge($args, [$limit, $offset]));
+        ";
     }
 
     /** Applications waiting for review, oldest first, with the applicant's name, role, email and photo. */

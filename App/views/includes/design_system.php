@@ -138,6 +138,10 @@ if (isset($con) && $con instanceof mysqli) {
             . '--accent:' . $pc_accent . ';'
             . '--accent-2:' . $pc_accent . ';'
             . '--forest-2:' . $pc_accent . ';'
+            // Primary buttons have their own token — without these two a
+            // rebrand recoloured the rail and left every button behind.
+            . '--primary:' . $pc_accent . ';'
+            . '--primary-2:' . $pc_primary . ';'
             . '}</style>';
     }
 

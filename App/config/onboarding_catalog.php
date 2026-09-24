@@ -38,7 +38,7 @@ const PC_ONB_MAX = 5;
 /** Pastel circle + stroke pairs, taken from the reference screens. */
 const PC_ONB_TINTS = [
     'pink'   => ['#FFE4EF', '#E8368F'],
-    'blue'   => ['#DCEBFF', '#0087CF'],
+    'blue'   => ['#DCEBFF', '#087FC1'],
     'green'  => ['#DDF5E6', '#12A150'],
     'amber'  => ['#FFF0D4', '#E8A33D'],
     'purple' => ['#EAE4FF', '#7C5CE0'],

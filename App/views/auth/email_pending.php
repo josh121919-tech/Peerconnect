@@ -65,7 +65,6 @@ if (isset($_SESSION['ev_notice'])) {
 
 $csrf         = csrf_token();
 $hours        = (int)round(EmailVerificationService::TTL_MINUTES / 60);
-$settings_url = url($role === 'mentor' ? 'mentor-settings' : 'mentee-settings');
 $hero_art     = 'images/background.png';
 $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
 ?>
@@ -181,9 +180,11 @@ $has_hero_art = is_file(PUBLIC_PATH . '/' . $hero_art);
                     </button>
                 </form>
 
+                <?php // Its own page, not Settings: an account that has not proved
+                      // its address should not be inside the member shell. ?>
                 <p class="auth-switch" style="margin-top:18px;">
                     Wrong address?
-                    <a href="<?= htmlspecialchars($settings_url) ?>#account">Correct it in Settings</a>
+                    <a href="<?= htmlspecialchars(url('change-email')) ?>">Change Email Address</a>
                 </p>
 
                 <!-- Signs out on the way, so it actually reaches the login

@@ -1,11 +1,16 @@
 <?php
 /**
- * end_session.php  –  Called via fetch/sendBeacon when a session ends
- * Place at: /case/case/videoconferencing/end_session.php
+ * end_session.php — somebody left the call.
  *
- * Does NOT mark status='completed' here — that happens in feedback.php
- * after the mentee submits feedback (so the session counts only once).
- * For mentors, it marks the session completed immediately since they skip feedback.
+ * Reached by fetch when they press End & Leave, and by sendBeacon when they
+ * close the tab. It closes their presence interval and then asks what that
+ * makes of the session: past its scheduled end, settleAtEnd() decides from
+ * how long each of them was actually there; still inside it, they can come
+ * back, so this is only "not everyone is in the call at the moment".
+ *
+ * The old note here said completion happened in feedback.php instead. It does
+ * not: that path now calls settleAtEnd() too, so there is one rule and one
+ * place that writes the outcome.
  */
 date_default_timezone_set('Asia/Manila');
 session_start();
@@ -53,38 +58,108 @@ if (!$row) {
 // mentor could post here directly and mark any approved session completed days
 // before it happened, and a mentee could send "left the session" at any time.
 $minutesUntilStart = ((new DateTime($row['session_date'], new DateTimeZone('Asia/Manila')))->getTimestamp() - time()) / 60;
-if ($minutesUntilStart > 15) {
+if ($minutesUntilStart > SessionRepository::JOIN_WINDOW_MINUTES) {
     echo json_encode(['ok' => false, 'error' => 'session has not started']);
     exit;
 }
 
-if ($role === 'mentor') {
-    // Mentor ends → mark completed immediately (counts as 1 session for the mentor)
-    // completed_at matters for exports and for any month-over-month figure;
-    // it was never being set here. NOW() keeps it on the database's clock.
-    // The slot is kept: it holds the session's length, and a past slot is
-    // never offered for booking again.
-    SessionRepository::completeByMentor($con, $session_id, $user_id);
+/*
+ * Leaving is recorded before anything is decided, because every decision
+ * below reads it back. A session used to be closed the moment the mentor
+ * walked out — two minutes in and it counted as finished — and this is where
+ * that was done.
+ */
+SessionRepository::recordLeave($con, $session_id, $user_id);
 
-    NotificationService::send(
+// Closes the open presence interval at this moment. Whatever happens below,
+// the time they were actually here is now on record — and settleAtEnd() two
+// lines down reads it.
+SessionRepository::closePresence($con, $session_id, $user_id);
+
+$endTs  = (new DateTime($row['session_date'], new DateTimeZone('Asia/Manila')))->getTimestamp()
+          + ((int)$row['duration'] * 60);
+$isOver = time() >= $endTs;
+
+/*
+ * The mentor is the mentor of every booking in a group slot, so their leaving
+ * bears on all of them. A mentee's leaving bears only on their own.
+ */
+$affected = ($role === 'mentor')
+    ? SessionRepository::bookingIdsInSlotOf($con, $session_id)
+    : [$session_id];
+
+$outcome = null;
+foreach ($affected as $bookingId) {
+    if ($isOver) {
+        // Ran to its scheduled end: settle it now rather than leaving it for
+        // the 30-minute job, so the tabs are right as soon as they close the
+        // tab. Same rule the job applies, from the same method.
+        $settled = SessionRepository::settleAtEnd($con, $bookingId);
+    } else {
+        // Still inside the slot. They can come back, so this is not an
+        // ending — it is "not everyone is in the call at the moment".
+        $settled = SessionRepository::refreshLiveStatus($con, $bookingId);
+    }
+    if ($bookingId === $session_id) {
+        $outcome = $settled;
+    }
+}
+
+/*
+ * One notice each, for this session.
+ *
+ * This endpoint runs every time somebody closes the tab or leaves the room,
+ * and it used to notify on every one of them: a mentor who stepped out and
+ * came back sent the mentee that many copies of the same sentence. Scoped
+ * from the moment the call opened, so the next session between the same two
+ * people starts with a clean slate.
+ *
+ * "Ended" and "left early" are different sentences, so a mentor who leaves
+ * mid-session and again at the end still sends both — which is right, they
+ * say different things.
+ */
+$since = date(
+    'Y-m-d H:i:s',
+    (new DateTime($row['session_date'], new DateTimeZone('Asia/Manila')))->getTimestamp()
+        - (SessionRepository::JOIN_WINDOW_MINUTES * 60)
+);
+
+if ($role === 'mentor') {
+    NotificationService::sendOnceSince(
         $con,
         (int)$row['mentee_id'],
         'session_ended',
-        'Session Ended',
-        "Your session with {$row['mentor_fname']} {$row['mentor_lname']} has ended.",
-        url('mentee-submit-feedback') . '?session_id=' . $session_id . '&mentor_id=' . $row['mentor_id']
+        $isOver ? 'Session Ended' : 'Mentor Left the Session',
+        $isOver
+            ? "Your session with {$row['mentor_fname']} {$row['mentor_lname']} has ended."
+            : "{$row['mentor_fname']} {$row['mentor_lname']} left before the session was due to finish. "
+              . "You can rejoin until it ends.",
+        $isOver
+            ? url('mentee-submit-feedback') . '?session_id=' . $session_id . '&mentor_id=' . $row['mentor_id']
+            : url('video-join') . '?session_id=' . $session_id,
+        $since
     );
 } else {
-    // Mentee's side: leave status as 'approved' — feedback.php will set it to 'completed'
-    // after the mentee submits their rating.
-    NotificationService::send(
+    NotificationService::sendOnceSince(
         $con,
         (int)$row['mentor_id'],
         'session_ended',
-        'Session Ended',
-        "{$row['mentee_fname']} {$row['mentee_lname']} left the session.",
-        url('mentor-completed')
+        $isOver ? 'Session Ended' : 'Mentee Left the Session',
+        $isOver
+            ? "{$row['mentee_fname']} {$row['mentee_lname']} left the session."
+            : "{$row['mentee_fname']} {$row['mentee_lname']} left before the session was due to finish.",
+        // The lobby, not the Upcoming list: it names the session this is
+        // about, which is what makes one notice per session tell them apart.
+        $isOver ? url('mentor-completed') : url('video-join') . '?session_id=' . $session_id,
+        $since
     );
 }
 
-echo json_encode(['ok' => true]);
+// 'rejoinable' is what the call page uses to decide whether to offer going
+// back in rather than sending them away.
+echo json_encode([
+    'ok'         => true,
+    'status'     => $outcome,
+    'ended'      => $isOver,
+    'rejoinable' => !$isOver,
+]);

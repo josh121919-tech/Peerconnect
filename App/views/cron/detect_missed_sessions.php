@@ -3,7 +3,7 @@
 define('RUNNING_AS_CRON', PHP_SAPI === 'cli');
 
 /*
- * One hour after an approved session ends (PC_MISSED_GRACE_HOURS), if nobody
+ * A short while after an approved session ends (PC_MISSED_GRACE_MINUTES), if nobody
  * closed it, this decides what happened from session_attendance — who opened
  * the video call:
  *
@@ -63,10 +63,10 @@ $now = date('Y-m-d H:i:s');
 
 $dryRun = RUNNING_AS_CRON && in_array('--dry-run', $argv ?? [], true);
 
-// Approved sessions that ended more than PC_MISSED_GRACE_HOURS ago and were
+// Approved sessions that ended more than PC_MISSED_GRACE_MINUTES ago and were
 // never closed, with whether each person opened the call. How the mentor's
 // join and the session's length are worked out is described on the query.
-$rows = SessionRepository::dueForMissedCheck($con, $now, PC_MISSED_GRACE_HOURS);
+$rows = SessionRepository::dueForMissedCheck($con, $now, PC_MISSED_GRACE_MINUTES);
 
 // Requests nobody answered whose start time has come.
 $unanswered = SessionRepository::unansweredRequests($con, $now);
@@ -74,45 +74,85 @@ $unanswered = SessionRepository::unansweredRequests($con, $now);
 // Guarded: this file is included by scripts/maintenance.php as well as run
 // directly, and a second include must not redeclare them.
 if (!function_exists('msd_outcome')) {
-    /** What attendance says happened: 'completed', or who missed it. */
-    function msd_outcome(array $row): string
+    /**
+     * What happened: 'completed', 'unfinished', or who missed it. The rule
+     * itself lives on SessionRepository, because the call closes sessions too
+     * and the two must not disagree about the same session.
+     *
+     * The *_stayed columns on the row are the old still-in-at-the-end rule;
+     * outcomeForEnded() uses them only for sessions that ran before presence
+     * was being recorded, and reads recorded presence for everything since.
+     */
+    function msd_outcome(mysqli $con, array $row): string
     {
-        $mentorIn = (int)$row['mentor_joined'] === 1;
-        $menteeIn = (int)$row['mentee_joined'] === 1;
-        if ($mentorIn && $menteeIn) return 'completed';
-        if ($mentorIn)              return 'mentee';
-        if ($menteeIn)              return 'mentor';
-        return 'both';
+        return SessionRepository::outcomeForEnded(
+            $con,
+            (int)$row['request_id'],
+            (int)$row['mentor_id'],
+            (int)$row['mentee_id'],
+            (int)($row['duration'] ?? 60),
+            (int)$row['mentor_joined'] === 1,
+            (int)$row['mentee_joined'] === 1,
+            (int)($row['mentor_stayed'] ?? 0) === 1,
+            (int)($row['mentee_stayed'] ?? 0) === 1
+        );
     }
 
     function msd_describe(int $sid, string $outcome): string
     {
-        return '#' . $sid . ($outcome === 'completed' ? ' completed (both joined)' : ' missed by ' . $outcome);
+        if ($outcome === 'completed')  return '#' . $sid . ' completed (both stayed to the end)';
+        if ($outcome === 'unfinished') return '#' . $sid . ' unfinished (left before the end)';
+        return '#' . $sid . ' missed by ' . $outcome;
     }
 }
 
 if ($dryRun) {
-    $plan = array_map(fn($r) => msd_describe((int)$r['request_id'], msd_outcome($r)), $rows);
+    // Same reckoning as the loop below, including the ones it will leave
+    // alone: a dry run that lists a session the real run then ignores is how
+    // this went unnoticed in the first place.
+    $plan = [];
+    foreach ($rows as $r) {
+        $o = msd_outcome($con, $r);
+        $plan[] = $o === $r['status']
+            ? '#' . (int)$r['request_id'] . ' already ' . $o . ', nothing to do'
+            : msd_describe((int)$r['request_id'], $o);
+    }
     $lapsed = array_map(fn($r) => '#' . (int)$r['request_id'], $unanswered);
-    echo "[" . date('Y-m-d H:i:s') . "] Dry run, nothing written. " . count($rows) . " session(s) to close"
+    echo "[" . date('Y-m-d H:i:s') . "] Dry run, nothing written. " . count($rows) . " session(s) considered"
         . ($plan ? ': ' . implode(', ', $plan) : '') . "."
         . ($lapsed ? ' ' . count($lapsed) . ' unanswered request(s) to remove: ' . implode(', ', $lapsed) . '.' : '')
         . "\n";
     return;
 }
 
-$processed = 0;   // recorded as missed
-$completed = 0;   // closed as completed because both joined
-$summary   = [];
+$processed  = 0;   // recorded as missed
+$completed  = 0;   // closed as completed because both stayed to the end
+$unfinished = 0;   // closed as unfinished because somebody left early
+$settled    = 0;   // already in the right state; nothing to do and nobody to tell
+$summary    = [];
 
 foreach ($rows as $row) {
     $sid      = (int)$row['request_id'];
     $mid      = (int)$row['mentor_id'];
     $eid      = (int)$row['mentee_id'];
 
-    $outcome = msd_outcome($row);
+    $outcome = msd_outcome($con, $row);
     $subject = $row['subject'] !== '' && $row['subject'] !== null ? $row['subject'] : 'mentoring';
     $when    = date('M j, g:i A', strtotime($row['session_date']));
+
+    /*
+     * Already where it should be. A session someone walked out of is marked
+     * unfinished by the call itself, which tells both people at the time; if
+     * the recomputed answer is the same, there is nothing to write and no
+     * news to deliver. This used to fall through to the write below, which
+     * reported 0 rows changed — an UPDATE that sets the values already there
+     * — and was read as a failure, so the session was skipped in silence and
+     * offered up again on every run.
+     */
+    if ($outcome === $row['status']) {
+        $settled++;
+        continue;
+    }
 
     if ($outcome === 'completed') {
         // Both were in the call, so the session happened; nobody pressed End
@@ -125,6 +165,26 @@ foreach ($rows as $row) {
             url('mentee-submit-feedback') . '?session_id=' . $sid . '&mentor_id=' . $mid);
         MentorScoreService::compute($con, $mid);
         $completed++;
+        $summary[] = msd_describe($sid, $outcome);
+        continue;
+    }
+
+    if ($outcome === 'unfinished') {
+        // Both were in the call and at least one walked out before the end
+        // without coming back while the slot was still open. Nobody missed
+        // it, so nothing is logged against either of them and the mentor's
+        // score is left alone — missed_session_logs and MentorScoreService
+        // are both about not turning up, which is not what happened here.
+        if (SessionRepository::closeAsUnfinished($con, $sid) < 1) {
+            continue;
+        }
+        NotificationService::send($con, $eid, 'session_ended', 'Session Left Unfinished',
+            "Your $subject session with {$row['mentor_name']} on $when ended before it was due to finish.",
+            url('mentee-sessions'));
+        NotificationService::send($con, $mid, 'session_ended', 'Session Left Unfinished',
+            "Your $subject session with {$row['mentee_name']} on $when ended before it was due to finish.",
+            url('mentor-history'));
+        $unfinished++;
         $summary[] = msd_describe($sid, $outcome);
         continue;
     }
@@ -175,8 +235,9 @@ foreach ($unanswered as $req) {
 
 if (RUNNING_AS_CRON) {
     // Session ids only: this line goes into a log file, and names do not need to.
-    echo "[" . date('Y-m-d H:i:s') . "] Closed " . ($processed + $completed) . " session(s)"
+    echo "[" . date('Y-m-d H:i:s') . "] Closed " . ($processed + $completed + $unfinished) . " session(s)"
         . ($summary ? ': ' . implode(', ', $summary) : '') . "."
+        . ($settled ? ' Left ' . $settled . ' already settled by the call itself.' : '')
         . ($removed ? ' Removed ' . count($removed) . ' unanswered request(s): ' . implode(', ', $removed) . '.' : '')
         . "\n";
     // Run on its own, stop here. Included by scripts/maintenance.php, hand
@@ -192,13 +253,19 @@ if (RUNNING_AS_CRON) {
  * which left whoever pressed it looking at {"processed":0} on a blank page with
  * no way back.
  */
-$graceLabel = PC_MISSED_GRACE_HOURS . ' hour' . (PC_MISSED_GRACE_HOURS === 1 ? '' : 's');
+$graceLabel = pc_missed_grace_label();
 $parts = [];
 if ($processed > 0) {
     $parts[] = 'recorded ' . $processed . ' missed session' . ($processed === 1 ? '' : 's');
 }
 if ($completed > 0) {
-    $parts[] = 'closed ' . $completed . ' as completed because both people joined';
+    $parts[] = 'closed ' . $completed . ' as completed because both people stayed to the end';
+}
+if ($unfinished > 0) {
+    $parts[] = 'closed ' . $unfinished . ' as unfinished because somebody left early';
+}
+if ($settled > 0) {
+    $parts[] = 'left ' . $settled . ' already settled by the call itself';
 }
 if ($removed) {
     $parts[] = 'removed ' . count($removed) . ' unanswered request' . (count($removed) === 1 ? '' : 's') . ' whose time had passed';

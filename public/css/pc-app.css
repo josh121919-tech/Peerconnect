@@ -5,21 +5,36 @@
    Edit this file, not a <style> block. */
 
     :root {
-        /* ── Brand / Neutral palette ── */
-        --forest: #020547;
-        /* primary: dark navy */
-        --forest-2: #0077B6;
-        /* hover state — lighter blue */
-        --mint: #0087CF;
-        /* secondary — brightest blue, for links/badges/small accents */
+        /* ── Brand palette ──
+           Six colours, each with one job:
+             --forest   sidebar and the deepest navy
+             --primary  primary buttons and the active tab
+             --mint     the active menu item, links, small accents
+             --mint-faint  light sections
+             --bg       the page canvas
+             --gold     the accent
+           Everything else is derived from these. An admin who changes the
+           brand colours in Settings → Appearance overrides --forest, --mint,
+           --primary and their pairs from design_system.php; nothing else in
+           here is brand-dependent, so the rest survives a rebrand intact. */
+        --forest: #071B4D;
+        /* primary: deep navy — the rail */
+        --forest-2: #0E2E6B;
+        /* navy hover */
+        --primary: #0868AD;
+        /* primary buttons */
+        --primary-2: #06527F;
+        /* primary button hover */
+        --mint: #087FC1;
+        /* active menu — brightest blue, for links/badges/small accents */
         --mint-soft: #BFE3F4;
         /* light blue tint for chips, hover */
-        --mint-faint: #EAF6FB;
+        --mint-faint: #EAF6FC;
         --mint-deep: #00539B;
         /* very light blue for backgrounds */
-        --gold: #F2B705;
+        --gold: #F4C95D;
         /* ratings, alerts — accent gold */
-        --gold-light: #FEF6DC;
+        --gold-light: #FDF3DC;
         /* gold background tint */
 
         /* ── Neutral scale ── */
@@ -39,19 +54,19 @@
 
         /* ── Surfaces ── */
         --surface: #ffffff;
-        --bg: #EDEDED;
-        /* cloud canvas — replaces pure white page bg */
+        --bg: #F7F9FC;
+        /* main background — a cool off-white, not grey */
         --border: #C2C5CA;
 
         /* ── Keep --navy aliased to forest so inline style="color:var(--navy)" still works ── */
-        --navy: #023047;
-        --navy-2: #0077B6;
+        --navy: #071B4D;
+        --navy-2: #0868AD;
 
         /* ── Keep --accent aliased to mint so focus rings & existing accent refs still work ── */
-        --accent: #0087CF;
-        --accent-2: #0087CF;
+        --accent: #087FC1;
+        --accent-2: #087FC1;
         --accent-soft: #BFE3F4;
-        --accent-faint: #EAF6FB;
+        --accent-faint: #EAF6FC;
 
         /* ── Semantic ── */
         --danger: #C0392B;
@@ -70,6 +85,17 @@
         --shadow-sm: 0 4px 16px rgba(24, 29, 39, .08);
         --shadow-md: 0 12px 32px rgba(24, 29, 39, .10);
         --shadow-lg: 0 24px 56px rgba(24, 29, 39, .14);
+
+        /* ── Stat cards ──
+           Mentee, mentor and admin all draw their figure tiles from these,
+           so the three cannot drift apart again: white surface, hairline
+           border, one shadow, one radius. The component rules live next to
+           .stat-card here and beside .ad-stat / .ss-stat in the admin
+           panel's own stylesheet and page styles. */
+        --stat-radius: 14px;
+        --stat-border: #EDEDED;
+        --stat-shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 10px 26px -20px rgba(16, 24, 40, .45);
+        --stat-shadow-hover: 0 2px 6px rgba(16, 24, 40, .07), 0 18px 34px -22px rgba(16, 24, 40, .5);
 
         /* ── Radius — distinct 3-step scale ── */
         --radius-sm: 6px;
@@ -149,6 +175,8 @@
     .main {
         min-width: 0;
         padding: 36px 48px 64px;
+        /* The canvas, from the token — a hardcoded pale cyan here meant the
+           page ignored the palette's main background. */
         background: var(--bg);
     }
 
@@ -293,6 +321,42 @@
         color: var(--gray-600);
         cursor: pointer;
         transition: background .15s;
+    }
+
+    /* ── Install the app ──────────────────────────────────────
+       An .icon-btn that carries a word as well, because "Install" is not a
+       shape anybody recognises. pwa.php reveals it only once the browser has
+       offered beforeinstallprompt, so it is never a control that does nothing.
+       The word goes on a phone, where the topbar has no room for it and the
+       icon has to carry the meaning on its own. */
+    .icon-btn.pwa-install {
+        width: auto;
+        padding: 0 13px;
+        gap: 7px;
+        background: var(--primary);
+        border-color: var(--primary);
+        color: #fff;
+        font-family: inherit;
+        font-size: 12.5px;
+        font-weight: 600;
+        white-space: nowrap;
+    }
+
+    .icon-btn.pwa-install:hover {
+        background: var(--primary-2);
+        border-color: var(--primary-2);
+        color: #fff;
+    }
+
+    @media (max-width: 760px) {
+        .icon-btn.pwa-install {
+            width: 38px;
+            padding: 0;
+        }
+
+        .icon-btn.pwa-install .pwa-install-label {
+            display: none;
+        }
     }
 
     .icon-btn:hover {
@@ -816,8 +880,8 @@
     .tab-btn.active,
     .top-tab.t-active,
     .session-tab.st-active {
-        background: var(--forest);
-        border-color: var(--forest);
+        background: var(--primary);
+        border-color: var(--primary);
         color: #fff;
         box-shadow: none;
     }
@@ -825,8 +889,8 @@
     .btn-blue:hover,
     .btn-primary:hover,
     .act-blue:hover {
-        background: var(--forest-2);
-        border-color: var(--forest-2);
+        background: var(--primary-2);
+        border-color: var(--primary-2);
     }
 
     .btn-ghost,
@@ -858,8 +922,8 @@
 
     .btn-success,
     .act-green {
-        background: var(--forest);
-        border-color: var(--forest);
+        background: var(--primary);
+        border-color: var(--primary);
         color: #fff;
     }
 
@@ -1634,11 +1698,22 @@
         outline-offset: 2px;
     }
 
-    /* Stat card — left accent stripe */
+    /* Stat card — the shared figure tile.
+       Same surface, border, radius, shadow, icon, value and label as the
+       admin panel's .ad-stat and .ss-stat; the numbers come from the
+       --stat-* tokens so the three stay in step. */
     .stat-card {
         position: relative;
-        padding: 18px 20px;
+        padding: 18px;
         overflow: hidden;
+        border-color: var(--stat-border);
+        border-radius: var(--stat-radius);
+        box-shadow: var(--stat-shadow);
+        transition: box-shadow .16s ease, transform .16s ease;
+    }
+
+    .stat-card:hover {
+        box-shadow: var(--stat-shadow-hover);
     }
 
     .stat-card::before {
@@ -1684,11 +1759,12 @@
     }
 
     .stat-val {
-        font-size: 28px;
+        font-size: 26px;
         font-weight: 600;
         color: var(--forest);
         letter-spacing: -0.03em;
-        line-height: 1;
+        line-height: 1.15;
+        font-variant-numeric: tabular-nums;
         margin: 2px 0 4px;
     }
 
@@ -2627,30 +2703,61 @@
     }
 
 
-    /* ── PAGINATION ──────────────────────────────────────── */
+    /* ── PAGINATION ──────────────────────────────────────
+       One component for every paged list in the app; the markup comes from
+       App/views/includes/pagination.php. The admin panel keeps its own
+       stylesheet, so these rules are repeated verbatim in pc-admin.css —
+       change them together.
 
-    .pc-pagination {
+       A white bar carrying the page buttons, with first / previous / next /
+       last as chevrons at either end. Steps that would run off an end are
+       still drawn, greyed: the bar keeps one width on every page instead of
+       shifting under the pointer as the arrows appear and disappear. */
+
+    .pc-pagebar {
         display: flex;
         align-items: center;
-        gap: 4px;
+        justify-content: space-between;
+        gap: 14px;
         flex-wrap: wrap;
+        margin-top: 16px;
+    }
+
+    .pc-pagebar-note {
+        font-size: 12.5px;
+        color: var(--gray-500);
+        font-variant-numeric: tabular-nums;
+    }
+
+    .pc-pagination {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: wrap;
+        padding: 7px;
+        background: var(--surface);
+        border: 1px solid var(--gray-100);
+        border-radius: 16px;
+        box-shadow: 0 10px 26px -18px rgba(16, 24, 40, .5);
     }
 
     .pc-page-btn {
         min-width: 34px;
         height: 34px;
-        padding: 0 8px;
-        border-radius: var(--radius-sm);
-        border: 1px solid var(--border);
+        padding: 0 9px;
+        border-radius: 10px;
+        border: 1px solid var(--gray-200);
         background: var(--surface);
         color: var(--gray-600);
         font-size: 13px;
-        font-weight: 500;
+        font-weight: 600;
+        line-height: 1;
+        font-variant-numeric: tabular-nums;
         cursor: pointer;
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        transition: background .13s, border-color .13s, color .13s;
+        transition: background .13s ease, border-color .13s ease, color .13s ease;
         font-family: inherit;
         text-decoration: none;
     }
@@ -2661,27 +2768,57 @@
         color: var(--forest);
     }
 
-    .pc-page-btn.active {
-        background: var(--forest);
-        border-color: var(--forest);
+    .pc-page-btn:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+    }
+
+    .pc-page-btn.is-active {
+        background: var(--primary);
+        border-color: var(--primary);
         color: #fff;
+        box-shadow: 0 6px 14px -6px rgba(8, 104, 173, .8);
         pointer-events: none;
     }
 
-    .pc-page-btn:disabled,
-    .pc-page-btn[aria-disabled="true"] {
-        opacity: .38;
+    .pc-page-btn.is-off {
+        color: var(--gray-300);
+        border-color: var(--gray-100);
         pointer-events: none;
     }
 
     .pc-page-ellipsis {
-        min-width: 34px;
+        min-width: 24px;
         height: 34px;
         display: inline-flex;
         align-items: center;
         justify-content: center;
         color: var(--gray-400);
         font-size: 13px;
+    }
+
+    @media (max-width: 560px) {
+        .pc-pagebar {
+            justify-content: center;
+        }
+
+        .pc-pagination {
+            gap: 4px;
+            padding: 5px;
+            border-radius: 13px;
+        }
+
+        .pc-page-btn {
+            min-width: 30px;
+            height: 30px;
+            padding: 0 7px;
+            font-size: 12px;
+        }
+
+        .pc-page-ellipsis {
+            height: 30px;
+            min-width: 18px;
+        }
     }
 
 
@@ -3755,7 +3892,7 @@
        not just phones. */
     .stat-card-icon {
         position: relative;
-        padding: 20px;
+        padding: 18px;
         overflow: hidden;
     }
 

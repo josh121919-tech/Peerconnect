@@ -28,7 +28,14 @@ $id     = is_scalar($_POST['assessment_id'] ?? null) ? (int)$_POST['assessment_i
 $action = is_scalar($_POST['action'] ?? null) ? (string)$_POST['action'] : '';
 $back   = is_scalar($_POST['back'] ?? null) ? (string)$_POST['back'] : '';
 
-if ($back === '' || strpos($back, BASE_URL . '/') !== 0) {
+// Only back to a page inside this install, never wherever a form says. Also
+// refused: an address a redirect header cannot carry (control characters),
+// and "//host" or a backslash, which a browser reads as another site — the
+// prefix check alone would let those through for an install at a domain's
+// root, where BASE_URL is empty. Same rule as admin/action_session.php.
+if ($back === '' || strpos($back, BASE_URL . '/') !== 0
+    || strpos($back, '//') === 0 || strpos($back, '\\') !== false
+    || preg_match('/[\x00-\x1F\x7F]/', $back)) {
     $back = url('admin-assessments');
 }
 

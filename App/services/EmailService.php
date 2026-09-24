@@ -75,7 +75,7 @@ class EmailService
             $safeUrl   = htmlspecialchars($actionUrl, ENT_QUOTES);
             $safeLabel = htmlspecialchars($actionLabel, ENT_QUOTES);
             $button = '<tr><td style="padding:10px 0 0;">'
-                . '<a href="' . $safeUrl . '" style="display:inline-block;background:#023047;color:#ffffff;'
+                . '<a href="' . $safeUrl . '" style="display:inline-block;background:#071B4D;color:#ffffff;'
                 . 'text-decoration:none;padding:12px 24px;border-radius:8px;font-weight:600;font-size:14px;">'
                 . $safeLabel . '</a></td></tr>';
         }
@@ -84,12 +84,12 @@ class EmailService
             . '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 16px;">'
             . '<tr><td align="center">'
             . '<table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;max-width:480px;width:100%;">'
-            . '<tr><td style="background:#023047;padding:20px 28px;">'
+            . '<tr><td style="background:#071B4D;padding:20px 28px;">'
             . '<span style="color:#ffffff;font-size:18px;font-weight:700;">PeerConnect</span>'
             . '</td></tr>'
             . '<tr><td style="padding:28px;">'
             . '<p style="margin:0 0 4px;color:#8a8f98;font-size:12px;text-transform:uppercase;letter-spacing:.06em;">You have a new notification</p>'
-            . '<h1 style="margin:0 0 14px;color:#023047;font-size:20px;">' . $safeTitle . '</h1>'
+            . '<h1 style="margin:0 0 14px;color:#071B4D;font-size:20px;">' . $safeTitle . '</h1>'
             . '<p style="margin:0 0 18px;color:#3f3f46;font-size:14px;line-height:1.6;">' . $safeMessage . '</p>'
             . '<table role="presentation" cellpadding="0" cellspacing="0">' . $button . '</table>'
             . '</td></tr>'

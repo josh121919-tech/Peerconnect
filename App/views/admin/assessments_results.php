@@ -132,6 +132,10 @@ include __DIR__ . '/includes/assessments_ui.php';
             <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M4 19h16" /></svg>
             Export CSV
         </a>
+        <a class="ss-export is-pdf" href="<?= url('admin-assessments-export') ?>?<?= $exportQs ?>&amp;format=pdf">
+            <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8v-7Z" /></svg>
+            Export PDF
+        </a>
     </div>
 </div>
 
@@ -140,7 +144,7 @@ include __DIR__ . '/includes/assessments_ui.php';
     <?php foreach ([
         ['Finish rate', $finish !== null ? $finish . '%' : '—', $attTotal > 0 ? $attDone . ' of ' . $attTotal . ' attempts submitted' : 'No attempts yet', '#EAF1FB', '#1A5C9A', 'check'],
         ['Average score', $avgPct !== null ? $avgPct . '%' : '—', $attDone > 0 ? 'Across ' . $attDone . ' submitted attempt' . ($attDone === 1 ? '' : 's') : 'Nothing submitted yet', '#E6F5EE', '#17654B', 'star'],
-        ['Mentees taking part', number_format($menteeN), $liveN . ' assessment' . ($liveN === 1 ? '' : 's') . ' published', '#EAF6FB', '#0087CF', 'user'],
+        ['Mentees taking part', number_format($menteeN), $liveN . ' assessment' . ($liveN === 1 ? '' : 's') . ' published', '#EAF6FC', '#087FC1', 'user'],
         ['Unfinished attempts', number_format($attOpen), $attOpen > 0 ? 'Started but never submitted' : 'Nothing left hanging', $attOpen > 0 ? '#FBEDDD' : '#F3F4F6', $attOpen > 0 ? '#9A4A00' : '#565B66', 'clock'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
@@ -166,7 +170,7 @@ include __DIR__ . '/includes/assessments_ui.php';
                 <?php else: ?>
                     <div class="rp-bars" style="display:flex;flex-direction:column;gap:10px;">
                         <?php
-                        $bandCols = ['90–100%' => '#17654B', '75–89%' => '#1B6FD1', '60–74%' => '#0087CF', '40–59%' => '#B7791F', 'Under 40%' => '#C0392B'];
+                        $bandCols = ['90–100%' => '#17654B', '75–89%' => '#1B6FD1', '60–74%' => '#087FC1', '40–59%' => '#B7791F', 'Under 40%' => '#C0392B'];
                         foreach ($bands as $label => $n):
                             $pct = round($n / $bandTotal * 100); ?>
                             <div class="ss-bar">
@@ -300,16 +304,7 @@ include __DIR__ . '/includes/assessments_ui.php';
 
                 <div class="ss-foot">
                     <span>Showing <?= $offset + 1 ?>–<?= min($offset + $perPage, $listTotal) ?> of <?= number_format($listTotal) ?> attempt<?= $listTotal === 1 ? '' : 's' ?></span>
-                    <?php if ($listPages > 1): ?>
-                        <div class="ss-pages">
-                            <?php if ($page > 1): ?><a href="<?= ar_url(['page' => $page - 1]) ?>">‹</a><?php else: ?><span class="off">‹</span><?php endif; ?>
-                            <?php $lo = max(1, $page - 2); $hi = min($listPages, $lo + 4); $lo = max(1, $hi - 4);
-                            for ($i = $lo; $i <= $hi; $i++): ?>
-                                <?php if ($i === $page): ?><span class="on"><?= $i ?></span><?php else: ?><a href="<?= ar_url(['page' => $i]) ?>"><?= $i ?></a><?php endif; ?>
-                            <?php endfor; ?>
-                            <?php if ($page < $listPages): ?><a href="<?= ar_url(['page' => $page + 1]) ?>">›</a><?php else: ?><span class="off">›</span><?php endif; ?>
-                        </div>
-                    <?php endif; ?>
+                    <?php pc_pagination($page, $listPages, fn(int $n) => ar_url(['page' => $n]), ['label' => 'Attempt pages']); ?>
                 </div>
             <?php endif; ?>
         </div>
@@ -328,7 +323,7 @@ include __DIR__ . '/includes/assessments_ui.php';
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <button type="submit" class="rp-go" style="width:100%;display:inline-flex;align-items:center;justify-content:center;padding:11px;border:0;border-radius:11px;background:var(--forest);color:#fff;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;">Update</button>
+                <button type="submit" class="rp-go" style="width:100%;display:inline-flex;align-items:center;justify-content:center;padding:11px;border:0;border-radius:11px;background:var(--primary);color:#fff;font-family:inherit;font-size:13.5px;font-weight:600;cursor:pointer;">Update</button>
             </form>
             <p class="ss-none" style="margin-top:9px;">CSV opens in Excel and Google Sheets. PDF export is not available — this install has no PDF renderer.</p>
         </div>
@@ -344,7 +339,7 @@ include __DIR__ . '/includes/assessments_ui.php';
                         <circle cx="52" cy="52" r="<?= $R ?>" fill="none" stroke="#EDEDED" stroke-width="10" />
                         <circle cx="52" cy="52" r="<?= $R ?>" fill="none" stroke="#1B6FD1" stroke-width="10" stroke-linecap="round"
                                 stroke-dasharray="<?= round($len, 2) ?> <?= round($C - $len, 2) ?>" transform="rotate(-90 52 52)" />
-                        <text x="52" y="58" text-anchor="middle" font-size="19" font-weight="700" fill="#020547"><?= $reach ?>%</text>
+                        <text x="52" y="58" text-anchor="middle" font-size="19" font-weight="700" fill="#071B4D"><?= $reach ?>%</text>
                     </svg>
                     <p class="ss-none" style="text-align:center;">
                         <?= $menteesAttempted ?> of <?= $menteesWithAccess ?> mentee<?= $menteesWithAccess === 1 ? '' : 's' ?> who have a mentor with a published assessment have tried one.
@@ -373,3 +368,5 @@ include __DIR__ . '/includes/assessments_ui.php';
         </div>
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

@@ -72,7 +72,7 @@ include __DIR__ . '/includes/settings_ui.php';
          pc_setting_bool($con, 'maintenance_mode') ? '#FBEDDD' : '#E6F5EE',
          pc_setting_bool($con, 'maintenance_mode') ? '#9A4A00' : '#17654B', 'check'],
         ['Accounts', number_format($userCount), $memberCount . ' mentors and mentees', '#EAF1FB', '#1A5C9A', 'cal'],
-        ['Uploads on disk', $uploadLabel, 'Database is ' . $dbLabel, '#EAF6FB', '#0087CF', 'chart'],
+        ['Uploads on disk', $uploadLabel, 'Database is ' . $dbLabel, '#EAF6FC', '#087FC1', 'chart'],
         ['Last sign-in', $lastSignIn ? date('M j, g:i A', strtotime($lastSignIn)) : '—', 'From the activity log', '#FEF6DC', '#B7791F', 'clock'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
@@ -277,3 +277,5 @@ include __DIR__ . '/includes/settings_ui.php';
         </div>
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

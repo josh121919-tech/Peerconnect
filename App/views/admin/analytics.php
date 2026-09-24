@@ -101,7 +101,7 @@ $score_weights = [
     ['Session completion',    25, 'Completed ÷ every session that closed — pending and upcoming ones are not counted either way', '#17654B'],
     ['Experience',            15, 'Completed sessions on a log scale, so the tenth session counts for less than the first', '#5A3E96'],
     ['Detailed feedback',     10, 'Communication, knowledge, skill and efficiency, averaged from the review form', '#B7791F'],
-    ['Attendance',            10, 'Share of sessions the mentor turned up to', '#0087CF'],
+    ['Attendance',            10, 'Share of sessions the mentor turned up to', '#087FC1'],
 ];
 
 // ── Missed session breakdown ───────────────────────────────────────────────
@@ -166,8 +166,8 @@ require_once __DIR__ . '/includes/report_data.php';
     }
     .an-run:hover { border-color: var(--mint); color: var(--mint); }
     .an-run svg { width: 15px; height: 15px; }
-    .an-run.primary { background: var(--forest); border-color: var(--forest); color: #fff; }
-    .an-run.primary:hover { background: #0B1440; color: #fff; }
+    .an-run.primary { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .an-run.primary:hover { background: var(--primary-2); color: #fff; }
 
     .an-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
     .an-stats:last-of-type { margin-bottom: 16px; }
@@ -303,7 +303,7 @@ require_once __DIR__ . '/includes/report_data.php';
     <div class="ss-hd-actions">
         <form method="post" action="<?= url('cron-missed-sessions') ?>" style="margin:0;"
               data-pc-tone="warning" data-pc-ok="Run the check"
-              data-pc-confirm="Close every approved session that ended more than <?= (int)PC_MISSED_GRACE_HOURS ?> hour<?= PC_MISSED_GRACE_HOURS === 1 ? '' : 's' ?> ago?&#10;If both people joined the call it is marked completed. Otherwise it is recorded as missed by whoever did not join, and both people are told. Requests the mentor never answered are removed once their time has passed. This also runs every 30 minutes on its own.">
+              data-pc-confirm="Close every approved session that ended more than <?= pc_missed_grace_label() ?> ago?&#10;If both people joined the call it is marked completed. Otherwise it is recorded as missed by whoever did not join, and both people are told. Requests the mentor never answered are removed once their time has passed. This also runs every 30 minutes on its own.">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
             <button type="submit" class="an-run">
                 <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7" /><path stroke-linecap="round" d="m16.5 16.5 4 4" /></svg>
@@ -327,7 +327,7 @@ require_once __DIR__ . '/includes/report_data.php';
     <?php foreach ([
         ['Active mentors', $active_mentors, $verified_mentors . ' verified of ' . $total_mentors . ' total', '#E6F5EE', '#17654B', 'users'],
         ['Active mentees', $active_mentees, $total_mentees . ' registered', '#EAF1FB', '#1A5C9A', 'users'],
-        ['Sessions today', $sessions_today, $sessions_week . ' this week', '#EAF6FB', '#0087CF', 'cal'],
+        ['Sessions today', $sessions_today, $sessions_week . ' this week', '#EAF6FC', '#087FC1', 'cal'],
         ['Completed sessions', $sessions_total, $sessions_closed > 0 ? $completion_rate . '% of the ' . $sessions_closed . ' that closed' : 'None have closed yet', '#F1ECFA', '#5A3E96', 'check'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
@@ -346,7 +346,7 @@ require_once __DIR__ . '/includes/report_data.php';
         ['Missed sessions', $sessions_missed, $sessions_cancelled . ' cancelled · ' . $sessions_rejected . ' declined', '#FBE5E1', '#A6301F', 'flag'],
         ['Pending requests', $sessions_pending, 'Waiting on a mentor to answer', '#FEF6DC', '#8A6400', 'clock'],
         ['Platform rating', $total_reviews > 0 ? number_format($platform_rating, 1) . ' / 5' : '—', $total_reviews > 0 ? 'From ' . number_format($total_reviews) . ' review' . ($total_reviews === 1 ? '' : 's') : 'Nobody has reviewed yet', '#FEF6DC', '#B7791F', 'star'],
-        ['Badges awarded', $total_badges_awarded, $auto_badges_awarded . ' automatic · ' . ($total_badges_awarded - $auto_badges_awarded) . ' by hand', '#EAF6FB', '#00679E', 'quiz'],
+        ['Badges awarded', $total_badges_awarded, $auto_badges_awarded . ' automatic · ' . ($total_badges_awarded - $auto_badges_awarded) . ' by hand', '#EAF6FC', '#00679E', 'quiz'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
             <span class="ss-stat-ico" style="background:<?= $bg ?>;color:<?= $fg ?>;"><?= in_array($ico, ['clock', 'star'], true) ? ss_icon($ico) : rp_icon($ico) ?></span>
@@ -701,3 +701,5 @@ require_once __DIR__ . '/includes/report_data.php';
         </a>
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

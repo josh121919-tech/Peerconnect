@@ -444,9 +444,55 @@ function onb_tile(array $item, bool $selected, bool $extra = false): void
                 font-size: 22px;
             }
 
+            /* Two columns, not one.
+               Dropping to a single column made each tile full width and very
+               tall, so a list of nine programmes became a long scroll with one
+               choice visible at a time — you cannot compare options you cannot
+               see together. Keeping the grid and shrinking the tile fits four
+               on screen instead. */
             .onb-grid[data-cols="3"],
             .onb-grid[data-cols="2"] {
-                grid-template-columns: minmax(0, 1fr);
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 9px;
+            }
+
+            .onb-tile {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 7px;
+                padding: 11px 12px;
+                border-radius: 16px;
+            }
+
+            .onb-tile-ico {
+                flex-basis: 32px;
+                width: 32px;
+                height: 32px;
+            }
+
+            .onb-tile-ico svg {
+                width: 17px;
+                height: 17px;
+            }
+
+            .onb-tile-label {
+                font-size: 12.5px;
+            }
+
+            .onb-tile-sub {
+                font-size: 11.5px;
+            }
+
+            /* Stacked, the tick belongs in the corner rather than after the
+               text, where margin-left:auto would push it onto its own row. */
+            .onb-tile-check {
+                position: absolute;
+                top: 10px;
+                right: 10px;
+                margin-left: 0;
+                flex-basis: 17px;
+                width: 17px;
+                height: 17px;
             }
 
             .onb-bar {
@@ -455,6 +501,26 @@ function onb_tile(array $item, bool $selected, bool $extra = false): void
 
             .onb-skip {
                 font-size: 15px;
+            }
+        }
+
+        /* Only the very narrowest phones fall back to one column. 375px is a
+           common width (iPhone SE and mini), and cutting over at 380 sent most
+           handsets back to the single column this breakpoint exists to avoid. */
+        @media (max-width: 330px) {
+            .onb-grid[data-cols="3"],
+            .onb-grid[data-cols="2"] {
+                grid-template-columns: minmax(0, 1fr);
+            }
+
+            .onb-tile {
+                flex-direction: row;
+                align-items: center;
+            }
+
+            .onb-tile-check {
+                position: static;
+                margin-left: auto;
             }
         }
     </style>

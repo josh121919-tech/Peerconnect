@@ -100,6 +100,10 @@ include __DIR__ . '/includes/assessments_ui.php';
             <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M4 19h16" /></svg>
             Export <?= $total ?> question<?= $total === 1 ? '' : 's' ?>
         </a>
+        <a class="ss-export is-pdf" href="<?= url('admin-assessments-export') ?>?what=questions&amp;format=pdf">
+            <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8v-7Z" /></svg>
+            Export PDF
+        </a>
     </div>
 </div>
 
@@ -243,16 +247,7 @@ include __DIR__ . '/includes/assessments_ui.php';
 
             <div class="ss-foot">
                 <span>Showing <?= $offset + 1 ?>–<?= min($offset + $perPage, $total) ?> of <?= number_format($total) ?> question<?= $total === 1 ? '' : 's' ?></span>
-                <?php if ($totalPages > 1): ?>
-                    <div class="ss-pages">
-                        <?php if ($page > 1): ?><a href="<?= qb_url(['page' => $page - 1]) ?>">‹</a><?php else: ?><span class="off">‹</span><?php endif; ?>
-                        <?php $lo = max(1, $page - 2); $hi = min($totalPages, $lo + 4); $lo = max(1, $hi - 4);
-                        for ($i = $lo; $i <= $hi; $i++): ?>
-                            <?php if ($i === $page): ?><span class="on"><?= $i ?></span><?php else: ?><a href="<?= qb_url(['page' => $i]) ?>"><?= $i ?></a><?php endif; ?>
-                        <?php endfor; ?>
-                        <?php if ($page < $totalPages): ?><a href="<?= qb_url(['page' => $page + 1]) ?>">›</a><?php else: ?><span class="off">›</span><?php endif; ?>
-                    </div>
-                <?php endif; ?>
+                <?php pc_pagination($page, $totalPages, fn(int $n) => qb_url(['page' => $n]), ['label' => 'Question bank pages']); ?>
             </div>
         <?php endif; ?>
     </div>
@@ -278,7 +273,7 @@ include __DIR__ . '/includes/assessments_ui.php';
             <?php if (!$byTopic): ?>
                 <p class="ss-none">No questions written yet.</p>
             <?php else:
-                $cols = ['#1B6FD1', '#17654B', '#6B21A8', '#B7791F', '#C0392B', '#0087CF', '#1A5C9A', '#565B66']; ?>
+                $cols = ['#1B6FD1', '#17654B', '#6B21A8', '#B7791F', '#C0392B', '#087FC1', '#1A5C9A', '#565B66']; ?>
                 <div class="as-legend">
                     <?php foreach ($byTopic as $i => $t): ?>
                         <a class="as-legend-row" style="text-decoration:none;" href="<?= qb_url(['topic' => $t['t'] === 'No topic set' ? null : $t['t'], 'page' => null]) ?>">
@@ -306,3 +301,5 @@ include __DIR__ . '/includes/assessments_ui.php';
         </div>
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

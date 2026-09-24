@@ -243,9 +243,13 @@ class GoogleCalendarService
         $event->setDescription(
             'Session with your ' . $otherRole . ', ' . $otherName . ', via PeerConnect.'
         );
+        // The scheme was hardcoded http://, so on an HTTPS install the "source"
+        // link Google shows on the event pointed at the plain-text address —
+        // and from the command line, with no host header, at no host at all.
+        // pc_site_url() takes both from APP_URL.
         $event->setSource(new Google\Service\Calendar\EventSource([
             'title' => 'PeerConnect',
-            'url'   => (isset($_SERVER['HTTP_HOST']) ? 'http://' . $_SERVER['HTTP_HOST'] : '') . url('mentee-calendar'),
+            'url'   => pc_site_url(ltrim(url('mentee-calendar'), '/')),
         ]));
 
         $sdt = new Google\Service\Calendar\EventDateTime();

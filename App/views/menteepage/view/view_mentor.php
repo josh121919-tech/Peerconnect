@@ -231,7 +231,7 @@ $active_page = 'find_mentor';
         }
 
         .top-tab.t-active {
-            background: var(--forest);
+            background: var(--primary);
             border-color: var(--forest);
             color: #fff;
         }
@@ -260,7 +260,7 @@ $active_page = 'find_mentor';
         }
 
         .session-tab.st-active {
-            background: var(--forest);
+            background: var(--primary);
             border-color: var(--forest);
             color: #fff;
         }
@@ -655,6 +655,13 @@ $active_page = 'find_mentor';
             align-items: start;
         }
 
+        /* The card is itself a grid item in places, and the same min-width:auto
+           default applies to it — without this the table wins again one level
+           down. */
+        .panel-card {
+            min-width: 0;
+        }
+
         .profile-content-grid .panel-card {
             padding: 0 0 28px;
             border: 0;
@@ -736,7 +743,7 @@ $active_page = 'find_mentor';
             display: flex;
             align-items: center;
             gap: 28px;
-            overflow: hidden;
+            
         }
 
         .vm-hero-deco {
@@ -1091,7 +1098,13 @@ $active_page = 'find_mentor';
             }
 
             .profile-content-grid {
-                grid-template-columns: 1fr;
+                /* minmax(0, 1fr), not 1fr. A grid item's min-width defaults
+                   to auto, so a plain 1fr column will not shrink below its
+                   widest content — the Certificates table then pushed the
+                   whole card past the right edge of the screen and its own
+                   overflow-x never engaged, because there was nothing to
+                   overflow. The desktop rule above already does this. */
+                grid-template-columns: minmax(0, 1fr);
                 gap: 28px;
             }
         }
@@ -1122,7 +1135,15 @@ $active_page = 'find_mentor';
             }
 
             .mentor-tab-split {
-                grid-template-columns: 1fr;
+                /* minmax(0, 1fr), not 1fr — the same trap the grid above
+                   documents. A grid item's min-width defaults to auto, so a
+                   plain 1fr track will not shrink below its widest content:
+                   the Certificates table held this column at 459px inside a
+                   375px screen, and the table's own overflow-x never engaged
+                   because its container was never the thing being squeezed.
+                   The desktop rule already does this; the override dropped it
+                   on exactly the screens where it matters. */
+                grid-template-columns: minmax(0, 1fr);
             }
         }
     </style>

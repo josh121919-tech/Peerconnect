@@ -178,8 +178,8 @@ include __DIR__ . '/includes/sessions_ui.php';
         width: 100%; height: 38px; padding: 0 11px; border: 1px solid var(--gray-200);
         border-radius: 10px; font-family: inherit; font-size: 13px; color: var(--gray-700); background: #fff;
     }
-    .rp-go { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px; border: 0; border-radius: 11px; background: var(--forest); color: #fff; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; text-decoration: none; }
-    .rp-go:hover { background: #0B1440; }
+    .rp-go { width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 11px; border: 0; border-radius: 11px; background: var(--primary); color: #fff; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; text-decoration: none; }
+    .rp-go:hover { background: var(--primary-2); }
 
     .rp-insight { display: flex; align-items: flex-start; gap: 11px; padding: 11px 0; border-top: 1px solid var(--gray-100); }
     .rp-insight:first-of-type { border-top: 0; padding-top: 0; }
@@ -209,6 +209,10 @@ include __DIR__ . '/includes/sessions_ui.php';
             <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M4 19h16" /></svg>
             Export CSV
         </a>
+        <a class="ss-export is-pdf" href="<?= url('admin-sessions-export') . ($exportQs ? '?' . $exportQs . '&amp;' : '?') ?>format=pdf">
+            <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 9V3h12v6M6 18H4v-6h16v6h-2M8 14h8v7H8v-7Z" /></svg>
+            Export PDF
+        </a>
     </div>
 </div>
 
@@ -217,7 +221,7 @@ include __DIR__ . '/includes/sessions_ui.php';
     <?php foreach ([
         ['Sessions', number_format($total), $rangeLabel, '#EAF1FB', '#1A5C9A', 'cal'],
         ['Completed', number_format($completed), $completion !== null ? $completion . '% of concluded' : 'None concluded yet', '#E6F5EE', '#17654B', 'check'],
-        ['Average length', $avgMin !== null ? $avgMin . ' min' : '—', $avgMin !== null ? 'From ' . $avgFrom . ' session' . ($avgFrom === 1 ? '' : 's') . ' with a saved slot' : 'No slot data in range', '#EAF6FB', '#0087CF', 'clock'],
+        ['Average length', $avgMin !== null ? $avgMin . ' min' : '—', $avgMin !== null ? 'From ' . $avgFrom . ' session' . ($avgFrom === 1 ? '' : 's') . ' with a saved slot' : 'No slot data in range', '#EAF6FC', '#087FC1', 'clock'],
         ['Average rating', $avgRating !== null ? number_format($avgRating, 1) . ' / 5' : '—', $ratingN > 0 ? 'From ' . $ratingN . ' review' . ($ratingN === 1 ? '' : 's') : 'No reviews in range', '#FEF6DC', '#B7791F', 'star'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
         <div class="ss-stat">
@@ -323,7 +327,7 @@ include __DIR__ . '/includes/sessions_ui.php';
                     <p class="ss-none">No subjects recorded in this range.</p>
                 <?php else: ?>
                     <div class="rp-bars">
-                        <?php $cols = ['#1B6FD1', '#17654B', '#6B21A8', '#B7791F', '#C0392B', '#0087CF'];
+                        <?php $cols = ['#1B6FD1', '#17654B', '#6B21A8', '#B7791F', '#C0392B', '#087FC1'];
                         foreach ($subjects as $i => $s):
                             $pct = $subjectTotal > 0 ? round($s['c'] / $subjectTotal * 100) : 0; ?>
                             <div class="rp-bar">
@@ -350,7 +354,7 @@ include __DIR__ . '/includes/sessions_ui.php';
                                     <circle cx="43" cy="43" r="<?= $R ?>" fill="none" stroke="#EDEDED" stroke-width="9" />
                                     <circle cx="43" cy="43" r="<?= $R ?>" fill="none" stroke="#1B6FD1" stroke-width="9" stroke-linecap="round"
                                             stroke-dasharray="<?= round($len, 2) ?> <?= round($C - $len, 2) ?>" transform="rotate(-90 43 43)" />
-                                    <text x="43" y="47" text-anchor="middle" font-size="16" font-weight="700" fill="#020547"><?= $rate ?>%</text>
+                                    <text x="43" y="47" text-anchor="middle" font-size="16" font-weight="700" fill="#071B4D"><?= $rate ?>%</text>
                                 </svg>
                                 <b><?= $who ?></b>
                                 <span>attendance</span>
@@ -444,7 +448,9 @@ include __DIR__ . '/includes/sessions_ui.php';
             </form>
             <a class="rp-go" style="background:#fff;color:var(--gray-700);border:1px solid var(--gray-200);margin-top:9px;"
                href="<?= url('admin-sessions-export') . ($exportQs ? '?' . $exportQs : '') ?>">Download this range as CSV</a>
-            <p class="ss-none" style="margin-top:9px;">CSV opens in Excel and Google Sheets. PDF export is not available — this install has no PDF renderer.</p>
+            <a class="rp-go" style="background:#fff;color:var(--gray-700);border:1px solid var(--gray-200);margin-top:9px;"
+               href="<?= url('admin-sessions-export') . ($exportQs ? '?' . $exportQs . '&amp;' : '?') ?>format=pdf">Open this range as a PDF</a>
+            <p class="ss-none" style="margin-top:9px;">CSV opens in Excel and Google Sheets. The PDF is a letterheaded document your browser prints — pick "Save as PDF" as the destination.</p>
         </div>
 
         <div class="ss-card">
@@ -452,7 +458,7 @@ include __DIR__ . '/includes/sessions_ui.php';
             <?php
             $insights = [];
             if ($completion !== null) $insights[] = [$completion . '%', 'of concluded sessions were completed', '#E6F5EE', '#17654B', 'check'];
-            if ($avgMin !== null)     $insights[] = [$avgMin . ' min', 'average session length', '#EAF6FB', '#0087CF', 'clock'];
+            if ($avgMin !== null)     $insights[] = [$avgMin . ' min', 'average session length', '#EAF6FC', '#087FC1', 'clock'];
             if ($avgRating !== null)  $insights[] = [number_format($avgRating, 1) . ' / 5', 'average rating from ' . $ratingN . ' review' . ($ratingN === 1 ? '' : 's'), '#FEF6DC', '#B7791F', 'star'];
             if ($concluded > 0)       $insights[] = [round($cancelled / max(1, $total) * 100, 1) . '%', 'of sessions were cancelled or declined', '#FBE5E1', '#A6301F', 'x'];
             $insights[] = [number_format($upcoming), 'session' . ($upcoming === 1 ? '' : 's') . ' still to come', '#EAF1FB', '#1A5C9A', 'cal'];
@@ -482,3 +488,5 @@ include __DIR__ . '/includes/sessions_ui.php';
         </div>
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

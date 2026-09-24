@@ -74,7 +74,7 @@ include __DIR__ . '/includes/settings_ui.php';
 <div class="ss-stats">
     <?php foreach ([
         ['Sign-ins (30 days)', number_format($signIns30), $adminIns30 . ' by an admin', '#EAF1FB', '#1A5C9A', 'check'],
-        ['Password resets', number_format($resets30), 'In the last 30 days', '#EAF6FB', '#0087CF', 'clock'],
+        ['Password resets', number_format($resets30), 'In the last 30 days', '#EAF6FC', '#087FC1', 'clock'],
         ['Blocked accounts', number_format($blockedN), $restrictN . ' restricted', $blockedN > 0 ? '#FBE5E1' : '#F3F4F6', $blockedN > 0 ? '#A6301F' : '#565B66', 'x'],
         ['Remembered devices', number_format(count($tokens)), 'Signed in without a password', '#FEF6DC', '#B7791F', 'star'],
     ] as [$k, $v, $s, $bg, $fg, $ico]): ?>
@@ -266,3 +266,5 @@ include __DIR__ . '/includes/settings_ui.php';
         </div>
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

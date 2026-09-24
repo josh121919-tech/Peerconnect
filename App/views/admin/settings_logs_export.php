@@ -62,6 +62,82 @@ if ($types !== '') {
     $rows = $con->query($sql)->fetch_all(MYSQLI_ASSOC);
 }
 
+/*
+ * ── Asked for as a document rather than a spreadsheet ──────────────────────
+ *
+ * Returns before any CSV header is sent; the CSV export below is untouched.
+ * The log line is written inside each branch, so the record says which of the
+ * two actually happened.
+ */
+if (($_GET['format'] ?? 'csv') === 'pdf') {
+    // After the query, so the document does not contain its own entry.
+    pc_admin_log('viewed ' . count($rows) . ' activity log entr' . (count($rows) === 1 ? 'y' : 'ies') . ' as a document');
+
+    $byRole = [];
+    $byDay  = [];
+    foreach ($rows as $r) {
+        $role = $r['role'] ?: 'unknown';
+        $byRole[$role] = ($byRole[$role] ?? 0) + 1;
+        $d = date('Y-m-d', strtotime($r['log_date']));
+        $byDay[$d] = ($byDay[$d] ?? 0) + 1;
+    }
+    arsort($byRole);
+    ksort($byDay);
+
+    $report_title    = 'Activity Log';
+    $report_subtitle = $rows
+        ? date('j M Y', strtotime(end($rows)['log_date'])) . ' to ' . date('j M Y', strtotime($rows[0]['log_date']))
+        : 'No entries match the current filter';
+    $report_back     = url('admin-settings-logs');
+    $report_meta     = [
+        'Entries'   => count($rows),
+        'Generated' => date('j M Y, H:i') . ' (Asia/Manila)',
+        'By'        => pc_user_name($con, (int)($_SESSION['user_id'] ?? 0)) ?: 'an administrator',
+    ];
+
+    $report_body = function () use ($rows, $byRole, $byDay) {
+        $tiles = [['label' => 'Entries', 'value' => number_format(count($rows)), 'hint' => 'in this export']];
+        foreach (array_slice($byRole, 0, 3, true) as $role => $n) {
+            $tiles[] = ['label' => ucfirst((string)$role), 'value' => number_format($n), 'hint' => 'entries'];
+        }
+        rpt_tiles($tiles);
+
+        if ($byDay) {
+            rpt_section('Entries per day', function () use ($byDay) {
+                echo '<div class="rpt-chart">';
+                rpt_columns(array_map(fn($n) => ['Entries' => $n], $byDay), ['Entries' => '#0b2d6b']);
+                echo '</div>';
+            });
+        }
+
+        rpt_section('Who was active', function () use ($byRole) {
+            echo '<div class="rpt-chart">';
+            rpt_bars($byRole, '#087FC1');
+            echo '</div>';
+        });
+
+        rpt_section('Entries', function () use ($rows) {
+            $r = [];
+            foreach ($rows as $row) {
+                $ts = strtotime($row['log_date']);
+                $r[] = [
+                    ['v' => (int)$row['log_id'], 'num' => true],
+                    date('j M Y, H:i', $ts),
+                    $row['name'] ?: '—',
+                    $row['email'],
+                    $row['role'] ?: '—',
+                    $row['activity'],
+                ];
+            }
+            rpt_table([['v' => '#', 'num' => true], 'When', 'Name', 'Email', 'Role', 'Activity'],
+                $r, 'No activity matches the current filter.');
+        });
+    };
+
+    require __DIR__ . '/includes/report_print.php';
+    exit;
+}
+
 // After the query, so the file does not contain its own entry.
 pc_admin_log('exported ' . count($rows) . ' activity log entr' . (count($rows) === 1 ? 'y' : 'ies'));
 

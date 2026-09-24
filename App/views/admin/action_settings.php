@@ -330,7 +330,7 @@ switch ($section) {
         if (!preg_match('/^#[0-9a-fA-F]{6}$/', $accent))  $accent  = (string)($_POST['brand_accent'] ?? '');
 
         if (!preg_match('/^#[0-9a-fA-F]{6}$/', $primary) || !preg_match('/^#[0-9a-fA-F]{6}$/', $accent)) {
-            pc_flash('error', 'Colours have to be a six-digit hex value, like #0087CF.');
+            pc_flash('error', 'Colours have to be a six-digit hex value, like #087FC1.');
             break;
         }
         $pairs = ['brand_primary' => strtoupper($primary), 'brand_accent' => strtoupper($accent)];

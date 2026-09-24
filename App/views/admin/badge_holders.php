@@ -107,7 +107,7 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     .bh-bar { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
     .bh-bar select { padding: 10px 12px; border: 1px solid var(--gray-200); border-radius: 10px; background: #fff;
                      font-family: inherit; font-size: 13px; color: var(--gray-700); outline: none; }
-    .bh-bar button { padding: 10px 16px; border: 1px solid var(--forest); border-radius: 10px; background: var(--forest);
+    .bh-bar button { padding: 10px 16px; border: 1px solid var(--primary); border-radius: 10px; background: var(--primary);
                      color: #fff; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
     .bh-reset { padding: 10px 15px; border: 1px solid var(--gray-200); border-radius: 10px; background: #fff;
                 font-size: 13px; font-weight: 600; color: var(--gray-600); text-decoration: none; }
@@ -140,11 +140,6 @@ require_once __DIR__ . '/includes/sessions_ui.php';
     .bh-take:hover { border-color: #A6301F; color: #A6301F; }
 
     .bh-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
-    .bh-pages { display: flex; gap: 5px; }
-    .bh-pages a, .bh-pages span { min-width: 32px; height: 32px; padding: 0 9px; border: 1px solid var(--gray-200); border-radius: 9px;
-                                  background: #fff; display: inline-flex; align-items: center; justify-content: center;
-                                  font-size: 12.5px; font-weight: 600; color: var(--gray-600); text-decoration: none; }
-    .bh-pages .on { background: var(--forest); border-color: var(--forest); color: #fff; }
     .bh-empty { padding: 40px 20px; text-align: center; color: var(--gray-400); font-size: 13px; }
 </style>
 
@@ -247,14 +242,9 @@ require_once __DIR__ . '/includes/sessions_ui.php';
             <span style="font-size:12.5px;color:var(--gray-400);">
                 Showing <?= $offset + 1 ?> to <?= min($offset + $perPage, $total) ?> of <?= $total ?> award<?= $total === 1 ? '' : 's' ?>
             </span>
-            <?php if ($pages > 1): ?>
-                <span class="bh-pages">
-                    <?php for ($i = 1; $i <= $pages; $i++): ?>
-                        <?php if ($i === $page): ?><span class="on"><?= $i ?></span>
-                        <?php else: ?><a href="<?= bh_url(['p' => $i]) ?>"><?= $i ?></a><?php endif; ?>
-                    <?php endfor; ?>
-                </span>
-            <?php endif; ?>
+            <?php pc_pagination($page, $pages, fn(int $n) => bh_url(['p' => $n]), ['label' => 'Award history pages']); ?>
         </div>
     <?php endif; ?>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

@@ -34,6 +34,8 @@ if (empty($current_page)) {
      * cascade order rather than by !important.
      */
     require_once __DIR__ . '/../includes/settings_store.php';
+    // The shared pager, used by every paged list in the panel.
+    require_once __DIR__ . '/../includes/pagination.php';
     $adm_brand   = pc_settings($con);
     $adm_def     = pc_setting_defaults();
     $adm_primary = preg_match('/^#[0-9a-fA-F]{6}$/', $adm_brand['brand_primary'] ?? '') ? $adm_brand['brand_primary'] : $adm_def['brand_primary'];
@@ -44,7 +46,9 @@ if (empty($current_page)) {
         // to be restated for the sidebar to follow the brand too.
         echo '<style>:root{--forest:' . $adm_primary . ';--ink:' . $adm_primary . ';--navy:' . $adm_primary
            . ';--mint:' . $adm_accent . ';--accent:' . $adm_accent . ';--accent-2:' . $adm_accent
-           . ';--forest-2:' . $adm_accent . ';}'
+           . ';--forest-2:' . $adm_accent
+           // Primary buttons have their own token; a rebrand has to move it too.
+           . ';--primary:' . $adm_accent . ';--primary-2:' . $adm_primary . ';}'
            . '#sidebar{background:linear-gradient(178deg,' . $adm_primary . ' 0%,' . $adm_primary . ' 62%,' . $adm_accent . ' 240%)!important;}'
            . '</style>';
     }
@@ -101,6 +105,7 @@ if (empty($current_page)) {
             'list'  => '<path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h16M4 18h16"/>',
             'badge' => '<circle cx="12" cy="9" r="5.5"/><path stroke-linecap="round" stroke-linejoin="round" d="m8.5 13.5-1 7 4.5-2.4 4.5 2.4-1-7"/>',
             'cert'  => '<path stroke-linecap="round" stroke-linejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>',
+            'file'  => '<path stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M9 13h6M9 17h4"/>',
             'chart' => '<path stroke-linecap="round" stroke-linejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>',
         ];
         $adm_nav = [
@@ -147,6 +152,7 @@ if (empty($current_page)) {
             ],
             'Content'  => [
                 ['admin-announcements', 'announcements',     'mega',  'Announcements'],
+                ['admin-resources',    'admin-resources',    'file',  'Resources'],
                 ['admin-badges',       'admin-badges',       'badge', 'Badges'],
                 ['admin-certificates', 'admin-certificates', 'cert',  'Certificates'],
             ],
@@ -172,7 +178,12 @@ if (empty($current_page)) {
             ],
         ];
         ?>
-        <nav class="flex flex-col gap-1 px-2 flex-1 overflow-y-auto">
+        <?php // min-h-0 is what lets this scroll. A flex child's min-height is
+              // auto, so without it the nav refuses to shrink below the height
+              // of its own list, overflow-y-auto never engages, and everything
+              // under it — the promo block, the profile row — is pushed out of
+              // the sidebar and drawn past the bottom of the app shell. ?>
+        <nav class="flex flex-col gap-1 px-2 flex-1 min-h-0 overflow-y-auto">
             <?php foreach ($adm_nav as $group => $items): ?>
                 <?php if ($group !== ''): ?>
                     <p class="menu-label sidebar-group"><?= htmlspecialchars($group) ?></p>

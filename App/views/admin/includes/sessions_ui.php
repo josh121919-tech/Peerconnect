@@ -26,6 +26,8 @@ function ss_icon(string $k): string
         'chat'  => '<path stroke-linecap="round" stroke-linejoin="round" d="M20 12a7 7 0 0 1-7 7H8.5L5 21.5V18A7 7 0 0 1 12 5h1a7 7 0 0 1 7 7Z"/>',
         'star'  => '<path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9L12 3.6Z"/>',
         'chart' => '<path stroke-linecap="round" stroke-linejoin="round" d="M4 19V9m5 10V5m5 14v-7m5 7V8"/>',
+        'file'  => '<path stroke-linecap="round" stroke-linejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M9 13h6M9 17h4"/>',
+        'user'  => '<circle cx="12" cy="8" r="3.4"/><path stroke-linecap="round" d="M5.5 20a6.5 6.5 0 0 1 13 0"/>',
     ];
     return '<svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">' . ($p[$k] ?? '') . '</svg>';
 }
@@ -53,28 +55,27 @@ function ss_person(?string $pic, string $name, string $role, $rating): string
     .ss-hd { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
     .ss-hd h1 { margin: 0; font-size: 25px; font-weight: 700; color: var(--forest); letter-spacing: -.02em; }
     .ss-hd p { margin: 3px 0 0; font-size: 13.5px; color: var(--gray-400); }
-    .ss-hd-actions { display: flex; gap: 9px; flex-wrap: wrap; }
-
-    .ss-export {
-        display: inline-flex; align-items: center; gap: 8px; padding: 10px 17px;
-        border-radius: 11px; background: var(--forest); color: #fff;
-        font-size: 13.5px; font-weight: 600; text-decoration: none;
-    }
-    .ss-export:hover { background: #0B1440; }
-    .ss-export svg { width: 16px; height: 16px; }
 
     /* ── Figures ── */
+    /* Figure tiles. The same component as the mentee and mentor dashboards'
+       .stat-card — icon above the number, one surface, one shadow — drawn
+       from the shared --stat-* tokens rather than its own set. The text is
+       reordered here rather than in the markup: ten admin pages emit these
+       in label / value / sub order, and `order` puts the number first in
+       all of them at once. */
     .ss-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
     .ss-stat {
-        display: flex; align-items: flex-start; gap: 12px; padding: 15px 16px;
-        background: #fff; border: 1px solid var(--gray-100); border-radius: 14px;
-        box-shadow: 0 1px 2px rgba(16,24,40,.04);
+        display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 18px;
+        background: #fff; border: 1px solid var(--stat-border); border-radius: var(--stat-radius);
+        box-shadow: var(--stat-shadow); transition: box-shadow .16s ease;
     }
-    .ss-stat-ico { flex: none; width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; }
+    .ss-stat:hover { box-shadow: var(--stat-shadow-hover); }
+    .ss-stat > div { display: flex; flex-direction: column; }
+    .ss-stat-ico { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; }
     .ss-stat-ico svg { width: 19px; height: 19px; }
-    .ss-stat-k { font-size: 12px; font-weight: 600; color: var(--gray-500); }
-    .ss-stat-v { font-size: 25px; font-weight: 700; color: var(--forest); line-height: 1.15; margin-top: 2px; font-variant-numeric: tabular-nums; }
-    .ss-stat-s { font-size: 12px; color: var(--gray-400); margin-top: 2px; }
+    .ss-stat-k { order: 2; font-size: 12px; font-weight: 500; color: var(--gray-500); text-transform: uppercase; letter-spacing: .05em; }
+    .ss-stat-v { order: 1; font-size: 26px; font-weight: 600; color: var(--forest); line-height: 1.15; letter-spacing: -0.03em; font-variant-numeric: tabular-nums; }
+    .ss-stat-s { order: 3; font-size: 11.5px; color: var(--gray-400); margin-top: 8px; }
     .ss-trend.up { color: #17654B; font-weight: 600; }
     .ss-trend.down { color: #A6301F; font-weight: 600; }
 
@@ -86,7 +87,7 @@ function ss_person(?string $pic, string $name, string $role, $rating): string
         font-size: 13px; font-weight: 600; color: var(--gray-600); text-decoration: none;
     }
     .ss-tab:hover { border-color: var(--mint); color: var(--mint-deep, #00539B); }
-    .ss-tab.on { background: var(--forest); border-color: var(--forest); color: #fff; }
+    .ss-tab.on { background: var(--primary); border-color: var(--primary); color: #fff; }
     .ss-tab-n { padding: 1px 7px; border-radius: 999px; background: var(--gray-100); color: var(--gray-600); font-size: 11.5px; }
     .ss-tab.on .ss-tab-n { background: rgba(255,255,255,.22); color: #fff; }
 
@@ -100,7 +101,7 @@ function ss_person(?string $pic, string $name, string $role, $rating): string
     .ss-field input, .ss-field select { border: 0; outline: 0; background: none; font-family: inherit; font-size: 13px; color: var(--gray-700); min-width: 0; }
     .ss-field input[type="search"] { width: 100%; }
     .ss-apply { padding: 0 18px; height: 38px; border: 0; border-radius: 10px; background: var(--mint); color: #fff; font-family: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
-    .ss-apply:hover { background: #0077B6; }
+    .ss-apply:hover { background: #0868AD; }
     .ss-clear { font-size: 12.5px; font-weight: 600; color: var(--gray-500); text-decoration: none; }
     .ss-clear:hover { color: #A6301F; }
 
@@ -154,15 +155,6 @@ function ss_person(?string $pic, string $name, string $role, $rating): string
     .ss-view:hover { border-color: var(--mint); color: var(--mint-deep, #00539B); }
 
     .ss-foot { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-top: 14px; font-size: 12.5px; color: var(--gray-500); }
-    .ss-pages { display: flex; gap: 5px; }
-    .ss-pages a, .ss-pages span {
-        min-width: 30px; height: 30px; display: grid; place-items: center; padding: 0 8px;
-        border: 1px solid var(--gray-200); border-radius: 8px; background: #fff;
-        font-size: 12.5px; color: var(--gray-600); text-decoration: none;
-    }
-    .ss-pages a:hover { border-color: var(--mint); color: var(--mint-deep, #00539B); }
-    .ss-pages .on { background: var(--forest); border-color: var(--forest); color: #fff; font-weight: 700; }
-    .ss-pages .off { opacity: .4; }
 
     .ss-empty { padding: 54px 20px; text-align: center; background: #fff; border: 1px solid var(--gray-100); border-radius: 14px; }
     .ss-empty svg { width: 40px; height: 40px; color: var(--gray-300); }
@@ -275,7 +267,13 @@ function ss_person(?string $pic, string $name, string $role, $rating): string
         .ss-people, .ss-when { display: none; }
     }
     @media (max-width: 700px) {
-        .ss-stats { grid-template-columns: 1fr; }
+        .ss-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .ss-stat { flex-direction: row; align-items: center; gap: 10px; padding: 12px 14px; }
+        .ss-stat-ico { width: 34px; height: 34px; }
+        .ss-stat-ico svg { width: 15px; height: 15px; }
+        .ss-stat-v { font-size: 18px; }
+        .ss-stat-k { font-size: 10px; text-transform: none; letter-spacing: 0; line-height: 1.2; }
+        .ss-stat-s { display: none; }
         .ss-what { flex-basis: 100%; }
         .ss-row { flex-wrap: wrap; }
         .ss-end { width: 100%; flex-direction: row; }

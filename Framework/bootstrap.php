@@ -106,12 +106,44 @@ if (!defined('PC_IDLE_HOURS')) {
 }
 
 // How long after an approved session ends the missed-session detector waits
-// before closing it. By then the call has shut (the video room closes five
-// minutes after the end), and session_attendance records who opened it: both
-// people → completed, only one → missed by the other, nobody → missed by both.
-// Each person is told what was recorded. Change the one number.
-if (!defined('PC_MISSED_GRACE_HOURS')) {
-    define('PC_MISSED_GRACE_HOURS', 1);
+// before closing it. By then the call has shut (the room stops admitting
+// people once the end has passed), and session_attendance records who opened
+// it: both people → completed, only one → missed by the other, nobody →
+// missed by both. Each person is told what was recorded. Change the one
+// number.
+//
+// It was an hour, from before presence was recorded: the only signal was
+// whether somebody had left, so the job waited in case a call had simply
+// overrun. It cannot now — the room refuses entry at the end and ping.php
+// rejects a heartbeat past it, so every input the outcome is computed from
+// is frozen the moment the session ends. Fifteen minutes is not a wait for
+// better data; it clears the five-minute tail the room keeps for its
+// closing redirect, so nobody is told they missed a session while their own
+// browser is still closing it properly.
+//
+// The job runs every 30 minutes, so this is when a session becomes
+// eligible, not when it is actually closed.
+if (!defined('PC_MISSED_GRACE_MINUTES')) {
+    define('PC_MISSED_GRACE_MINUTES', 15);
+}
+
+if (!function_exists('pc_missed_grace_label')) {
+    /**
+     * The grace as a phrase: "15 minutes", "1 hour", "2 hours".
+     *
+     * Four screens quote this number at somebody, and each used to spell out
+     * its own pluralised hours. Changing the unit meant changing all four,
+     * which is exactly the kind of edit one of them gets left out of.
+     */
+    function pc_missed_grace_label(): string
+    {
+        $m = (int)PC_MISSED_GRACE_MINUTES;
+        if ($m >= 60 && $m % 60 === 0) {
+            $h = intdiv($m, 60);
+            return $h . ' hour' . ($h === 1 ? '' : 's');
+        }
+        return $m . ' minute' . ($m === 1 ? '' : 's');
+    }
 }
 
 if (!function_exists('pc_request_is_https')) {

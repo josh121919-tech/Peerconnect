@@ -239,20 +239,37 @@ try {
     }
     logline(sprintf('Database: %s (%s, %d tables, verified complete)', basename($final), human_size(filesize($final)), $expectedTables));
 
-    /* ── Uploads ──────────────────────────────────────────────────────── */
+    /* ── User files ───────────────────────────────────────────────────── */
 
-    $uploads = PUBLIC_PATH . $ds . 'uploads';
+    // Both places members' files live, not just the public one.
+    //
+    // This used to archive public/uploads alone, so storage/verification —
+    // the scanned student IDs people send in to be approved — had exactly one
+    // copy, on the same disk as the database it was meant to be backed up
+    // alongside. Losing that disk lost the documents. storage/reports is
+    // covered for the same reason.
+    //
+    // The archive keeps its uploads_*.zip name and folder so the admin Backup
+    // page and the retention rule below go on finding it; what changed is that
+    // entries are now prefixed with the folder they came from, so one archive
+    // restores to two places without guesswork.
+    $roots = [
+        'uploads' => PUBLIC_PATH . $ds . 'uploads',
+        'storage' => BASE_PATH . $ds . 'storage',
+    ];
+    $present = array_filter($roots, 'is_dir');
+
     $zips    = glob($dir . $ds . 'uploads' . $ds . 'uploads_*.zip') ?: [];
     rsort($zips, SORT_STRING);
     $ageDays = $zips ? (time() - filemtime($zips[0])) / 86400 : INF;
 
-    if (!is_dir($uploads)) {
-        logline("Uploads: skipped, $uploads does not exist");
+    if (!$present) {
+        logline('Files: skipped, neither ' . implode(' nor ', $roots) . ' exists');
     } elseif ($ageDays < UPLOADS_EVERY_DAYS) {
-        logline(sprintf('Uploads: newest archive is %.1f day(s) old; the next is due in %.1f day(s)', $ageDays, UPLOADS_EVERY_DAYS - $ageDays));
+        logline(sprintf('Files: newest archive is %.1f day(s) old; the next is due in %.1f day(s)', $ageDays, UPLOADS_EVERY_DAYS - $ageDays));
     } else {
         if (!class_exists('ZipArchive')) {
-            fail_backup('the PHP zip extension is not enabled, so uploads cannot be archived');
+            fail_backup('the PHP zip extension is not enabled, so user files cannot be archived');
         }
         $zipFinal   = $dir . $ds . 'uploads' . $ds . 'uploads_' . date('Y-m-d_His') . '.zip';
         $zipPartial = $zipFinal . '.partial';
@@ -261,34 +278,50 @@ try {
         if ($zip->open($zipPartial, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
             fail_backup('could not create ' . basename($zipPartial));
         }
-        $added = 0;
-        $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($uploads, FilesystemIterator::SKIP_DOTS));
-        foreach ($files as $f) {
-            if ($f->isFile()) {
-                $zip->addFile($f->getPathname(), str_replace('\\', '/', substr($f->getPathname(), strlen($uploads) + 1)));
-                $added++;
+        $added   = 0;
+        $perRoot = [];
+        foreach ($present as $name => $root) {
+            $before = $added;
+            $files  = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root, FilesystemIterator::SKIP_DOTS));
+            foreach ($files as $f) {
+                if ($f->isFile()) {
+                    $inside = str_replace('\\', '/', substr($f->getPathname(), strlen($root) + 1));
+                    $zip->addFile($f->getPathname(), $name . '/' . $inside);
+                    $added++;
+                }
             }
-        }
-        if (!$zip->close()) {
-            @unlink($zipPartial);
-            fail_backup('writing the uploads archive failed');
+            $perRoot[] = $name . ' ' . ($added - $before);
         }
 
-        // Read it back: an archive that will not open, or is missing files, is not a backup.
-        $check = new ZipArchive();
-        $opened = $check->open($zipPartial) === true;
-        $inZip  = $opened ? $check->numFiles : -1;
-        if ($opened) {
-            $check->close();
-        }
-        if ($inZip !== $added) {
+        // An empty archive is not worth writing, and ZipArchive::close() fails
+        // on one anyway — which would have been reported as a backup failure.
+        if ($added === 0) {
+            $zip->close();
             @unlink($zipPartial);
-            fail_backup("the uploads archive holds $inZip file(s), expected $added");
+            logline('Files: nothing to archive yet (' . implode(', ', array_keys($present)) . ' are empty)');
+        } else {
+            if (!$zip->close()) {
+                @unlink($zipPartial);
+                fail_backup('writing the user-files archive failed');
+            }
+
+            // Read it back: an archive that will not open, or is missing files, is not a backup.
+            $check  = new ZipArchive();
+            $opened = $check->open($zipPartial) === true;
+            $inZip  = $opened ? $check->numFiles : -1;
+            if ($opened) {
+                $check->close();
+            }
+            if ($inZip !== $added) {
+                @unlink($zipPartial);
+                fail_backup("the user-files archive holds $inZip file(s), expected $added");
+            }
+            if (!@rename($zipPartial, $zipFinal)) {
+                fail_backup('could not rename ' . basename($zipPartial));
+            }
+            logline(sprintf('Files: %s (%s, %d files — %s, verified)',
+                basename($zipFinal), human_size(filesize($zipFinal)), $added, implode(', ', $perRoot)));
         }
-        if (!@rename($zipPartial, $zipFinal)) {
-            fail_backup('could not rename ' . basename($zipPartial));
-        }
-        logline(sprintf('Uploads: %s (%s, %d files, verified)', basename($zipFinal), human_size(filesize($zipFinal)), $added));
     }
 
     /* ── Retention ────────────────────────────────────────────────────── */

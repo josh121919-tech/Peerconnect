@@ -105,7 +105,15 @@ function st_toggle(string $name, string $label, string $help, bool $on, bool $di
     .st-f-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 
     /* Switches */
-    .st-sw { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--gray-100); }
+    /* position:relative is load-bearing. The real checkbox below is
+       position:absolute so it can be hidden while staying focusable, and
+       without a positioned ancestor its containing block is the page itself:
+       it was laid out against the document rather than its own row, escaping
+       the app shell's overflow:hidden and stretching the page past the
+       bottom of the shell. The maintenance toggle is the last one on the
+       settings screen, so its stray checkbox sat furthest down and opened
+       the widest band of empty page under it. */
+    .st-sw { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-top: 1px solid var(--gray-100); position: relative; }
     .st-sw:first-of-type { border-top: 0; padding-top: 0; }
     .st-sw label:first-child, .st-sw > div > label { display: block; font-size: 13.5px; font-weight: 600; color: var(--gray-800); cursor: pointer; }
     .st-sw p { margin: 2px 0 0; font-size: 12px; color: var(--gray-400); line-height: 1.5; }
@@ -122,8 +130,8 @@ function st_toggle(string $name, string $label, string $help, bool $on, bool $di
     .st-sw-in:focus-visible + .st-sw-track { outline: 2px solid var(--mint); outline-offset: 2px; }
 
     .st-save { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border: 0; border-radius: 11px;
-               background: var(--forest); color: #fff; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
-    .st-save:hover { background: #0B1440; }
+               background: var(--primary); color: #fff; font-family: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+    .st-save:hover { background: var(--primary-2); }
     .st-save svg { width: 15px; height: 15px; }
     .st-foot { display: flex; justify-content: flex-end; gap: 9px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--gray-100); }
 

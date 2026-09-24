@@ -1,12 +1,23 @@
 <?php
 // Resources — upload a PDF/DOCX study file.
-// Both mentees and mentors may upload; the row records who did.
+//
+// Mentors and admins only. The library is teaching material, and a mentee
+// uploading into it was the one way a study file could arrive without anyone
+// having vouched for it. Mentees still read, download and bookmark
+// everything — see includes/resources.php, which hides the control this
+// refuses, so the two cannot disagree about who may post.
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 include __DIR__ . "/../db.php";
 
-$resources_url = url('resources');
+// Where to send them back to. Everyone posts from the member Resources
+// page except an admin, who posts from their own monitoring screen; the
+// member page is not in their navigation, so returning them there would
+// strand them. A fixed pair of routes, not a URL off the request.
+$resources_url = (($_POST['back'] ?? '') === 'admin')
+    ? url('admin-resources')
+    : url('resources');
 
 function pc_upload_fail(string $msg): void
 {
@@ -17,9 +28,15 @@ function pc_upload_fail(string $msg): void
 }
 
 $role = $_SESSION['role'] ?? '';
-if (empty($_SESSION['user_id']) || !in_array($role, ['mentee', 'mentor'], true)) {
+if (empty($_SESSION['user_id']) || !in_array($role, ['mentee', 'mentor', 'admin'], true)) {
     header("Location: " . url('welcomepage'));
     exit;
+}
+
+// The check that matters, and it is here rather than only in the markup: a
+// hidden button is a suggestion, not a rule.
+if (!in_array($role, ['mentor', 'admin'], true)) {
+    pc_upload_fail('Only mentors can add to the resource library.');
 }
 
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {

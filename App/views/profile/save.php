@@ -91,7 +91,11 @@ try {
         ProfileRepository::saveBio($con, $user_id, $bio);
     }
 
-    if ($section === 'about' || $section === 'interests') {
+    // Not 'about' any more: that section is the bio, and the bio editor no
+    // longer carries interests — they are picked in the questionnaire, where
+    // they come from the catalogue. Left coupled, saving a bio with no
+    // interests field would have wiped them.
+    if ($section === 'interests') {
         ProfileRepository::replaceTags($con, $user_id, 'interest', pf_tags(pf_post('interests')));
     }
 

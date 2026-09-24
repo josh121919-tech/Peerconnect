@@ -116,15 +116,20 @@ try {
 // The draft has served its purpose.
 FeedbackRepository::deleteDraft($con, $session_id, $user_id, $direction);
 
-// A reviewed session is closed as completed straight away only when both
-// people joined the call — the same test the missed-session job applies an
-// hour after the end. A mentee's review used to complete it whether or not
-// the mentor ever came, so "they never showed up" counted as a completed
-// session for that mentor. Otherwise the job decides, as for any session.
-// 'approved', not '<> completed': the write states its own intent. The slot
-// is kept: it holds the session's length.
-if ($is_mentee && SessionRepository::bothJoined($con, $session_id)) {
-    SessionRepository::completeAfterReview($con, $session_id, $mentee_id);
+/*
+ * A reviewed session is settled straight away rather than waiting for the
+ * 30-minute job, by the same rule the job applies — one method, so the two
+ * cannot reach different verdicts about the same session.
+ *
+ * This used to complete it on its own, from "did both of them open the call".
+ * That was a way round the attendance rule: a mentee could leave after two
+ * minutes, review it, and have it counted as completed. settleAtEnd() reads
+ * how long each of them was actually there, refuses to touch anything that
+ * has not reached its scheduled end, and leaves a session that was already
+ * settled alone.
+ */
+if ($is_mentee) {
+    SessionRepository::settleAtEnd($con, $session_id);
 }
 
 // A new rating changes the mentor's composite score, which is what the

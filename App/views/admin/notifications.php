@@ -208,18 +208,20 @@ include 'layout.php';
     .nf-hd h1 { margin: 0; font-size: 25px; font-weight: 700; color: var(--forest); letter-spacing: -.02em; }
     .nf-hd p { margin: 3px 0 0; font-size: 13.5px; color: var(--gray-400); max-width: 62ch; }
     .nf-hd > div { flex: 1; min-width: 240px; }
-    .nf-new { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 11px; border: none; background: var(--forest); color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
-    .nf-new:hover { background: #16265C; }
+    .nf-new { display: inline-flex; align-items: center; gap: 8px; padding: 11px 18px; border-radius: 11px; border: none; background: var(--primary); color: #fff; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .nf-new:hover { background: var(--primary-2); }
     .nf-new svg { width: 16px; height: 16px; }
 
     .nf-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
-    .nf-stat { display: flex; align-items: center; gap: 13px; padding: 15px 16px; border-radius: 14px; background: #fff; border: 1px solid var(--gray-100); text-decoration: none; color: inherit; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
-    .nf-stat:hover { border-color: var(--gray-200); }
-    .nf-stat-ico { flex: none; width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; }
-    .nf-stat-ico svg { width: 21px; height: 21px; }
-    .nf-stat-k { font-size: 13px; color: var(--gray-500); font-weight: 500; }
-    .nf-stat-v { font-size: 26px; line-height: 1.15; font-weight: 700; color: var(--gray-900); font-variant-numeric: tabular-nums; }
-    .nf-stat-s { font-size: 12px; font-weight: 600; }
+    /* The shared figure tile — see .ss-stat in includes/sessions_ui.php. */
+    .nf-stat { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 18px; border-radius: var(--stat-radius); background: #fff; border: 1px solid var(--stat-border); text-decoration: none; color: inherit; box-shadow: var(--stat-shadow); transition: box-shadow .16s ease; }
+    .nf-stat:hover { box-shadow: var(--stat-shadow-hover); }
+    .nf-stat > span { display: flex; flex-direction: column; }
+    .nf-stat-ico { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; }
+    .nf-stat-ico svg { width: 19px; height: 19px; }
+    .nf-stat-k { order: 2; font-size: 12px; color: var(--gray-500); font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+    .nf-stat-v { order: 1; font-size: 26px; line-height: 1.15; font-weight: 600; letter-spacing: -0.03em; color: var(--forest); font-variant-numeric: tabular-nums; }
+    .nf-stat-s { order: 3; font-size: 11.5px; font-weight: 600; margin-top: 8px; }
 
     .nf-grid { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 18px; align-items: start; }
     .nf-card { background: #fff; border: 1px solid var(--gray-100); border-radius: 16px; box-shadow: 0 1px 2px rgba(16,24,40,.04); }
@@ -259,10 +261,6 @@ include 'layout.php';
     .nf-empty { padding: 48px 20px; text-align: center; color: var(--gray-400); font-size: 13.5px; }
 
     .nf-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding: 14px 18px; font-size: 13px; color: var(--gray-500); }
-    .nf-pages { display: flex; gap: 6px; }
-    .nf-pages a, .nf-pages span { min-width: 32px; height: 32px; padding: 0 8px; border-radius: 8px; display: grid; place-items: center; border: 1px solid var(--gray-200); color: var(--gray-600); text-decoration: none; font-size: 13px; }
-    .nf-pages .on { background: #1B4FB8; border-color: #1B4FB8; color: #fff; font-weight: 600; }
-    .nf-pages .off { opacity: .45; }
 
     .nf-detail { padding: 20px; position: sticky; top: 16px; }
     .nf-d-hd { display: flex; align-items: flex-start; gap: 12px; }
@@ -305,6 +303,14 @@ include 'layout.php';
     }
     @media (max-width: 900px) {
         .nf-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (max-width: 700px) {
+        .nf-stat { flex-direction: row; align-items: center; gap: 10px; padding: 12px 14px; }
+        .nf-stat-ico { width: 34px; height: 34px; }
+        .nf-stat-ico svg { width: 15px; height: 15px; }
+        .nf-stat-v { font-size: 18px; }
+        .nf-stat-k { font-size: 10px; text-transform: none; letter-spacing: 0; line-height: 1.2; }
+        .nf-stat-s { display: none; }
     }
 </style>
 
@@ -381,15 +387,7 @@ include 'layout.php';
 
         <div class="nf-foot">
             <span><?= $total === 0 ? 'No notifications' : 'Showing ' . (($page - 1) * $per + 1) . ' to ' . min($page * $per, $total) . ' of ' . $total ?></span>
-            <?php if ($pages > 1): ?>
-                <div class="nf-pages">
-                    <?php if ($page > 1): ?><a href="<?= htmlspecialchars($link(['page' => $page - 1])) ?>" aria-label="Previous page">&lsaquo;</a><?php else: ?><span class="off">&lsaquo;</span><?php endif; ?>
-                    <?php for ($i = 1; $i <= $pages; $i++): ?>
-                        <?php if ($i === $page): ?><span class="on"><?= $i ?></span><?php else: ?><a href="<?= htmlspecialchars($link(['page' => $i])) ?>"><?= $i ?></a><?php endif; ?>
-                    <?php endfor; ?>
-                    <?php if ($page < $pages): ?><a href="<?= htmlspecialchars($link(['page' => $page + 1])) ?>" aria-label="Next page">&rsaquo;</a><?php else: ?><span class="off">&rsaquo;</span><?php endif; ?>
-                </div>
-            <?php endif; ?>
+            <?php pc_pagination($page, $pages, fn(int $n) => $link(['page' => $n]), ['label' => 'Notification pages']); ?>
         </div>
     </section>
 
@@ -616,3 +614,5 @@ include 'layout.php';
 </script>
 
 <?php include 'admin_footer.php'; ?>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

@@ -98,6 +98,13 @@ class DataExportRepository extends Repository
             'session_attendance' => $many("
                 SELECT session_id, role, joined_at FROM session_attendance WHERE user_id = ? ORDER BY joined_at DESC
             "),
+            // One row per visit to a call, which is how long each session
+            // actually counted for. Personal data, so it belongs in the export
+            // alongside the attendance roster it sits next to.
+            'session_presence' => $many("
+                SELECT session_id, role, joined_at, last_seen_at, left_at
+                FROM session_presence WHERE user_id = ? ORDER BY joined_at DESC
+            "),
             'availability' => $many("
                 SELECT availability_id, subject, date, start_time, duration, capacity, session_type, about, topics, created_at
                 FROM availability WHERE mentor_id = ? ORDER BY date DESC, start_time DESC

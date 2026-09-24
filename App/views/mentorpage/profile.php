@@ -878,7 +878,11 @@ $active_page = 'profile';
             };
 
             $settings_url  = url('mentor-settings') . '?tab=account';
-            $public_url    = url('mentee-view-mentor') . '?id=' . $user_id;
+            // $public_url was here, feeding a "View Public Profile" button in
+            // the banner. That button was removed from the live site by hand
+            // and nothing else reads the value, so keeping it would leave a
+            // URL built on every page load for no one. Mentees still reach
+            // this profile through mentee-view-mentor from the directory.
             $feedback_url  = url('mentor-feedback');
             $calendar_url  = url('mentor-calendar');
             $avg_rating    = (float)($avg['avg_rating'] ?? 0);
@@ -953,9 +957,12 @@ $active_page = 'profile';
                         <button type="button" class="btn btn-primary btn-sm" onclick="openEditModal()">
                             <?= $pf_icon('edit', 'width="14" height="14"') ?> Edit Profile
                         </button>
-                        <a class="btn btn-ghost btn-sm" href="<?= htmlspecialchars($public_url) ?>" target="_blank" rel="noopener">
-                            View Public Profile <?= $pf_icon('external', 'width="14" height="14"') ?>
-                        </a>
+                        <?php // Account settings, matching the mentee's profile. This is where
+                              // "View Public Profile" was; it was taken off the live site by
+                              // hand, so removing it here as well stops the next upload from
+                              // putting it back. Visibility is still managed from the Public
+                              // Profile card further down. ?>
+                        <a class="btn btn-ghost btn-sm" href="<?= htmlspecialchars($settings_url) ?>">Account settings</a>
                     </div>
                 </div>
 

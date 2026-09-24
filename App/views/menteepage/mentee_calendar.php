@@ -90,6 +90,7 @@ $approved_total = SessionRepository::countForMenteeInStatuses($con, $mentee_id, 
 // ── Helpers ──────────────────────────────────────────────────────────────
 $statusMeta = [
     'approved'  => ['Approved',  'var(--mint)'],
+    'unfinished' => ['Unfinished', 'var(--warning)'],
     'pending'   => ['Pending',   'var(--warning)'],
     'completed' => ['Completed', 'var(--success)'],
 ];
@@ -765,7 +766,8 @@ $active_page     = 'calendar';
                             data-status="<?= htmlspecialchars($r['status']) ?>"
                             data-status-label="<?= htmlspecialchars($label) ?>"
                             data-color="<?= $color ?>"
-                            data-ended="<?= $e < new DateTime('now', $appTz) ? '1' : '0' ?>">
+                            data-ended="<?= $e < new DateTime('now', $appTz) ? '1' : '0' ?>"
+                            data-opens="<?= $s->getTimestamp() - (SessionRepository::JOIN_WINDOW_MINUTES * 60) ?>">
                             <span class="cal-ev-time"><?= $s->format('g:i A') ?></span>
                             <span class="cal-ev-title"><?= htmlspecialchars($r['subject']) ?></span>
                             <span class="cal-ev-who">with <?= htmlspecialchars($r['mentor_name']) ?></span>
@@ -852,7 +854,8 @@ $active_page     = 'calendar';
                                     data-status="<?= htmlspecialchars($r['status']) ?>"
                                     data-status-label="<?= htmlspecialchars($label) ?>"
                                     data-color="<?= $color ?>"
-                                    data-ended="<?= $e < new DateTime('now', $appTz) ? '1' : '0' ?>">
+                                    data-ended="<?= $e < new DateTime('now', $appTz) ? '1' : '0' ?>"
+                            data-opens="<?= $s->getTimestamp() - (SessionRepository::JOIN_WINDOW_MINUTES * 60) ?>">
                                     <span class="cal-bar"></span>
                                     <span class="cal-agenda-time">
                                         <?php if ($view === 'list'): ?>
@@ -1085,15 +1088,24 @@ $active_page     = 'calendar';
                 const actions = document.getElementById('evActions');
                 actions.innerHTML = '';
 
-                if (d.status === 'approved' && d.ended === '0') {
-                    actions.appendChild(actionBtn(ROUTE_JOIN + '?session_id=' + d.id, 'Join session', true,
+                const isLiveStatus = d.status === 'approved' || d.status === 'unfinished';
+                /*
+                 * Open, not merely unfinished. The call opens fifteen minutes
+                 * before the start and the lobby refuses anything earlier, so
+                 * offering Join on a session still days away was a button that
+                 * could only bounce.
+                 */
+                const isOpenNow = isLiveStatus && d.ended === '0'
+                    && Date.now() >= (parseInt(d.opens, 10) || 0) * 1000;
+                if (isOpenNow) {
+                    actions.appendChild(actionBtn(ROUTE_JOIN + '?session_id=' + d.id, d.status === 'unfinished' ? 'Rejoin session' : 'Join session', true,
                         '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="6" width="12" height="12" rx="2"/><path stroke-linecap="round" stroke-linejoin="round" d="m15 10 6-3v10l-6-3"/></svg>'));
                 }
-                if (d.status === 'approved') {
+                if (isLiveStatus) {
                     actions.appendChild(actionBtn(ROUTE_ICS + '?session_id=' + d.id, 'Add to calendar', false,
                         '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>'));
                 }
-                if (d.ended === '1' && (d.status === 'completed' || d.status === 'approved')) {
+                if (d.ended === '1' && (d.status === 'completed' || isLiveStatus)) {
                     actions.appendChild(actionBtn(ROUTE_FEEDBACK + '?session=' + d.id, 'Rate this session', false,
                         '<svg width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3.5 14.6 9l5.9.8-4.3 4.1 1.1 5.8L12 16.8l-5.3 2.9 1.1-5.8L3.5 9.8 9.4 9 12 3.5Z"/></svg>'));
                 }

@@ -3,6 +3,7 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
 include __DIR__ . "/../db.php";
+require_once __DIR__ . '/../includes/join_control.php';
 // Role, not just "signed in": every query below runs as $mentee_id, so a
 // mentor landing here was shown a mentee dashboard built from their own id —
 // an incoherent page, and the onboarding gate ran with the wrong role.
@@ -178,20 +179,6 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
 
         <main class="main fade-in">
 
-            <!-- Page header -->
-            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;">
-
-                <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;margin-top:4px;">
-                    <!-- PWA Install — shown by JS only when browser supports beforeinstallprompt -->
-                    <button id="pwa-install-btn" style="display:none;align-items:center;gap:6px;background:var(--forest);color:white;border:none;border-radius:9px;padding:8px 14px;font-size:12.5px;font-weight:600;cursor:pointer;font-family:inherit;" title="Install PeerConnect as an app">
-                        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                        Install App
-                    </button>
-                </div>
-            </div>
-
             <!-- Welcome hero -->
             <div class="hero-banner">
                 <div>
@@ -302,7 +289,7 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                                 $name = trim($s['firstname'] . ' ' . $s['lastname']);
                                 $ini = strtoupper(substr($s['firstname'], 0, 1) . substr($s['lastname'], 0, 1));
                                 $ts = strtotime($s['session_date']);
-                                $joinUrl = url('video-join') . '?session_id=' . (int)$s['request_id'];
+                                $endsAt  = strtotime($s['session_date']) + ((int)($s['duration'] ?? 60) * 60);
                             ?>
                                 <div class="prow">
                                     <?php if (!empty($s['profile_image'])): ?>
@@ -328,7 +315,17 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
                                             <?= date('g:i A', $ts) ?>
                                         </span>
                                     </div>
-                                    <a href="<?= htmlspecialchars($joinUrl) ?>" class="btn btn-ghost" style="font-size:12px;padding:7px 14px;flex-shrink:0;border-color:var(--mint-soft);color:var(--forest);">Join Session</a>
+                                    <?php // Join once the call is open, a countdown until then — the
+                                          // lobby refuses anything earlier, so a live button here was
+                                          // a round trip to be told no. ?>
+                                    <?php pc_join_control([
+                                        'session_id' => (int)$s['request_id'],
+                                        'starts_at'  => $s['session_date'],
+                                        'ends_at'    => $endsAt,
+                                        'status'     => $s['status'] ?? 'approved',
+                                        'class'      => 'btn btn-ghost',
+                                        'label'      => ($s['status'] ?? '') === 'unfinished' ? 'Rejoin Session' : 'Join Session',
+                                    ]); ?>
                                 </div>
                             <?php endforeach; ?>
                         <?php else: ?>

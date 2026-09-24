@@ -125,7 +125,7 @@ include __DIR__ . '/includes/settings_ui.php';
     <?php foreach ([
         ['Database', bk_size((int)$dbBytes), $tableN . ' tables in ' . $dbName, '#EAF1FB', '#1A5C9A', 'chart'],
         ['Core records', number_format($exactRows), 'Users, sessions, messages, feedback', '#E6F5EE', '#17654B', 'check'],
-        ['Uploaded files', number_format($fileN), bk_size((int)$fileBytes) . ' in public/uploads', '#EAF6FB', '#0087CF', 'cal'],
+        ['Uploaded files', number_format($fileN), bk_size((int)$fileBytes) . ' in public/uploads', '#EAF6FC', '#087FC1', 'cal'],
         $bkLastAt !== null
             ? ['Last automatic backup', date('M j, g:i A', $bkLastAt), count($bkDumps) . ' kept in ' . $bkDir,
                ($bkStale || $bkFailed) ? '#FEF6DC' : '#E6F5EE', ($bkStale || $bkFailed) ? '#7A5A00' : '#17654B', 'clock']
@@ -188,7 +188,7 @@ include __DIR__ . '/includes/settings_ui.php';
                 To restore a backup you downloaded above, or one from
                 <code><?= htmlspecialchars($bkDir) ?>\database</code>, from the XAMPP shell:
             </p>
-            <pre style="margin:0;padding:13px 15px;background:#0B1440;color:#D9E4F5;border-radius:10px;font-size:12.5px;overflow-x:auto;line-height:1.6;"><code>mysql -u root <?= htmlspecialchars($dbName) ?> &lt; peerconnect-backup.sql</code></pre>
+            <pre style="margin:0;padding:13px 15px;background:#0E2E6B;color:#D9E4F5;border-radius:10px;font-size:12.5px;overflow-x:auto;line-height:1.6;"><code>mysql -u root <?= htmlspecialchars($dbName) ?> &lt; peerconnect-backup.sql</code></pre>
             <p style="font-size:12px;color:var(--gray-400);margin:9px 0 0;line-height:1.6;">
                 Take a fresh backup first. Restoring replaces everything currently in
                 <code><?= htmlspecialchars($dbName) ?></code> — it does not merge.
@@ -257,7 +257,7 @@ include __DIR__ . '/includes/settings_ui.php';
                     </span>
                 </div>
                 <div class="st-row">
-                    <span class="st-dot" style="background:#EAF6FB;color:#0087CF;"><?= ss_icon('cal') ?></span>
+                    <span class="st-dot" style="background:#EAF6FC;color:#087FC1;"><?= ss_icon('cal') ?></span>
                     <span style="min-width:0;flex:1;">
                         <?php if ($bkZipAt !== null): ?>
                             <b>Uploaded files · <?= htmlspecialchars(bk_when($bkZipAt)) ?></b>
@@ -290,3 +290,5 @@ include __DIR__ . '/includes/settings_ui.php';
         </div>
     </div>
 </div>
+
+<?php include __DIR__ . '/layout_end.php'; ?>

@@ -57,7 +57,7 @@ function timeAgo(string $datetime): string
   return date('M j', strtotime($datetime));
 }
 
-$acColor = $activeUser ? avatarColor($activeUser['id']) : '#0087CF';
+$acColor = $activeUser ? avatarColor($activeUser['id']) : '#087FC1';
 // "View Profile" only has a real destination today when I'm a mentee
 // looking at a mentor's conversation — there's no mentor-facing "view
 // mentee profile" page yet, so the button is omitted rather than faked
