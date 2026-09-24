@@ -81,6 +81,9 @@ if (!empty($_SESSION['user_id']) && !empty($_SESSION['role'])) {
 //
 // ?switch=1 forces the form for the same reason — a way to reach it without
 // first hunting down the previous person's Log Out.
+// Seconds left on a lockout, for the live countdown below. 0 means none.
+$lockout_left = 0;
+
 $is_login_post = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login']);
 $wants_form    = isset($_GET['switch']);
 
@@ -135,6 +138,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
 
     if ($retry_after > 0) {
         $login_error = "Too many failed attempts. Try again in " . floor($retry_after / 60) . "m " . ($retry_after % 60) . "s.";
+        // Handed to the page so the figure can tick down. It was rendered once
+        // and then sat there, so a lockout that had finished still read "4m
+        // 23s" until somebody thought to reload.
+        $lockout_left = $retry_after;
     } else {
 
         if (strlen($email) > 100 || strlen($password) > 20) {
@@ -391,8 +398,51 @@ $back_url     = pc_back_url();
                             <circle cx="12" cy="12" r="9" />
                             <path stroke-linecap="round" d="M12 7.5v5M12 16.2v.3" />
                         </svg>
-                        <span><?= htmlspecialchars($login_error) ?></span>
+                        <span id="loginAlertText"
+                              <?= $lockout_left > 0 ? 'data-left="' . (int)$lockout_left . '"' : '' ?>><?= htmlspecialchars($login_error) ?></span>
                     </div>
+
+                    <?php if ($lockout_left > 0): ?>
+                        <script>
+                            /*
+                             * Counts the lockout down where the visitor can see it. The
+                             * message used to be written once by PHP and never change, so
+                             * somebody waiting out a five-minute lockout watched a number
+                             * that had stopped being true the second the page finished
+                             * loading, with nothing to say when it was over.
+                             *
+                             * The clock is the only thing this moves. Whether the lockout
+                             * has really expired is decided by the server on the next
+                             * attempt, as before; reaching zero here just stops the sign-in
+                             * button being disabled for no reason.
+                             */
+                            (function () {
+                                const el = document.getElementById('loginAlertText');
+                                if (!el || !el.dataset.left) return;
+
+                                let left = parseInt(el.dataset.left, 10);
+                                if (!Number.isFinite(left) || left <= 0) return;
+
+                                const submit = document.querySelector('#loginForm button[type="submit"]');
+                                if (submit) submit.disabled = true;
+
+                                const paint = () => {
+                                    if (left <= 0) {
+                                        el.textContent = 'You can try again now.';
+                                        if (submit) submit.disabled = false;
+                                        return;
+                                    }
+                                    const m = Math.floor(left / 60);
+                                    const s = left % 60;
+                                    el.textContent = 'Too many failed attempts. Try again in '
+                                        + m + 'm ' + String(s).padStart(2, '0') + 's.';
+                                    left--;
+                                    setTimeout(paint, 1000);
+                                };
+                                paint();
+                            })();
+                        </script>
+                    <?php endif; ?>
                 <?php endif; ?>
 
                 <form method="POST" action="<?= htmlspecialchars(url('login')) ?>" id="loginForm" novalidate>

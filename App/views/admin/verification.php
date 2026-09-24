@@ -289,76 +289,341 @@ if ($status === 'pending'):
         <title>Waiting for verification — <?= htmlspecialchars(pc_setting($con, 'platform_name')) ?></title>
         <?php require_once __DIR__ . '/../includes/design_system.php'; ?>
         <style>
+            :root { color-scheme: light; }
+
             body {
-                background: var(--bg);
+                background:
+                    radial-gradient(1100px 520px at 8% -8%, #E8F0FE 0%, rgba(232, 240, 254, 0) 62%),
+                    radial-gradient(900px 480px at 104% 104%, #E6EEFD 0%, rgba(230, 238, 253, 0) 60%),
+                    var(--bg);
                 min-height: 100vh;
                 display: grid;
                 place-items: center;
                 margin: 0;
-                padding: 24px;
+                padding: 28px 18px;
             }
 
             .aw-card {
                 background: var(--surface);
-                border: 1px solid var(--border);
-                border-radius: var(--radius-lg);
-                padding: 40px 32px;
-                max-width: 480px;
+                border-radius: 22px;
+                box-shadow: 0 26px 60px -34px rgba(16, 32, 68, .42);
+                padding: 40px 36px 28px;
+                width: min(620px, 100%);
                 text-align: center;
             }
 
-            .aw-ring {
-                width: 62px;
-                height: 62px;
-                margin: 0 auto 20px;
+            /* ── The illustration ──────────────────────────────────────────
+               An ID card with a tick, and a ring turning beside it. Drawn
+               rather than fetched: one more image to ship, cache and get wrong
+               on a slow connection, for a picture this simple. */
+            .aw-art {
+                position: relative;
+                width: 190px;
+                height: 132px;
+                margin: 0 auto 22px;
+            }
+
+            .aw-blob {
+                position: absolute;
+                inset: 8px 0 0;
+                background: #EAF1FE;
+                border-radius: 46% 54% 52% 48% / 58% 44% 56% 42%;
+            }
+
+            .aw-doc {
+                position: absolute;
+                left: 40px;
+                top: 26px;
+                width: 116px;
+                height: 78px;
+                background: #fff;
+                border: 2px solid #C9DBFB;
+                border-radius: 12px;
+                box-shadow: 0 10px 22px -14px rgba(16, 32, 68, .5);
+            }
+
+            .aw-doc::before {
+                content: "";
+                position: absolute;
+                left: 12px;
+                top: 16px;
+                width: 26px;
+                height: 26px;
                 border-radius: 50%;
-                border: 3px solid var(--accent-faint);
-                border-top-color: var(--mint);
-                animation: aw-spin 1s linear infinite;
+                background: #BFD5FA;
+            }
+
+            .aw-line {
+                position: absolute;
+                left: 48px;
+                height: 6px;
+                border-radius: 3px;
+                background: #D8E5FC;
+            }
+
+            .aw-line.l1 { top: 18px; width: 52px; }
+            .aw-line.l2 { top: 30px; width: 40px; }
+            .aw-line.l3 { top: 50px; width: 64px; left: 12px; }
+
+            .aw-tick {
+                position: absolute;
+                right: 22px;
+                bottom: 16px;
+                width: 40px;
+                height: 40px;
+                border-radius: 50%;
+                background: var(--mint, #0868AD);
+                color: #fff;
+                display: grid;
+                place-items: center;
+                box-shadow: 0 10px 20px -10px rgba(8, 104, 173, .8);
+            }
+
+            .aw-tick svg { width: 21px; height: 21px; }
+
+            /* The live part: it turns for as long as the page is open. */
+            .aw-ring {
+                position: absolute;
+                left: 12px;
+                bottom: 22px;
+                width: 38px;
+                height: 38px;
+                border-radius: 50%;
+                border: 4px solid #D3E2FB;
+                border-top-color: var(--mint, #0868AD);
+                animation: aw-spin 900ms linear infinite;
             }
 
             @keyframes aw-spin { to { transform: rotate(360deg); } }
 
             @media (prefers-reduced-motion: reduce) {
-                .aw-ring { animation: none; border-top-color: var(--accent-faint); }
+                .aw-ring { animation-duration: 3s; }
             }
 
             .aw-card h1 {
-                margin: 0 0 10px;
-                font-size: 20px;
+                margin: 0 0 12px;
+                font-size: 30px;
                 font-weight: 700;
-                color: var(--navy);
+                letter-spacing: -.02em;
+                color: var(--navy, #0B2C63);
             }
 
-            .aw-card p {
-                margin: 0 0 8px;
-                font-size: 13.5px;
+            .aw-lead {
+                margin: 0 auto 22px;
+                max-width: 46ch;
+                font-size: 15px;
                 line-height: 1.65;
                 color: var(--gray-600);
             }
 
-            .aw-meta {
-                margin-top: 22px;
+            .aw-note {
+                display: flex;
+                gap: 12px;
+                text-align: left;
+                background: #EEF4FE;
+                border-radius: 14px;
+                padding: 15px 17px;
+                margin-bottom: 26px;
+                font-size: 13.5px;
+                line-height: 1.6;
+                color: var(--navy, #0B2C63);
+            }
+
+            .aw-note svg { width: 22px; height: 22px; flex: none; color: var(--mint, #0868AD); }
+
+            /* ── The three steps ───────────────────────────────────────── */
+            .aw-steps {
+                display: grid;
+                grid-template-columns: 1fr 1fr 1fr;
+                align-items: start;
+                margin-bottom: 8px;
+            }
+
+            .aw-step { position: relative; padding: 0 6px; }
+
+            /* The joining line sits behind the dots, drawn from each step to
+               the one before it rather than as a bar underneath the lot — that
+               way it cannot end up the wrong length at a different width. */
+            .aw-step + .aw-step::before {
+                content: "";
+                position: absolute;
+                top: 23px;
+                right: 50%;
+                width: 100%;
+                height: 2px;
+                background: #DCE7F9;
+            }
+
+            .aw-dot {
+                position: relative;
+                z-index: 1;
+                width: 46px;
+                height: 46px;
+                margin: 0 auto 10px;
+                border-radius: 50%;
+                display: grid;
+                place-items: center;
+                background: #EEF4FE;
+                color: #9FB6DC;
+            }
+
+            .aw-dot svg { width: 21px; height: 21px; }
+
+            .aw-step.done .aw-dot { background: #DCEAFE; color: var(--mint, #0868AD); }
+
+            .aw-step.now .aw-dot {
+                background: #D3E4FE;
+                color: var(--mint, #0868AD);
+                box-shadow: 0 0 0 5px rgba(8, 104, 173, .12);
+            }
+
+            .aw-step b {
+                display: block;
+                font-size: 13.5px;
+                font-weight: 700;
+                color: var(--gray-500);
+            }
+
+            .aw-step.done b, .aw-step.now b { color: var(--navy, #0B2C63); }
+            .aw-step.now b { color: var(--mint, #0868AD); }
+
+            .aw-step span {
+                display: block;
+                margin-top: 3px;
+                font-size: 11.5px;
+                color: var(--gray-500);
+            }
+
+            .aw-foot {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 14px;
+                flex-wrap: wrap;
+                margin-top: 26px;
                 padding-top: 18px;
-                border-top: 1px solid var(--border);
+                border-top: 1px solid var(--gray-100);
                 font-size: 12.5px;
                 color: var(--gray-500);
+            }
+
+            .aw-foot-when { display: flex; align-items: center; gap: 8px; }
+            .aw-foot-when svg { width: 16px; height: 16px; color: var(--gray-400); }
+
+            .aw-out {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 9px 16px;
+                border: 1px solid var(--border);
+                border-radius: 10px;
+                background: var(--surface);
+                color: var(--gray-700);
+                font-size: 13px;
+                font-weight: 600;
+                text-decoration: none;
+            }
+
+            .aw-out:hover { background: var(--gray-50); }
+            .aw-out svg { width: 15px; height: 15px; }
+
+            @media (max-width: 560px) {
+                .aw-card { padding: 30px 20px 22px; }
+                .aw-card h1 { font-size: 24px; }
+                .aw-steps { grid-template-columns: 1fr; gap: 18px; }
+                .aw-step + .aw-step::before { display: none; }
             }
         </style>
     </head>
 
     <body>
+        <?php $submitted = strtotime((string)$existing['submitted_at']); ?>
         <div class="aw-card">
-            <div class="aw-ring" role="status" aria-label="Waiting for a decision"></div>
+            <div class="aw-art" aria-hidden="true">
+                <span class="aw-blob"></span>
+                <span class="aw-doc">
+                    <span class="aw-line l1"></span>
+                    <span class="aw-line l2"></span>
+                    <span class="aw-line l3"></span>
+                </span>
+                <span class="aw-ring"></span>
+                <span class="aw-tick">
+                    <svg fill="none" stroke="currentColor" stroke-width="3" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m5 13 4 4L19 7" />
+                    </svg>
+                </span>
+            </div>
+
             <h1>Waiting for verification</h1>
-            <p>
+            <p class="aw-lead">
                 Your ID and Certificate of Registration are with the site owner. They will approve or
                 reject the account, and you will be told either way.
             </p>
-            <p>You can close this page — signing in again brings you back here.</p>
-            <div class="aw-meta">
-                Submitted <?= htmlspecialchars(date('M j, Y g:i A', strtotime((string)$existing['submitted_at']))) ?>
-                &nbsp;·&nbsp; <a href="<?= url('logout') ?>" style="color:var(--mint);">Sign out</a>
+
+            <div class="aw-note">
+                <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="9" />
+                    <path stroke-linecap="round" d="M12 11v5M12 8h.01" />
+                </svg>
+                <span>
+                    You will get a notification the moment it is reviewed, and this page moves on by
+                    itself — there is no need to keep reloading it.
+                </span>
+            </div>
+
+            <?php /* Three steps, and the middle one is where this account is. The
+                     last has no date on it because it has not happened. */ ?>
+            <div class="aw-steps">
+                <div class="aw-step done">
+                    <span class="aw-dot">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round"
+                                  d="M12 16V4m0 0L8 8m4-4 4 4M5 20h14" />
+                        </svg>
+                    </span>
+                    <b>Submitted</b>
+                    <span><?= htmlspecialchars(date('M j, Y · g:i A', $submitted)) ?></span>
+                </div>
+
+                <div class="aw-step now">
+                    <span class="aw-dot">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                            <circle cx="10" cy="8" r="3.4" />
+                            <path stroke-linecap="round" d="M4 19a6 6 0 0 1 12 0" />
+                            <circle cx="18" cy="17" r="3.2" />
+                        </svg>
+                    </span>
+                    <b>Under review</b>
+                    <span>By the site owner</span>
+                </div>
+
+                <div class="aw-step">
+                    <span class="aw-dot">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                            <circle cx="12" cy="12" r="9" />
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m8.5 12 2.5 2.5 4.5-5" />
+                        </svg>
+                    </span>
+                    <b>Approved or rejected</b>
+                    <span>You will be notified</span>
+                </div>
+            </div>
+
+            <div class="aw-foot">
+                <span class="aw-foot-when">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                        <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+                        <path stroke-linecap="round" d="M8 3v4M16 3v4M3.5 10h17" />
+                    </svg>
+                    Submitted <?= htmlspecialchars(date('M j, Y · g:i A', $submitted)) ?>
+                </span>
+                <a class="aw-out" href="<?= url('logout') ?>">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                              d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V7a3 3 0 0 1 3-3h4a3 3 0 0 1 3 3v1" />
+                    </svg>
+                    Sign out
+                </a>
             </div>
         </div>
 

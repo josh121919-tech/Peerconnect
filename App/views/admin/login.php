@@ -41,6 +41,9 @@ define('ADMIN_LOCK_SECS', max(1, pc_setting_int($con, 'login_lockout_mins', 5)) 
  */
 const ADMIN_DUMMY_HASH = '$2y$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
 
+// Seconds left on a lockout, for the live countdown. 0 means none.
+$lockout_left = 0;
+
 $login_error = $_SESSION['admin_login_error'] ?? '';
 unset($_SESSION['admin_login_error']);
 
@@ -80,6 +83,9 @@ if ($is_post && isset($_POST['admin_login'])) {
     } elseif ($retry_after > 0) {
         $login_error = 'Too many failed attempts. Try again in '
             . floor($retry_after / 60) . 'm ' . ($retry_after % 60) . 's.';
+        // For the countdown below; see the member sign-in, which had the same
+        // message frozen at whatever it said when the page loaded.
+        $lockout_left = $retry_after;
     } else {
 
         if ($email === '' || $password === '') {
@@ -129,6 +135,8 @@ if ($is_post && isset($_POST['admin_login'])) {
                     $mins = max(1, (int)round(ADMIN_LOCK_SECS / 60));
                     $login_error = 'Too many failed attempts. Try again in '
                         . $mins . ' minute' . ($mins === 1 ? '' : 's') . '.';
+                    // The lockout starts now, so the whole of it is left to run.
+                    $lockout_left = (int)ADMIN_LOCK_SECS;
                 } else {
                     $login_error = 'Incorrect email or password. '
                         . $left . ' attempt' . ($left === 1 ? '' : 's') . ' left.';
@@ -663,8 +671,41 @@ $support     = defined('MAIL_FROM') && MAIL_FROM !== '' ? MAIL_FROM : '';
                                 <circle cx="12" cy="12" r="9" />
                                 <path stroke-linecap="round" d="M12 7.5v5M12 16h.01" />
                             </svg>
-                            <span><?= htmlspecialchars($login_error) ?></span>
+                            <span id="alAlertText"
+                                  <?= $lockout_left > 0 ? 'data-left="' . (int)$lockout_left . '"' : '' ?>><?= htmlspecialchars($login_error) ?></span>
                         </div>
+
+                        <?php if ($lockout_left > 0): ?>
+                            <script>
+                                /* Same countdown as the member sign-in: the figure was
+                                   written once and never moved again. The server still
+                                   decides whether the lockout is really over. */
+                                (function () {
+                                    const el = document.getElementById('alAlertText');
+                                    if (!el || !el.dataset.left) return;
+                                    let left = parseInt(el.dataset.left, 10);
+                                    if (!Number.isFinite(left) || left <= 0) return;
+
+                                    const submit = document.querySelector('form button[type="submit"]');
+                                    if (submit) submit.disabled = true;
+
+                                    const paint = () => {
+                                        if (left <= 0) {
+                                            el.textContent = 'You can try again now.';
+                                            if (submit) submit.disabled = false;
+                                            return;
+                                        }
+                                        const m = Math.floor(left / 60);
+                                        const s = left % 60;
+                                        el.textContent = 'Too many failed attempts. Try again in '
+                                            + m + 'm ' + String(s).padStart(2, '0') + 's.';
+                                        left--;
+                                        setTimeout(paint, 1000);
+                                    };
+                                    paint();
+                                })();
+                            </script>
+                        <?php endif; ?>
                     <?php endif; ?>
 
                     <form method="post" novalidate>
