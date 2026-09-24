@@ -42,6 +42,15 @@ $um_ui_done = true;
     .um-vdoc-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .um-vdoc-cap { display: flex; align-items: center; gap: 7px; padding: 8px 11px; font-size: 12.5px; font-weight: 600; }
     .um-vdoc-cap svg { width: 14px; height: 14px; flex: none; color: var(--gray-400); }
+    /* A PDF has no thumbnail to show, so it says what it is rather than
+       failing to load and claiming the file is gone. */
+    .um-vdoc-pdf {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 6px; height: 104px; padding: 0 12px; font-size: 11.5px; font-weight: 600;
+        color: var(--gray-500); text-align: center; background: var(--gray-100, #F3F4F6);
+    }
+    .um-vdoc-pdf svg { color: var(--danger, #C0392B); }
+
     /* The row still exists if the file is gone from disk; say so instead of
        showing a silently broken image. */
     .um-vdoc-missing {
@@ -58,6 +67,10 @@ $um_ui_done = true;
         background: rgba(9, 22, 38, .82);
     }
     .um-lb img { max-width: min(1100px, 92vw); max-height: 76vh; border-radius: 12px; background: #fff; }
+    .um-lb iframe {
+        width: min(1100px, 92vw); height: 76vh; border: 0; border-radius: 12px; background: #fff;
+    }
+    .um-lb [hidden] { display: none; }
     .um-lb-bar { display: flex; align-items: center; gap: 10px; color: #fff; font-size: 13.5px; }
     .um-lb-bar b { font-weight: 600; }
     .um-lb-bar a, .um-lb-bar button {
@@ -175,6 +188,8 @@ $um_ui_done = true;
 
 <div class="um-lb" id="umLightbox" hidden>
     <img id="umLightboxImg" src="" alt="">
+    <?php // For a PDF. Only one of the two is ever shown; umDoc() picks. ?>
+    <iframe id="umLightboxPdf" title="Document" hidden></iframe>
     <div class="um-lb-bar">
         <b id="umLightboxCap"></b>
         <a id="umLightboxOpen" href="#" target="_blank" rel="noopener">Open original</a>
@@ -216,17 +231,35 @@ $um_ui_done = true;
     }
 
     // Document viewer.
+    /* A PDF goes in an <iframe>; anything else is an image. Both used to go
+       in the <img>, which meant a COR uploaded as a PDF opened as a broken
+       picture — the reviewer had no way to read the document they were being
+       asked to decide on. */
     function umDoc(src, caption) {
-        const img = document.getElementById('umLightboxImg');
-        img.src = src;
-        img.alt = caption;
+        const isPdf = /\.pdf(\?|#|$)/i.test(src);
+        const img   = document.getElementById('umLightboxImg');
+        const frame = document.getElementById('umLightboxPdf');
+
+        img.hidden   = isPdf;
+        frame.hidden = !isPdf;
+        if (isPdf) {
+            frame.src = src;
+            img.removeAttribute('src');
+        } else {
+            img.src = src;
+            img.alt = caption;
+            frame.removeAttribute('src');
+        }
+
         document.getElementById('umLightboxCap').textContent = caption;
         document.getElementById('umLightboxOpen').href = src;
         document.getElementById('umLightbox').hidden = false;
     }
     function umDocClose() {
         document.getElementById('umLightbox').hidden = true;
-        document.getElementById('umLightboxImg').src = '';
+        document.getElementById('umLightboxImg').removeAttribute('src');
+        /* Cleared too, or the PDF keeps rendering behind the closed overlay. */
+        document.getElementById('umLightboxPdf').removeAttribute('src');
     }
     document.getElementById('umLightbox').addEventListener('click', e => {
         if (e.target.id === 'umLightbox') umDocClose();
