@@ -45,6 +45,12 @@ if (!function_exists('pc_setting_defaults')) {
             'notify_new_login'     => '0',
 
             /* ── Email & notifications ── */
+            // Where the alerts that need a person go: a new administrator
+            // waiting for review, and a change to the site's identity. One
+            // address, not every administrator — an alert that goes to
+            // everybody is an alert nobody owns. A setting rather than a
+            // constant so it can be handed over without a deploy.
+            'owner_email'          => 'Peerconnect.neust@gmail.com',
             'email_enable'         => '1',   // NotificationService dispatch
             'email_on_registration' => '1',
             'email_on_booking'     => '1',
@@ -167,8 +173,18 @@ if (!function_exists('pc_maintenance_gate')) {
         if (!pc_setting_bool($con, 'maintenance_mode')) return;
         if (($_SESSION['role'] ?? '') === 'admin') return;
 
+        /*
+         * What stays open while the site is down, and nothing else.
+         *
+         * The landing page, the member sign-in and the Google callback used to
+         * be open too, so anyone with the address could read the site and sign
+         * in during maintenance — which is the opposite of what turning it on
+         * is for. An administrator still needs a way back in, so their own
+         * sign-in stays, and so does logout: leaving someone unable to end
+         * their session would be its own trap.
+         */
         $path = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?: '';
-        foreach (['login', 'admin-login', 'logout', 'google-login', 'welcomepage'] as $open) {
+        foreach (['admin-login', 'logout'] as $open) {
             if ($path === url($open)) return;
         }
 
@@ -189,7 +205,8 @@ if (!function_exists('pc_maintenance_gate')) {
            . 'font-size:13px;font-weight:600;color:#087FC1;text-decoration:none}</style></head><body><div class="c">'
            . '<h1>' . htmlspecialchars($name) . ' is under maintenance</h1>'
            . '<p>' . nl2br(htmlspecialchars($msg)) . '</p>'
-           . '<a href="' . url('login') . '">Sign in</a>'
+           // No sign-in link: the member one now shows this same page, and the
+           // administrator one does not belong on a page anybody can reach.
            . '</div></body></html>';
         exit;
     }

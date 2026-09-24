@@ -16,6 +16,7 @@ include __DIR__ . '/../db.php';
 require_once __DIR__ . '/../includes/security.php';
 require_once __DIR__ . '/../includes/settings_store.php';
 require_once __DIR__ . '/../../services/EmailService.php';
+require_once __DIR__ . '/../../services/AdminAlertService.php';
 
 require_admin();
 require_post();
@@ -148,6 +149,66 @@ function ast_log(array $before, array $pairs, string $what): void
     }
 }
 
+/**
+ * Emails every administrator when the site's identity changes.
+ *
+ * The name, the logo and the favicon are what everybody sees and what a
+ * phisher would want to change; they are also the settings least likely to be
+ * noticed by whoever did not make the change. The audit log has always
+ * recorded them, but nobody reads an audit log unprompted.
+ *
+ * Only these three, and only when the value really changed — saving the
+ * General tab without touching the name must not send anybody anything. The
+ * administrator who made the change is left out: they know.
+ */
+function ast_brand_alert(mysqli $con, array $before, array $pairs, int $actorId): void
+{
+    $watched = [
+        'platform_name' => 'Platform name',
+        'brand_logo'    => 'Logo',
+        'brand_favicon' => 'Favicon',
+    ];
+
+    $lines = [];
+    foreach ($watched as $key => $label) {
+        if (!array_key_exists($key, $pairs)) {
+            continue;
+        }
+        $was = (string)($before[$key] ?? '');
+        $now = (string)$pairs[$key];
+        if ($was === $now) {
+            continue;
+        }
+        // A file setting holds a path nobody needs to read; say what happened
+        // to it instead. The name is short enough to quote.
+        $lines[] = $key === 'platform_name'
+            ? $label . ': "' . ($was !== '' ? $was : '(none)') . '" is now "' . $now . '"'
+            : $label . ': ' . ($now === '' ? 'removed, the built-in mark is used again' : 'replaced with a new file');
+    }
+
+    if (!$lines) {
+        return;
+    }
+
+    $who = pc_user_name($con, $actorId) ?: 'An administrator';
+
+    try {
+        AdminAlertService::send(
+            $con,
+            'The site identity was changed — ' . pc_setting($con, 'platform_name'),
+            'A change was made to the site identity',
+            $who . ' changed the following just now:' . "\n\n" . implode("\n", $lines) . "\n\n"
+                . 'If this was not expected, open Settings and check who has administrator access.',
+            pc_site_url(ltrim(url('admin-settings'), '/')),
+            'Open Settings',
+            $actorId
+        );
+    } catch (Throwable $e) {
+        // A settings save must not fail because the mail server is down.
+        error_log('ast_brand_alert: ' . $e->getMessage());
+    }
+}
+
 // Read before any save below overwrites it, so each log entry can say what changed.
 $before = pc_settings($con);
 
@@ -179,6 +240,7 @@ switch ($section) {
         ];
         pc_setting_save($con, $pairs, $me);
         ast_log($before, $pairs, 'platform details');
+        ast_brand_alert($con, $before, $pairs, $me);
         pc_flash('success', 'Platform details saved.', 'Settings updated');
         break;
     }
@@ -349,6 +411,7 @@ switch ($section) {
         if (!empty($_POST['remove'])) {
             pc_setting_save($con, [$key => ''], $me);
             ast_log($before, [$key => ''], 'appearance');
+            ast_brand_alert($con, $before, [$key => ''], $me);
             pc_flash('success', $label . ' removed. The built-in mark is used again.', 'Appearance updated');
             break;
         }
@@ -370,6 +433,7 @@ switch ($section) {
         }
         pc_setting_save($con, [$key => $path], $me);
         ast_log($before, [$key => $path], 'appearance');
+        ast_brand_alert($con, $before, [$key => $path], $me);
         pc_flash('success', $label . ' updated.', 'Appearance updated');
         break;
     }

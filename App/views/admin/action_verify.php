@@ -47,17 +47,30 @@ if (VerificationRepository::decide($con, $vid, $status, $notes) < 1) {
 $uid = VerificationRepository::ownerOf($con, $vid);
 
 if ($uid !== null) {
-    // Each role applies on its own page, so each is sent back to its own.
-    $isMentor = UserRepository::role($con, $uid) === 'mentor';
+    /*
+     * Each role applies on its own page and goes back to its own. This used to
+     * be a two-way choice on "is it a mentor", which sent an approved
+     * administrator to the mentee dashboard and a rejected one to the mentee
+     * form — neither of which they can open.
+     */
+    $applicantRole = (string)UserRepository::role($con, $uid);
+    $home = [
+        'mentor' => 'mentor-dashboard',
+        'admin'  => 'admin-dashboard',
+    ][$applicantRole] ?? 'mentee-dashboard';
+    $form = [
+        'mentor' => 'mentor-verification',
+        'admin'  => 'admin-verification',
+    ][$applicantRole] ?? 'mentee-verification';
 
     if ($action === 'approve') {
         // Verified, and nothing else: an approval does not lift a block or a
         // restriction the account is under.
         UserRepository::markVerified($con, $uid);
 
-        NotificationService::verificationApproved($con, $uid, url($isMentor ? 'mentor-dashboard' : 'mentee-dashboard'));
+        NotificationService::verificationApproved($con, $uid, url($home));
     } else {
-        NotificationService::verificationRejected($con, $uid, $notes, url($isMentor ? 'mentor-verification' : 'mentee-verification'));
+        NotificationService::verificationRejected($con, $uid, $notes, url($form));
     }
 
     pc_admin_log(($action === 'approve' ? 'approved' : 'rejected') . ' the verification of ' . pc_user_name($con, $uid));

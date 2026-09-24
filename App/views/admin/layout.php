@@ -304,32 +304,17 @@ if (empty($current_page)) {
         $adm_me_ini = strtoupper(substr($adm_me_name, 0, 1)) ?: 'A';
         $adm_me_pic = $adm_me['profile_image'] ?? '';
         ?>
-        <div class="px-2 sidebar-foot pt-3 mt-2 relative">
-            <button onclick="toggleProfileMenu()" class="sidebar-link w-full" type="button">
-                <div class="adm-who-av" style="width:28px;height:28px;font-size:11px;">
-                    <?php if ($adm_me_pic): ?><img src="<?= htmlspecialchars($adm_me_pic) ?>" alt=""><?php else: ?><?= htmlspecialchars($adm_me_ini) ?><?php endif; ?>
-                </div>
-                <span class="menu-label truncate" style="font-size:13px;"><?= htmlspecialchars($adm_me_name) ?></span>
-            </button>
-            <div id="profileMenu">
-                <div class="flex items-center gap-3 mb-3">
-                    <div class="adm-who-av">
-                        <?php if ($adm_me_pic): ?><img src="<?= htmlspecialchars($adm_me_pic) ?>" alt=""><?php else: ?><?= htmlspecialchars($adm_me_ini) ?><?php endif; ?>
-                    </div>
-                    <div class="min-w-0">
-                        <p class="text-sm font-semibold text-gray-800 truncate"><?= htmlspecialchars($adm_me_name) ?></p>
-                        <p class="text-xs text-gray-400 truncate"><?= htmlspecialchars($adm_me_mail ?: 'System Administrator') ?></p>
-                    </div>
-                </div>
-                <hr class="mb-3">
-                <a href="<?= url('logout') ?>" class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 text-sm text-red-500">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                    </svg>
-                    Log out
-                </a>
-            </div>
-        </div>
+        <?php
+        /*
+         * The rail used to end with the same person the topbar chip already
+         * names, opening the same menu — two controls for one thing, one of
+         * them a second copy of the signed-in admin's name and face.
+         *
+         * Only the button is gone. #profileMenu moved to the topbar with the
+         * chip that opens it: it is what holds Log out, and deleting it here
+         * would have left that chip opening nothing.
+         */
+        ?>
     </aside>
 
     <!-- MAIN WRAPPER -->
@@ -486,18 +471,47 @@ if (empty($current_page)) {
                 <?php // The reference's profile chip. It opens the same menu the
                 //     rail footer does, so there is one place to sign out. 
                 ?>
-                <button type="button" class="adm-who" onclick="toggleProfileMenu()" aria-haspopup="true">
-                    <span class="adm-who-av">
-                        <?php if ($adm_me_pic): ?><img src="<?= htmlspecialchars($adm_me_pic) ?>" alt=""><?php else: ?><?= htmlspecialchars($adm_me_ini) ?><?php endif; ?>
-                    </span>
-                    <span class="adm-who-txt text-left">
-                        <span class="adm-who-n block"><?= htmlspecialchars($adm_me_name) ?></span>
-                        <span class="adm-who-r block">System Administrator</span>
-                    </span>
-                    <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6" />
-                    </svg>
-                </button>
+                <div class="adm-who-wrap">
+                    <button type="button" class="adm-who" onclick="toggleProfileMenu()" aria-haspopup="true">
+                        <span class="adm-who-av">
+                            <?php if ($adm_me_pic): ?><img src="<?= htmlspecialchars($adm_me_pic) ?>" alt=""><?php else: ?><?= htmlspecialchars($adm_me_ini) ?><?php endif; ?>
+                        </span>
+                        <span class="adm-who-txt text-left">
+                            <span class="adm-who-n block"><?= htmlspecialchars($adm_me_name) ?></span>
+                            <span class="adm-who-r block">System Administrator</span>
+                        </span>
+                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m6 9 6 6 6-6" />
+                        </svg>
+                    </button>
+
+                    <div id="profileMenu">
+                        <div class="flex items-center gap-3 mb-3">
+                            <div class="adm-who-av">
+                                <?php if ($adm_me_pic): ?><img src="<?= htmlspecialchars($adm_me_pic) ?>" alt=""><?php else: ?><?= htmlspecialchars($adm_me_ini) ?><?php endif; ?>
+                            </div>
+                            <div class="min-w-0">
+                                <p class="text-sm font-semibold text-gray-800 truncate"><?= htmlspecialchars($adm_me_name) ?></p>
+                                <p class="text-xs text-gray-400 truncate"><?= htmlspecialchars($adm_me_mail ?: 'System Administrator') ?></p>
+                            </div>
+                        </div>
+                        <hr class="mb-3">
+                        <?php // The profile is reachable from here and nowhere else:
+                              // the rail is for running the site, not for your own account. ?>
+                        <a href="<?= url('admin-profile') ?>" class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 text-sm text-gray-700">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 1 1-7.5 0 3.75 3.75 0 0 1 7.5 0ZM4.5 20.25a7.5 7.5 0 0 1 15 0" />
+                            </svg>
+                            My profile
+                        </a>
+                        <a href="<?= url('logout') ?>" class="flex items-center gap-2 p-2 rounded-lg hover:bg-gray-50 text-sm text-red-500">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                            </svg>
+                            Log out
+                        </a>
+                    </div>
+                </div>
             </div>
         </header>
 

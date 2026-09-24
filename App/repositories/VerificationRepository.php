@@ -14,6 +14,13 @@ class VerificationRepository extends Repository
      * The member's application (every column), or null when they have not
      * applied. Values come back as strings, as the application pages read them.
      */
+    /** One application by its id, whoever it belongs to. */
+    public static function byId(mysqli $con, int $verificationId): ?array
+    {
+        return self::row($con, "SELECT * FROM user_verifications WHERE verification_id = ? LIMIT 1",
+            'i', [$verificationId]);
+    }
+
     public static function forUser(mysqli $con, int $userId): ?array
     {
         return self::row($con, "

@@ -374,26 +374,28 @@ class FeedbackRepository extends Repository
         $sql = $asMentor
             ? "SELECT f.feedback_id, f.mentee_id, f.rating, f.comment, f.created_at,
                       f.communication, f.knowledge, f.efficiency, f.skill,
-                      u.firstname, u.lastname,
+                      u.firstname, u.lastname, p.profile_image,
                       sr.subject      AS s_subject,
                       sr.session_date AS s_date,
                       a.duration      AS s_duration,
                       a.session_type  AS s_type
                FROM feedback f
-               JOIN users u ON u.user_id = f.mentee_id
+               JOIN users u        ON u.user_id = f.mentee_id
+               LEFT JOIN profile p ON p.user_id = u.user_id
                LEFT JOIN session_requests sr ON sr.request_id = f.session_id
                " . self::SLOT_JOIN . "
                WHERE f.mentor_id = ?
                ORDER BY f.created_at DESC"
             : "SELECT mr.review_id, mr.mentor_id, mr.rating, mr.comment, mr.created_at,
                       mr.preparedness, mr.participation, mr.communication, mr.receptiveness,
-                      u.firstname, u.lastname,
+                      u.firstname, u.lastname, p.profile_image,
                       sr.subject      AS s_subject,
                       sr.session_date AS s_date,
                       a.duration      AS s_duration,
                       a.session_type  AS s_type
                FROM mentee_reviews mr
-               JOIN users u ON u.user_id = mr.mentor_id
+               JOIN users u        ON u.user_id = mr.mentor_id
+               LEFT JOIN profile p ON p.user_id = u.user_id
                LEFT JOIN session_requests sr ON sr.request_id = mr.session_id
                " . self::SLOT_JOIN . "
                WHERE mr.mentee_id = ?

@@ -173,6 +173,25 @@ return [
 
     // Admin login (separate from main portal)
     'admin-login'             => 'App/views/admin/login.php',
+    // Where a new administrator proves who they are, and waits.
+    'admin-verification'      => 'App/views/admin/verification.php',
+    'admin-check-status'      => 'App/views/admin/check_status.php',
+    /*
+     * Reviewing an administrator application from the owner's inbox. These
+     * take no session: the signature in the address is the authorisation, and
+     * it is good for one application until that application is decided. See
+     * AdminReviewLink. The decision is a POST to admin-review-act, never a GET,
+     * because mail scanners fetch the links in a message.
+     */
+    'admin-review'            => 'App/views/admin/review.php',
+    'admin-review-act'        => 'App/views/admin/review_act.php',
+    'admin-review-file'       => 'App/views/admin/review_file.php',
+    // Not in any menu. The way back in if an alert is lost or a link expires.
+    'admin-applications'      => 'App/views/admin/applications.php',
+    // An administrator's own profile, and the one thing on it they can change
+    // that had no endpoint of its own.
+    'admin-profile'           => 'App/views/admin/profile.php',
+    'admin-update-photo'      => 'App/views/admin/update_photo.php',
     'admin-signup'            => 'App/views/admin/signup.php',
 
     // Admin sessions — the list, the calendar and the reports are three views

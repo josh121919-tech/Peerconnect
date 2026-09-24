@@ -31,7 +31,9 @@ class AdminUserRepository extends Repository
                    COALESCE(SUM(created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01') AND role = 'mentee'), 0) AS joined_mentee,
                    COALESCE(SUM(created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01') AND role = 'mentor'), 0) AS joined_mentor,
                    COALESCE(SUM(created_at >= DATE_FORMAT(CURDATE(), '%Y-%m-01') AND role = 'admin'), 0)  AS joined_admin,
-                   (SELECT COUNT(*) FROM user_verifications WHERE status = 'pending')                    AS pending,
+                   (SELECT COUNT(*) FROM user_verifications v2
+                     JOIN users u2 ON u2.user_id = v2.user_id
+                    WHERE v2.status = 'pending' AND u2.role <> 'admin')                                   AS pending,
                    (SELECT COUNT(*) FROM reports WHERE status IN ('pending','urgent'))                   AS reported
             FROM users
         ");
@@ -162,7 +164,15 @@ class AdminUserRepository extends Repository
         ";
     }
 
-    /** Applications waiting for review, oldest first, with the applicant's name, role, email and photo. */
+    /**
+     * Applications waiting for review, oldest first, with the applicant's
+     * name, role, email and photo.
+     *
+     * Members only. An administrator's application is reviewed by the owner
+     * from their email, not from this screen, so listing it here would put a
+     * second way to grant administrator access in front of every
+     * administrator. adminVerificationQueue() below is the one place it shows.
+     */
     public static function verificationQueue(mysqli $con): array
     {
         return self::rows($con, "
@@ -170,7 +180,48 @@ class AdminUserRepository extends Repository
             FROM user_verifications v
             JOIN users u        ON u.user_id = v.user_id
             LEFT JOIN profile p ON p.user_id = u.user_id
-            WHERE v.status = 'pending'
+            WHERE v.status = 'pending' AND u.role <> 'admin'
+            ORDER BY v.submitted_at ASC
+        ");
+    }
+
+    /**
+     * The figures on an administrator's own profile. Counts, all of them —
+     * nothing here is a trend or an estimate, because nothing in the schema
+     * records what these were last month.
+     */
+    public static function profileFigures(mysqli $con): array
+    {
+        $row = self::row($con, "
+            SELECT
+                (SELECT COUNT(*) FROM users WHERE role IN ('mentor','mentee'))        AS members,
+                (SELECT COUNT(*) FROM session_requests)                               AS sessions,
+                (SELECT COUNT(*) FROM reports WHERE status IN ('pending','urgent'))   AS reports
+        ") ?: [];
+
+        return [
+            'members'     => (int)($row['members'] ?? 0),
+            'sessions'    => (int)($row['sessions'] ?? 0),
+            'reports'     => (int)($row['reports'] ?? 0),
+            'maintenance' => pc_setting_bool($con, 'maintenance_mode'),
+        ];
+    }
+
+    /**
+     * Administrator applications waiting for review.
+     *
+     * Not shown in User Management. This is read by the fallback page, which
+     * is reachable only by typing its address — insurance for the day an
+     * alert is lost or a signed link has expired, without putting the control
+     * back on a screen every administrator can open.
+     */
+    public static function adminVerificationQueue(mysqli $con): array
+    {
+        return self::rows($con, "
+            SELECT v.*, u.firstname, u.lastname, u.role, u.email
+            FROM user_verifications v
+            JOIN users u ON u.user_id = v.user_id
+            WHERE v.status = 'pending' AND u.role = 'admin'
             ORDER BY v.submitted_at ASC
         ");
     }
@@ -182,7 +233,9 @@ class AdminUserRepository extends Repository
     public static function queueCounts(mysqli $con): array
     {
         $row = self::row($con, "
-            SELECT (SELECT COUNT(*) FROM user_verifications WHERE status = 'pending')     AS verifications,
+            SELECT (SELECT COUNT(*) FROM user_verifications v2
+                      JOIN users u2 ON u2.user_id = v2.user_id
+                     WHERE v2.status = 'pending' AND u2.role <> 'admin')          AS verifications,
                    (SELECT COUNT(*) FROM reports WHERE status IN ('pending','urgent'))    AS reports
         ");
         return ['verifications' => (int)$row['verifications'], 'reports' => (int)$row['reports']];

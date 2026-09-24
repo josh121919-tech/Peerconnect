@@ -310,7 +310,7 @@ $messagesUrl = url('messages');
                         <?php foreach ($rows as $r):
                             $rating = (float)$r['rating'];
                             $name   = trim($r['firstname'] . ' ' . $r['lastname']);
-                            $ini    = strtoupper(substr($r['firstname'], 0, 1) . substr($r['lastname'], 0, 1));
+                            $ini    = pc_avatar($r['profile_image'] ?? '', $name);
                             [$avBg, $avFg] = fbk_avatar_tint((int)$r['mentee_id']);
                             $ts = strtotime((string)$r['created_at']);
 
@@ -329,7 +329,7 @@ $messagesUrl = url('messages');
                                 data-score="<?= $rating ?>"
                                 data-time="<?= $ts ?: 0 ?>">
                                 <div class="fbk-rev-hd">
-                                    <div class="fbk-av" style="background:<?= $avBg ?>;color:<?= $avFg ?>;"><?= htmlspecialchars($ini) ?></div>
+                                    <div class="fbk-av" style="background:<?= $avBg ?>;color:<?= $avFg ?>;"><?= $ini ?></div>
                                     <div class="fbk-who">
                                         <p class="fbk-who-n"><?= htmlspecialchars($name) ?></p>
                                         <p class="fbk-who-d"><?= $ts ? date('F j, Y \a\t g:i A', $ts) : '' ?></p>

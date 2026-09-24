@@ -1360,6 +1360,15 @@
             right: 16px;
         }
 
+        /*
+         * A card that sits on the page rather than a strip ruled off from it:
+         * rounded across the top, lifted on a soft shadow instead of a hard
+         * border, and padded past the home indicator on phones that have one.
+         *
+         * height is auto so that safe-area padding adds to the bar instead of
+         * eating into the row the links live in; min-height keeps the 68px it
+         * had. .main's bottom padding grows by the same inset below.
+         */
         #sidebar {
             position: fixed;
             left: 0;
@@ -1368,10 +1377,13 @@
             top: auto;
             width: 100% !important;
             min-width: 0 !important;
-            height: 68px;
-            padding: 6px 10px;
+            height: auto;
+            min-height: 68px;
+            padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px));
             border-right: 0;
-            border-top: 1px solid var(--border);
+            border-top: 1px solid rgba(194, 197, 202, .55);
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -8px 28px -16px rgba(16, 24, 40, .45);
             flex-direction: row;
             background: rgba(255, 255, 255, .97);
             backdrop-filter: blur(14px);
@@ -1387,9 +1399,27 @@
             color: var(--gray-500);
         }
 
+        /*
+         * Marked by colour and a short rule under the label, not by a filled
+         * pill. At 10px type inside a 52px target the pill was most of the
+         * slot, so five of them read as five buttons rather than one place you
+         * are and four you could go.
+         */
         .sb-link.active {
-            background: var(--mint-faint);
-            color: var(--forest);
+            background: transparent;
+            color: var(--mint);
+        }
+
+        .sb-link.active::after {
+            content: "";
+            position: absolute;
+            bottom: 2px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 18px;
+            height: 2.5px;
+            border-radius: 2px;
+            background: var(--mint);
         }
 
         .sb-nav {
@@ -1398,13 +1428,32 @@
         }
 
         .sb-link {
+            position: relative;   /* the active rule below is positioned to this */
             min-height: 52px;
             flex-direction: column;
             gap: 3px;
             font-size: 10px;
+            font-weight: 500;
             justify-content: center;
             align-items: center;
-            padding: 0;
+            padding: 0 0 4px;
+        }
+
+        /*
+         * The 960px rule collapses the rail to icons and hides every label
+         * with !important. That is right for a narrow rail and wrong here:
+         * this is a tab bar, and without its words it is five unlabelled
+         * glyphs — which is what it had been all along. !important to answer
+         * !important; the rest is just making 10px type sit properly under an
+         * icon.
+         */
+        .sb-link .menu-label {
+            display: block !important;
+            line-height: 1.1;
+            max-width: 100%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
         .sb-link svg {
@@ -1452,7 +1501,8 @@
         .app:has(#sidebar) .main {
             grid-column: 1;
             grid-row: 2;
-            padding: 22px 16px 96px;
+            /* The bar grew by the safe-area inset, so this clears by the same. */
+            padding: 22px 16px calc(96px + env(safe-area-inset-bottom, 0px));
             overflow: visible;
         }
 

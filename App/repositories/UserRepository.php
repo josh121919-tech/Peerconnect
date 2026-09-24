@@ -356,10 +356,60 @@ class UserRepository extends Repository
             'sssss', [$firstname, $middlename, $lastname, $role, $email]);
     }
 
-    /** A new admin account, active and verified. Returns its id. */
+    /** Username and join date, for an account looking at its own profile. */
+    public static function accountRow(mysqli $con, int $userId): ?array
+    {
+        return self::row($con, "
+            SELECT username, email, role, created_at
+            FROM users WHERE user_id = ? LIMIT 1
+        ", 'i', [$userId]);
+    }
+
+    /** One account's email address, or null when there is no such account. */
+    public static function emailOf(mysqli $con, int $userId): ?string
+    {
+        $v = self::value($con, "SELECT email FROM users WHERE user_id = ? LIMIT 1", 'i', [$userId]);
+        return $v === null ? null : (string)$v;
+    }
+
+    /**
+     * Administrators who can be written to and who are entitled to review:
+     * active, verified, with an address. A pending admin is not one of these.
+     */
+    public static function activeAdmins(mysqli $con): array
+    {
+        return self::rows($con, "
+            SELECT user_id, firstname, lastname, email
+            FROM users
+            WHERE role = 'admin' AND status = 'active' AND verified = 1
+              AND email IS NOT NULL AND email <> ''
+            ORDER BY user_id ASC
+        ");
+    }
+
+    /** How many administrators are in a position to approve somebody. */
+    public static function countActiveAdmins(mysqli $con): int
+    {
+        return (int)self::value($con, "
+            SELECT COUNT(*) FROM users
+            WHERE role = 'admin' AND status = 'active' AND verified = 1
+        ");
+    }
+
+    /**
+     * A new administrator, pending until one of the existing ones approves
+     * them.
+     *
+     * verified used to be 1 here, so an admin key and an emailed code were the
+     * whole of becoming an administrator. They now submit the same identity
+     * documents a mentor does and wait, which is the point of the review.
+     *
+     * The caller is responsible for the one case this cannot cover: an
+     * installation with nobody to do the approving. See admin/signup.php.
+     */
     public static function createAdmin(mysqli $con, string $firstname, string $lastname, string $username, string $email): int
     {
-        return self::insert($con, "INSERT INTO users (firstname, lastname, username, role, status, verified, email) VALUES (?, ?, ?, 'admin', 'active', 1, ?)",
+        return self::insert($con, "INSERT INTO users (firstname, lastname, username, role, status, verified, email) VALUES (?, ?, ?, 'admin', 'active', 0, ?)",
             'ssss', [$firstname, $lastname, $username, $email]);
     }
 

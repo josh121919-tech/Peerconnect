@@ -176,6 +176,13 @@ if ($account !== null) {
         redirect_with_error('That Google account is not an administrator.', 'login', true);
     }
 
+    // And the same in reverse, which was missing: an administrator arriving
+    // through the member door was signed in and forwarded to the admin
+    // dashboard. Google proves who they are, not which door they may use.
+    if (!$cameFromAdmin && ($refusal = SignInService::memberDoorRefusal($existingRole)) !== null) {
+        redirect_with_error($refusal, 'login');
+    }
+
     // SECURITY: Regenerate session ID after login to prevent session fixation
     session_regenerate_id(true);
 

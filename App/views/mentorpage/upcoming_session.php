@@ -226,6 +226,8 @@ $rows_us = array_values($rows_us);
             $statusClass_us = $statusLabel_us === 'Unfinished' ? 'badge-orange' : 'badge-approved';
 
             mp_session_card([
+                // As in Ongoing: a group card is not one person's face.
+                'avatar'   => $isGroupCard_us ? '' : ($r['profile_image'] ?? ''),
                 'initials' => $isGroupCard_us
                     ? strtoupper(substr((string)($r['subject'] ?: 'G'), 0, 2))
                     : strtoupper(substr($r['firstname'], 0, 1) . substr($r['lastname'], 0, 1)),

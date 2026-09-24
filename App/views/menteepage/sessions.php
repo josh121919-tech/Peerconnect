@@ -764,7 +764,7 @@ function ss_badge_class(string $status): string
                             <?php foreach ($upcoming_list as $s):
                                 $sid = (int)$s['request_id'];
                                 $name = trim($s['firstname'] . ' ' . $s['lastname']);
-                                $ini = strtoupper(substr($s['firstname'], 0, 1));
+                                $av  = pc_avatar($s['profile_image'] ?? '', $name, 1);
                                 $sessionDT = new DateTime($s['session_date'], $appTz);
                                 $dayLabel = $sessionDT->format('Y-m-d') === $now->format('Y-m-d') ? 'Today'
                                     : ($sessionDT->format('Y-m-d') === (clone $now)->modify('+1 day')->format('Y-m-d') ? 'Tomorrow' : $sessionDT->format('D'));
@@ -780,7 +780,7 @@ function ss_badge_class(string $status): string
                                         <div class="ss-date-sub"><?= $sessionDT->format('M j') ?></div>
                                         <div class="ss-date-sub"><?= $sessionDT->format('g:i A') ?></div>
                                     </div>
-                                    <div class="pc-avatar pc-avatar-md" style="flex-shrink:0;"><?= htmlspecialchars($ini) ?></div>
+                                    <div class="pc-avatar pc-avatar-md" style="flex-shrink:0;"><?= $av ?></div>
                                     <div class="ss-session-info">
                                         <div class="ss-session-title"><?= htmlspecialchars($s['subject'] ?: 'General Mentorship') ?></div>
                                         <div class="ss-session-with">with <?= htmlspecialchars($name) ?> <span class="ss-mentor-pill">Mentor</span></div>
@@ -835,7 +835,7 @@ function ss_badge_class(string $status): string
                             <?php foreach ($past_list as $s):
                                 $sid = (int)$s['request_id'];
                                 $name = trim($s['firstname'] . ' ' . $s['lastname']);
-                                $ini = strtoupper(substr($s['firstname'], 0, 1));
+                                $av  = pc_avatar($s['profile_image'] ?? '', $name, 1);
                                 $sessionDT = new DateTime($s['session_date'], $appTz);
                             ?>
                                 <div class="ss-session-row">
@@ -844,7 +844,7 @@ function ss_badge_class(string $status): string
                                         <div class="ss-date-sub"><?= $sessionDT->format('Y') ?></div>
                                         <div class="ss-date-sub"><?= $sessionDT->format('g:i A') ?></div>
                                     </div>
-                                    <div class="pc-avatar pc-avatar-md" style="flex-shrink:0;"><?= htmlspecialchars($ini) ?></div>
+                                    <div class="pc-avatar pc-avatar-md" style="flex-shrink:0;"><?= $av ?></div>
                                     <div class="ss-session-info">
                                         <div class="ss-session-title"><?= htmlspecialchars($s['subject'] ?: 'General Mentorship') ?></div>
                                         <div class="ss-session-with">with <?= htmlspecialchars($name) ?> <span class="ss-mentor-pill">Mentor</span></div>
@@ -995,7 +995,7 @@ function ss_badge_class(string $status): string
                             ?>
                                 <div class="sh-card">
                                     <div class="sh-card-top">
-                                        <span class="sh-av"><?= strtoupper(substr($s['firstname'], 0, 1)) ?></span>
+                                        <span class="sh-av"><?= pc_avatar($s['profile_image'] ?? '', trim($s['firstname'] . ' ' . $s['lastname']), 1) ?></span>
                                         <div class="sh-who">
                                             <div class="sh-name">
                                                 <?= htmlspecialchars($s['firstname'] . ' ' . $s['lastname']) ?>

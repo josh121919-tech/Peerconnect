@@ -57,6 +57,16 @@ class ProfileRepository extends Repository
     // ── Saving ──────────────────────────────────────────────────────────────
 
     /** Saves the About text, creating the profile row if there is none. */
+    /**
+     * Just the picture. The member pages change it inside a much larger save
+     * of the whole profile; an administrator has no such form, and rewriting
+     * their other columns to set one would be a good way to blank them.
+     */
+    public static function savePhoto(mysqli $con, int $userId, string $path): void
+    {
+        self::execute($con, "UPDATE profile SET profile_image = ? WHERE user_id = ?", 'si', [$path, $userId]);
+    }
+
     public static function saveBio(mysqli $con, int $userId, string $bio): void
     {
         self::execute($con, "

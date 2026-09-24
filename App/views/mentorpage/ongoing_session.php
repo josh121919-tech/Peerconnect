@@ -188,6 +188,9 @@ $rows_og = array_values($rows_og);
             }
 
             mp_session_card([
+                // A group card stands for several people, so it keeps its
+                // subject initials; a one-to-one card is one person.
+                'avatar'   => $isGroupCard_og ? '' : ($r['profile_image'] ?? ''),
                 'initials' => $isGroupCard_og
                     ? strtoupper(substr((string)($r['subject'] ?: 'G'), 0, 2))
                     : strtoupper(substr($r['firstname'], 0, 1) . substr($r['lastname'], 0, 1)),

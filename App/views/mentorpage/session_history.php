@@ -199,6 +199,7 @@ $lapsed_hs = ($page_hist === 1 && in_array($filter_hs, ['all', 'cancelled'], tru
 
             mp_session_card([
                 'initials' => strtoupper(substr($r['firstname'], 0, 1) . substr($r['lastname'], 0, 1)),
+                'avatar'   => $r['profile_image'] ?? '',
                 'tint'     => (int)$r['mentee_id'] % 5,
                 'name'     => trim($r['firstname'] . ' ' . $r['lastname']),
                 'email'    => $r['email'] ?? '',

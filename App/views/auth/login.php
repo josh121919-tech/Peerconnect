@@ -86,6 +86,13 @@ $wants_form    = isset($_GET['switch']);
 
 if (!$is_login_post && !$wants_form && ($remembered = RememberService::attempt($con))) {
     $row = UserRepository::signInState($con, (int)$remembered);
+    // A cookie signs someone in, so this is a door too, and it is the member
+    // one. An administrator holding a remembered session is sent to their own
+    // page, which will recognise the same cookie.
+    if ($row && SignInService::memberDoorRefusal((string)$row['role']) !== null) {
+        header("Location: " . url('admin-login'));
+        exit;
+    }
     if ($row) {
         header("Location: " . SignInService::destination(
             (string)$row['role'],
@@ -192,6 +199,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
 
                 if ($password_ok && $user_status === 'blocked') {
                     $login_error = SignInService::BLOCKED_MESSAGE;
+                } elseif ($password_ok && SignInService::memberDoorRefusal($role) !== null) {
+                    /*
+                     * An administrator has their own sign-in page, and it is
+                     * not the same door. That page reads the account through
+                     * adminSignInByEmail(), which filters on the role; this one
+                     * did not filter at all, so administrator credentials
+                     * worked here and destination() then forwarded them to the
+                     * admin dashboard. The two doors are now the same shape as
+                     * the Google ones, which already refuse a member arriving
+                     * through the admin side.
+                     *
+                     * No session is created and the throttle is left standing:
+                     * nothing about this request should count as a sign-in.
+                     */
+                    $login_error = (string)SignInService::memberDoorRefusal($role);
                 } elseif ($password_ok) {
                     // One good sign-in forgets the failures for this pair.
                     pc_throttle_clear($con, $throttle);

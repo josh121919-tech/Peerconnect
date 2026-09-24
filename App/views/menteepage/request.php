@@ -245,7 +245,7 @@ $active_page = 'request';
                                 <tr>
                                     <td>
                                         <div style="display:flex;align-items:center;gap:10px;">
-                                            <div class="tbl-avatar"><?= strtoupper(substr($r['mentor_name'], 0, 1)) ?></div>
+                                            <div class="tbl-avatar"><?= pc_avatar($r['profile_image'] ?? '', $r['mentor_name'], 1) ?></div>
                                             <div>
                                                 <div style="font-weight:600;color:var(--gray-800);"><?= htmlspecialchars($r['mentor_name']) ?></div>
                                                 <div style="font-size:11px;color:var(--gray-400);"><?= htmlspecialchars($r['subject'] ?? '') ?></div>

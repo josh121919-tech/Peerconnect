@@ -107,13 +107,14 @@ class SessionRepository extends Repository
      */
     public static function withMentorForMentee(mysqli $con, int $menteeId, ?string $status = null, bool $newestFirst = true): array
     {
-        $sql   = "SELECT sr.*, u.firstname, u.lastname,
+        $sql   = "SELECT sr.*, u.firstname, u.lastname, pr.profile_image,
                          a.session_type, a.capacity,
                          COALESCE(a.duration, 60) AS duration,
                          " . self::endsAtExpr() . " AS session_end,
                          NOW() >= " . self::endsAtExpr() . " AS has_ended
                   FROM session_requests sr
                   JOIN users u ON sr.mentor_id = u.user_id
+                  LEFT JOIN profile pr ON pr.user_id = u.user_id
                   " . self::slotJoin('sr', 'a') . "
                   WHERE sr.mentee_id = ?";
         $types = 'i';
@@ -230,9 +231,11 @@ class SessionRepository extends Repository
     public static function requestsForMentee(mysqli $con, int $menteeId, ?string $status = null, ?string $search = null): array
     {
         $sql = "
-            SELECT sr.*, u.firstname, u.lastname, a.session_type, a.duration, CONCAT(u.firstname,' ',u.lastname) AS mentor_name
+            SELECT sr.*, u.firstname, u.lastname, pr.profile_image,
+                   a.session_type, a.duration, CONCAT(u.firstname,' ',u.lastname) AS mentor_name
             FROM session_requests sr
             JOIN users u ON sr.mentor_id = u.user_id
+            LEFT JOIN profile pr ON pr.user_id = u.user_id
             " . self::slotJoin('sr', 'a') . "
             WHERE sr.mentee_id = ? AND sr.status != 'cancelled'";
         $types = 'i';
@@ -255,9 +258,11 @@ class SessionRepository extends Repository
     public static function cancelledForMentee(mysqli $con, int $menteeId): array
     {
         return self::rows($con, "
-            SELECT sr.*, u.firstname, u.lastname, sr.mentor_id, CONCAT(u.firstname,' ',u.lastname) AS mentor_name
+            SELECT sr.*, u.firstname, u.lastname, sr.mentor_id, pr.profile_image,
+                   CONCAT(u.firstname,' ',u.lastname) AS mentor_name
             FROM session_requests sr
             JOIN users u ON sr.mentor_id = u.user_id
+            LEFT JOIN profile pr ON pr.user_id = u.user_id
             WHERE sr.mentee_id = ? AND sr.status = 'cancelled'
             ORDER BY sr.session_date DESC
         ", 'i', [$menteeId]);
@@ -1439,7 +1444,7 @@ class SessionRepository extends Repository
     {
         return "SELECT sr.*, u.firstname, u.lastname,
                        u.email,
-                       p.course,
+                       p.course, p.profile_image,
                        a.session_type, a.duration, a.capacity,
                        " . self::endsAtExpr() . " AS ends_at,
                        NOW() >= " . self::endsAtExpr() . " AS has_ended
@@ -1573,7 +1578,7 @@ class SessionRepository extends Repository
             SELECT sr.request_id, sr.mentee_id, sr.subject, sr.message, sr.session_date, sr.completed_at,
                    u.firstname, u.lastname,
                    u.email,
-                   p.course,
+                   p.course, p.profile_image,
                    COALESCE(a.duration, 60) AS duration,
                    " . self::endsAtExpr() . " AS session_end
             FROM session_requests sr
@@ -1622,7 +1627,7 @@ class SessionRepository extends Repository
         return self::typedRows($con, "
             SELECT sr.*, u.firstname, u.lastname,
                    u.email,
-                   p.course,
+                   p.course, p.profile_image,
                    a.session_type, a.capacity,
                    COALESCE(a.duration, 60) AS duration,
                    " . self::endsAtExpr() . " AS session_end

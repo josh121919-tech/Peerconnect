@@ -243,11 +243,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $step    = 1;
                 $error   = 'That email or username was registered while you were verifying. Please start again.';
             } else {
+                /*
+                 * Counted before the insert, and outside the transaction, so
+                 * it answers "was there already somebody who could approve
+                 * this person" rather than counting the applicant themselves.
+                 */
+                $had_reviewer = UserRepository::countActiveAdmins($con) > 0;
+
                 $con->begin_transaction();
                 try {
                     // users.email is the one place an address is stored.
                     $uid = UserRepository::createAdmin($con, $pending['firstname'], $pending['lastname'], $pending['username'], $pending['email']);
                     PasswordRepository::create($con, $uid, $pending['hash']);
+
+                    /*
+                     * A new administrator waits for one of the existing ones.
+                     * The very first one on an installation cannot: there is
+                     * nobody to ask, and holding them would leave the site with
+                     * no way in at all. The admin key already gates who may
+                     * reach this page, and it is the only thing standing behind
+                     * that first account either way.
+                     */
+                    if (!$had_reviewer) {
+                        UserRepository::markVerified($con, $uid);
+                    }
 
                     $con->commit();
                     $created_email = $pending['email'];

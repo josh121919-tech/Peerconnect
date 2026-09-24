@@ -557,7 +557,11 @@ if (!function_exists('mp_panel_open')) {
             data-name="<?= $e($c['name'] ?? '') ?>">
 
             <div class="mp-who">
-                <span class="mp-av t<?= (int)($c['tint'] ?? 0) ?>"><?= $e($c['initials'] ?? '?') ?></span>
+                <?php // A picture where there is one; the initials the card was
+                      // already carrying where there is not. pc_avatar escapes. ?>
+                <span class="mp-av t<?= (int)($c['tint'] ?? 0) ?>"><?= !empty($c['avatar'])
+                    ? pc_avatar($c['avatar'], '')
+                    : $e($c['initials'] ?? '?') ?></span>
                 <div class="mp-who-txt">
                     <div class="mp-name"><?= $e($c['name'] ?? '') ?></div>
                     <?php if (!empty($c['email'])): ?>

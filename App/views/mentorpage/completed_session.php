@@ -60,6 +60,7 @@ $sessions_cs = SessionRepository::completedForMentor($con, $mentor_id_cs, $perPa
             $ts = strtotime($s['session_date']);
             mp_session_card([
                 'initials' => strtoupper(substr($s['firstname'], 0, 1) . substr($s['lastname'], 0, 1)),
+                'avatar'   => $s['profile_image'] ?? '',
                 'tint'     => (int)$s['mentee_id'] % 5,
                 'name'     => trim($s['firstname'] . ' ' . $s['lastname']),
                 'email'    => $s['email'] ?? '',

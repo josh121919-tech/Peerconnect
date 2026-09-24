@@ -237,17 +237,28 @@
             flex-shrink: 0;
         }
 
+        /* The chip it belongs to, so the menu can hang from it. */
+        .adm-who-wrap {
+            position: relative;
+        }
+
+        /*
+         * Anchored under the topbar chip. It used to sit above the rail's
+         * footer button (bottom: 64px; left: 8px); that button is gone, and
+         * left where it was the menu would have opened against the top-left
+         * corner of the page, nowhere near the control that opens it.
+         */
         #profileMenu {
             display: none;
             position: absolute;
-            bottom: 64px;
-            left: 8px;
-            width: 210px;
+            top: calc(100% + 10px);
+            right: 0;
+            width: 248px;
             background: white;
             border-radius: 14px;
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
             padding: 14px;
-            z-index: 50;
+            z-index: 250;
         }
 
         #profileMenu.open {

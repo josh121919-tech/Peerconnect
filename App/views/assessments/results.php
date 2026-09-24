@@ -132,7 +132,7 @@ $active_page = 'assessments';
                         ?>
                             <div class="prow">
                                 <div class="pc-avatar pc-avatar-md" style="flex-shrink:0;">
-                                    <?= htmlspecialchars(strtoupper(substr($a['firstname'], 0, 1) . substr($a['lastname'], 0, 1))) ?>
+                                    <?= pc_avatar($a['profile_image'] ?? '', $name) ?>
                                 </div>
                                 <div style="flex:1;min-width:0;">
                                     <div style="font-size:13.5px;font-weight:700;color:var(--gray-900);"><?= htmlspecialchars($name) ?></div>

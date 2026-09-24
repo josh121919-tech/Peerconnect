@@ -73,9 +73,11 @@ class NotificationRepository extends Repository
     {
         return self::typedRows($con, "
             SELECT n.notification_id, n.user_id, n.type, n.title, n.message, n.is_read, n.email_status, n.created_at,
-                   TRIM(CONCAT_WS(' ', u.firstname, u.lastname)) AS recipient_name, u.role AS recipient_role
+                   TRIM(CONCAT_WS(' ', u.firstname, u.lastname)) AS recipient_name, u.role AS recipient_role,
+                   p.profile_image AS recipient_photo
             FROM notifications n
-            JOIN users u ON u.user_id = n.user_id
+            JOIN users u        ON u.user_id = n.user_id
+            LEFT JOIN profile p ON p.user_id = u.user_id
             WHERE n.type IN (" . self::marks(self::ADMIN_NOTICE_TYPES) . ")
             ORDER BY n.created_at DESC, n.notification_id DESC
             LIMIT ?
@@ -96,9 +98,11 @@ class NotificationRepository extends Repository
     {
         return self::typedRow($con, "
             SELECT n.notification_id, n.user_id, n.type, n.title, n.message, n.link, n.is_read, n.email_status, n.created_at,
-                   TRIM(CONCAT_WS(' ', u.firstname, u.lastname)) AS recipient_name, u.role AS recipient_role
+                   TRIM(CONCAT_WS(' ', u.firstname, u.lastname)) AS recipient_name, u.role AS recipient_role,
+                   p.profile_image AS recipient_photo
             FROM notifications n
-            JOIN users u ON u.user_id = n.user_id
+            JOIN users u        ON u.user_id = n.user_id
+            LEFT JOIN profile p ON p.user_id = u.user_id
             WHERE n.notification_id = ?
         ", 'i', [$notificationId]);
     }

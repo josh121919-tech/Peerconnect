@@ -173,6 +173,48 @@ if (!function_exists('asset')) {
     }
 }
 
+if (!function_exists('pc_avatar')) {
+    /**
+     * What goes inside an avatar: the person's picture if they uploaded one,
+     * their initials if they did not. The caller draws the circle; this fills
+     * it, already escaped.
+     *
+     * Initials are not a placeholder to be designed away — most people here
+     * have never uploaded a picture, so they are what most avatars will show.
+     * The point of this is that the two cases are decided in one place rather
+     * than in the forty-odd spots that were each deciding it for themselves,
+     * about half of which had simply never been given a picture to show.
+     */
+    function pc_avatar(?string $image, string $name, int $letters = 2): string
+    {
+        $src = trim((string)$image);
+        if ($src !== '') {
+            return '<img src="' . htmlspecialchars($src, ENT_QUOTES) . '" alt="">';
+        }
+        return htmlspecialchars(pc_initials($name, $letters));
+    }
+}
+
+if (!function_exists('pc_initials')) {
+    /**
+     * Up to $letters initials from a name: "Ana Cruz" gives AC, "Ana" gives A.
+     * mb_* throughout, because a name is not necessarily ASCII and substr()
+     * would cut a multi-byte letter in half.
+     */
+    function pc_initials(string $name, int $letters = 2): string
+    {
+        $parts = preg_split('/\s+/u', trim($name), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        $out   = '';
+        foreach ($parts as $part) {
+            if (mb_strlen($out) >= $letters) {
+                break;
+            }
+            $out .= mb_substr($part, 0, 1);
+        }
+        return mb_strtoupper($out !== '' ? $out : '?');
+    }
+}
+
 if (!function_exists('route_token')) {
     function route_token(string $page): string
     {
@@ -613,6 +655,8 @@ if (!function_exists('pc_gate_open_routes')) {
             'forgot-password', 'reset-password', 'google-login', 'session-check',
             'verify-email', 'email-pending', 'resend-verification',
             'admin-login', 'admin-signup', 'pwa-manifest',
+            // Reviewed from an inbox, by somebody who is not signed in at all.
+            'admin-review', 'admin-review-act', 'admin-review-file',
             // The address may simply have a typo in it, so there has to be a
             // way to correct one from inside this stage. That used to be the
             // whole of Settings — which let an account that had not proved its
@@ -628,6 +672,9 @@ if (!function_exists('pc_gate_open_routes')) {
         // screen uses to notice an admin's decision.
         $approval = [
             'mentee-verification', 'mentor-verification', 'verification-file',
+            // The administrator's own form, and the poller its waiting
+            // screen uses to notice the owner's decision.
+            'admin-verification', 'admin-check-status',
             'mentee-check-status', 'mentor-check-status',
             // Deliberately NOT 'onboarding': the questionnaire comes after
             // approval, not before it. Once users.verified is 1 this gate
@@ -666,8 +713,23 @@ if (!function_exists('pc_verification_gate')) {
      */
     function pc_verification_gate(mysqli $con, string $role, $verified, $confirmedAt): void
     {
+        /*
+         * An administrator awaiting approval is held on their own form the way
+         * a mentor is held on theirs. This used to return for every admin,
+         * which was right when an admin account was verified the moment it was
+         * created and is not now.
+         */
         if ($role === 'admin') {
-            return;
+            if (!empty($verified)) {
+                return;
+            }
+            $route = defined('PC_ROUTE') ? PC_ROUTE : null;
+            $open  = pc_gate_open_routes();
+            if ($route !== null && in_array($route, array_merge($open['email'], $open['approval']), true)) {
+                return;
+            }
+            header('Location: ' . url('admin-verification'));
+            exit;
         }
 
         $emailPending = EmailVerificationService::pendingFor($con, $role, $confirmedAt);

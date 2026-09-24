@@ -553,7 +553,7 @@ include 'layout.php';
             <?php if (!$mine): ?>
                 <p class="nf-sec">Sent to</p>
                 <div class="nf-person">
-                    <span class="nf-av"><?= htmlspecialchars(nf_initials((string)$note['recipient_name'])) ?></span>
+                    <span class="nf-av"><?= pc_avatar($note['recipient_photo'] ?? '', (string)$note['recipient_name']) ?></span>
                     <span><b><?= htmlspecialchars($note['recipient_name'] ?: 'A member') ?></b><span><?= htmlspecialchars($role($note['recipient_role'])) ?> · <?= htmlspecialchars($NOTICE_KINDS[$note['type']] ?? 'Notice') ?><?= $note['email_status'] === 'sent' ? ' · also emailed' : '' ?></span></span>
                 </div>
                 <p class="nf-sec">Actions</p>

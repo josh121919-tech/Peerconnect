@@ -636,7 +636,7 @@ class AssessmentRepository extends Repository
     public static function submittedAttempts(mysqli $con, int $assessmentId): array
     {
         return self::rows($con, "
-            SELECT t.*, u.firstname, u.lastname,
+            SELECT t.*, u.firstname, u.lastname, p.profile_image,
                    (SELECT COUNT(*) FROM assessment_attempts e
                      WHERE e.assessment_id = t.assessment_id AND e.mentee_id = t.mentee_id
                        AND e.status = 'submitted' AND e.submitted_at <= t.submitted_at) AS attempt_no,
@@ -644,7 +644,8 @@ class AssessmentRepository extends Repository
                      WHERE e2.assessment_id = t.assessment_id AND e2.mentee_id = t.mentee_id
                        AND e2.status = 'submitted') AS attempts_by_them
             FROM assessment_attempts t
-            JOIN users u ON u.user_id = t.mentee_id
+            JOIN users u        ON u.user_id = t.mentee_id
+            LEFT JOIN profile p ON p.user_id = u.user_id
             WHERE t.assessment_id = ? AND t.status = 'submitted'
             ORDER BY t.submitted_at DESC, t.attempt_id DESC
         ", 'i', [$assessmentId]);
