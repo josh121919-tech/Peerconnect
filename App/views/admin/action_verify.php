@@ -29,6 +29,24 @@ if (!$vid || !$action) {
     exit;
 }
 
+/*
+ * Before anything is written. The buttons are gone from the screen for an
+ * administrator's application, but the endpoint they posted to is still here
+ * and still reachable — and a rule that lives only in the markup is not a
+ * rule. An administrator is approved by the owner, from the email sent to
+ * them, through admin-review-act.
+ *
+ * This sits above decide() deliberately. Below it, the row would already have
+ * been marked approved before the refusal, leaving an application decided and
+ * an account still unverified.
+ */
+$applicant = VerificationRepository::ownerOf($con, $vid);
+if ($applicant !== null && UserRepository::role($con, $applicant) === 'admin') {
+    pc_flash('warning', 'An administrator application is reviewed by the site owner, from the email sent to them.', 'Not from here');
+    header('Location: ' . url('admin-users') . '?tab=pending');
+    exit;
+}
+
 $status = ($action === 'approve') ? 'approved' : 'rejected';
 
 // Only an application still waiting is decided. Another admin may have got
@@ -44,7 +62,7 @@ if (VerificationRepository::decide($con, $vid, $status, $notes) < 1) {
     exit;
 }
 
-$uid = VerificationRepository::ownerOf($con, $vid);
+$uid = $applicant;
 
 if ($uid !== null) {
     /*

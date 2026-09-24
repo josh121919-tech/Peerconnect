@@ -46,6 +46,22 @@ $has_role = in_array($raw_role, ['mentee', 'mentor', 'admin'], true);
 $role  = $u['role'] ?: 'mentee';
 $stat  = $u['status'] ?: 'active';
 $isMe  = ($uid === $me);
+
+/*
+ * An administrator's identity documents are the owner's to read.
+ *
+ * Every administrator can open this page, and an administrator's application
+ * carries their school ID and registration form — so without this, appointing
+ * one administrator would hand them the ID of every other. The owner needs
+ * them because the owner is the one who decides; nobody else does.
+ *
+ * Members are unchanged: their documents are what an administrator is here to
+ * check, and checking them is the job.
+ */
+$owner_mail = trim((string)pc_setting($con, 'owner_email'));
+$my_mail    = trim((string)(UserRepository::emailOf($con, $me) ?? ''));
+$is_owner   = $owner_mail !== '' && strcasecmp($owner_mail, $my_mail) === 0;
+$may_see_documents = $raw_role !== 'admin' || $is_owner || $isMe;
 $csrf  = csrf_token();
 // Deleted by its owner: kept for the record, with nothing left to act on. It
 // used to show as an ordinary blocked account with an Unblock button.
@@ -510,13 +526,23 @@ include 'layout.php';
 
                     <?php if (!empty($v['id_image']) || !empty($v['credential_image'])): ?>
                         <div class="uv-k" style="margin-bottom:7px;">Documents submitted</div>
-                        <div class="um-vdocs">
-                            <?php um_doc_tile($v['id_image'] ?? '', 'School ID', $name); ?>
-                            <?php um_doc_tile($v['credential_image'] ?? '', 'Credential', $name); ?>
-                        </div>
+                        <?php if ($may_see_documents): ?>
+                            <div class="um-vdocs">
+                                <?php um_doc_tile($v['id_image'] ?? '', 'School ID', $name); ?>
+                                <?php um_doc_tile($v['credential_image'] ?? '', 'Credential', $name); ?>
+                            </div>
+                        <?php else: ?>
+                            <?php // Said plainly. A blank space here would read as
+                                  // "they submitted nothing", which is a different
+                                  // thing and would be untrue. ?>
+                            <p class="uv-none" style="margin:0 0 14px;">
+                                Another administrator's ID and registration form are shown only to the
+                                site owner, who reviews them.
+                            </p>
+                        <?php endif; ?>
                     <?php endif; ?>
 
-                    <?php if ($v['status'] === 'pending'): ?>
+                    <?php if ($v['status'] === 'pending' && $raw_role !== 'admin'): ?>
                         <div style="display:flex;gap:9px;flex-wrap:wrap;">
                             <form method="post" action="<?= url('admin-action-verify') ?>">
                                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>">
@@ -527,6 +553,13 @@ include 'layout.php';
                             <button type="button" class="um-btn um-no"
                                 onclick="umReject(<?= (int)$v['verification_id'] ?>, <?= htmlspecialchars(json_encode($name), ENT_QUOTES) ?>)">Reject</button>
                         </div>
+                    <?php elseif ($v['status'] === 'pending'): ?>
+                        <?php /* An administrator is approved by the owner, from the
+                                 email sent to them — not from a screen every
+                                 administrator can open. */ ?>
+                        <p class="uv-none" style="margin:0;">
+                            Waiting for the site owner to review it.
+                        </p>
                     <?php endif; ?>
                 <?php endif; ?>
             </div>

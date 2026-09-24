@@ -156,6 +156,16 @@ class VerificationRepository extends Repository
         ", 'ss', [$file, $file]) !== null;
     }
 
+    /** Whose application a document belongs to, or null if nobody's. */
+    public static function fileOwner(mysqli $con, string $file): ?int
+    {
+        $v = self::value($con, "
+            SELECT user_id FROM user_verifications
+            WHERE id_image = ? OR credential_image = ? LIMIT 1
+        ", 'ss', [$file, $file]);
+        return $v === null ? null : (int)$v;
+    }
+
     /** Every document name any application refers to. */
     public static function allFileNames(mysqli $con): array
     {

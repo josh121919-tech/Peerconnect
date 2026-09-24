@@ -50,6 +50,19 @@ if (!$csrf_ok) {
 
 /** The only posts these officers hold, and the clubs they hold them in. */
 const ADM_POSITIONS = ['President', 'Vice President'];
+/** The same list the member verification form offers. */
+const ADM_COURSES = [
+    'Bachelor of Elementary Education',
+    'Bachelor of Special Needs Education (BSNED) Major in Early Childhood Education',
+    'Bachelor of Technology and Livelihood Education (BTLED) Major in Home Economics',
+    'Bachelor of Secondary Education (BSEd) Major in Mathematics',
+    'Bachelor of Secondary Education (BSEd) Major in English',
+    'Bachelor of Secondary Education (BSEd) Major in Science',
+    'Bachelor of Secondary Education (BSEd) Major in Social Studies',
+    'Bachelor of Science in Industrial Education',
+    'Physical Education',
+];
+
 const ADM_CLUBS = [
     'Mathematics Club',
     'Science Club',
@@ -114,8 +127,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
     if (!$student_id)                                          $errors[] = "Student ID is required.";
     elseif (!preg_match('/^[A-Z0-9\-]{3,20}$/i', $student_id)) $errors[] = "Student ID: letters, numbers and hyphens only, 3–20 characters.";
 
-    if (!$course)                  $errors[] = "Course is required.";
-    elseif (strlen($course) > 100) $errors[] = "Course must be 100 characters or fewer.";
+    // A list, not free text: the queue and the profile read this back, and a
+    // course somebody typed their own way matches nothing.
+    if (!in_array($course, ADM_COURSES, true)) $errors[] = "Please select your course.";
 
     $allowed_levels = ['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'];
     if (!$year_level)                                     $errors[] = "Year level is required.";
@@ -233,17 +247,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
                     . '<a href="' . $e($corLink) . '" style="display:inline-block;padding:9px 16px;margin:0 8px 8px 0;'
                     . 'border:1px solid #C2C5CA;border-radius:8px;color:#0868AD;text-decoration:none;font-size:14px;">View COR</a>'
                     . '</p>'
+                    /*
+                     * One button, not an Approve and a Reject. Both went to the
+                     * same address and neither decided anything — the decision is
+                     * made on the page they open, because a link that approved an
+                     * administrator would be triggered by the scanners that fetch
+                     * the links in a message. Two buttons that do the same thing
+                     * only promise a choice this email cannot carry out.
+                     */
                     . '<p style="margin:0 0 10px;">'
-                    . '<a href="' . $e($review) . '" style="display:inline-block;padding:12px 22px;margin:0 8px 8px 0;'
-                    . 'background:#1F7A5C;border-radius:8px;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">'
-                    . 'Approve</a>'
-                    . '<a href="' . $e($review) . '" style="display:inline-block;padding:12px 22px;margin:0 8px 8px 0;'
-                    . 'background:#C0392B;border-radius:8px;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">'
-                    . 'Reject</a>'
+                    . '<a href="' . $e($review) . '" style="display:inline-block;padding:13px 26px;'
+                    . 'background:#0868AD;border-radius:9px;color:#ffffff;text-decoration:none;font-weight:600;font-size:15px;">'
+                    . 'Review this application</a>'
                     . '</p>'
                     . '<p style="margin:0;font-size:12.5px;color:#717680;">'
-                    . 'Both buttons open the application, where you confirm the decision. The links stop '
-                    . 'working once it is decided, and expire after ' . AdminReviewLink::TTL_DAYS . ' days.</p>'
+                    . 'Approve or reject it on the page this opens. The links stop working once it is '
+                    . 'decided, and expire after ' . AdminReviewLink::TTL_DAYS . ' days.</p>'
                     . '</div>';
 
                 AdminAlertService::send(
@@ -675,89 +694,278 @@ endif;
     <title>Administrator verification — <?= htmlspecialchars(pc_setting($con, 'platform_name')) ?></title>
     <?php require_once __DIR__ . '/../includes/design_system.php'; ?>
     <style>
-        body { background: var(--bg); }
+        :root { color-scheme: light; }
 
-        .av-wrap {
-            max-width: 720px;
-            margin: 0 auto;
-            padding: 32px 16px 64px;
+        body {
+            margin: 0;
+            padding: 30px 18px 56px;
+            background:
+                radial-gradient(1000px 500px at 4% -6%, #E9F0FE 0%, rgba(233, 240, 254, 0) 60%),
+                radial-gradient(900px 470px at 102% 102%, #EDE9FE 0%, rgba(237, 233, 254, 0) 58%),
+                var(--bg);
         }
+
+        .av-wrap { max-width: 900px; margin: 0 auto; }
 
         .av-card {
             background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius-lg);
-            padding: 26px;
+            border-radius: 20px;
+            box-shadow: 0 24px 58px -34px rgba(16, 32, 68, .4);
+            padding: 30px;
         }
 
-        .av-head { margin-bottom: 18px; }
+        /* ── Header ─────────────────────────────────────────────────────── */
+        .av-top { display: flex; gap: 18px; align-items: flex-start; }
 
-        .av-head h1 {
-            margin: 0 0 6px;
-            font-size: 20px;
+        .av-shield {
+            width: 58px;
+            height: 58px;
+            border-radius: 16px;
+            background: #E3EDFD;
+            color: var(--mint);
+            display: grid;
+            place-items: center;
+            flex: none;
+        }
+
+        .av-shield svg { width: 28px; height: 28px; }
+
+        .av-card h1 {
+            margin: 0 0 8px;
+            font-size: 27px;
             font-weight: 700;
+            letter-spacing: -.02em;
             color: var(--navy);
         }
 
-        .av-head p {
-            margin: 0;
-            font-size: 13.5px;
-            color: var(--gray-600);
+        .av-sub { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--gray-600); max-width: 62ch; }
+
+        /* ── Notes ──────────────────────────────────────────────────────── */
+        .av-note {
+            display: flex;
+            gap: 14px;
+            border-radius: 14px;
+            padding: 16px 18px;
+            margin: 22px 0;
+            font-size: 14px;
             line-height: 1.6;
         }
 
-        .av-note {
-            border-radius: var(--radius);
-            padding: 13px 15px;
-            font-size: 13px;
-            line-height: 1.6;
+        .av-note svg { width: 24px; height: 24px; flex: none; }
+        .av-note b { display: block; margin-bottom: 2px; }
+
+        .av-note.info { background: #EEF4FE; color: var(--gray-600); }
+        .av-note.info svg, .av-note.info b { color: var(--mint); }
+        .av-note.info b { color: var(--navy); }
+
+        .av-note.bad { background: var(--danger-bg); color: var(--danger); }
+        .av-note.bad svg { color: var(--danger); }
+
+        .av-note.no { background: var(--danger-bg); color: var(--danger); }
+        .av-note.no svg { color: var(--danger); }
+
+        /* ── Fields ─────────────────────────────────────────────────────── */
+        .av-panel {
+            border: 1px solid var(--gray-100);
+            border-radius: 16px;
+            padding: 22px;
             margin-bottom: 18px;
         }
 
-        .av-note.wait { background: var(--gold-light); color: var(--gray-700); }
-        .av-note.no   { background: var(--danger-bg); color: var(--danger); }
-        .av-note.bad  { background: var(--danger-bg); color: var(--danger); }
+        .av-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 22px; }
 
-        .av-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 14px;
+        .av-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+
+        .av-field > label {
+            font-size: 13.5px;
+            font-weight: 600;
+            color: var(--navy);
         }
 
-        .av-field { display: flex; flex-direction: column; gap: 6px; }
-        .av-field.wide { grid-column: 1 / -1; }
+        .av-req { color: #E2574C; }
+        .av-opt { font-weight: 400; color: var(--gray-500); }
 
-        .av-field label {
+        /* The icon sits inside the control's box rather than beside it, so a
+           long value cannot push it out of line. */
+        .av-in { position: relative; display: block; }
+
+        .av-in > svg {
+            position: absolute;
+            left: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 19px;
+            height: 19px;
+            color: var(--gray-400);
+            pointer-events: none;
+        }
+
+        .av-in input, .av-in select {
+            width: 100%;
+            box-sizing: border-box;
+            font: inherit;
+            font-size: 14px;
+            padding: 14px 15px 14px 48px;
+            border: 1px solid var(--gray-100);
+            border-radius: 12px;
+            background: #FAFCFF;
+            color: var(--ink);
+            appearance: none;
+        }
+
+        .av-in select { padding-right: 42px; cursor: pointer; }
+        .av-in input::placeholder { color: #9FB0CC; }
+
+        .av-in input:focus, .av-in select:focus {
+            outline: 0;
+            border-color: var(--mint);
+            background: var(--surface);
+            box-shadow: 0 0 0 3px rgba(8, 127, 193, .14);
+        }
+
+        .av-caret {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 17px;
+            height: 17px;
+            color: var(--gray-400);
+            pointer-events: none;
+        }
+
+        .av-hint {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            grid-column: 1 / -1;
+            font-size: 12.5px;
+            color: var(--gray-500);
+        }
+
+        .av-hint svg { width: 16px; height: 16px; color: var(--gray-400); flex: none; }
+
+        /* ── Uploads ────────────────────────────────────────────────────── */
+        .av-ups { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 20px; }
+
+        .av-up {
+            border-radius: 16px;
+            padding: 20px;
+            border: 1px solid transparent;
+        }
+
+        .av-up.id  { background: #F3F8FF; border-color: #DCEAFE; }
+        .av-up.cor { background: #F7F5FF; border-color: #E4DEFB; }
+
+        .av-up-h { display: flex; gap: 13px; align-items: flex-start; margin-bottom: 14px; }
+
+        .av-up-ico {
+            width: 44px;
+            height: 44px;
+            border-radius: 13px;
+            display: grid;
+            place-items: center;
+            flex: none;
+        }
+
+        .av-up.id  .av-up-ico { background: #DCEAFE; color: var(--mint); }
+        .av-up.cor .av-up-ico { background: #E6DEFC; color: #6D4AFF; }
+        .av-up-ico svg { width: 21px; height: 21px; }
+
+        .av-up-t { font-size: 15.5px; font-weight: 700; color: var(--navy); }
+        .av-up-d { font-size: 12.5px; color: var(--gray-600); margin-top: 3px; }
+        .av-up-s { font-size: 11.5px; color: var(--gray-500); margin-top: 5px; }
+
+        .av-drop {
+            border: 1.5px dashed #BFD3F2;
+            border-radius: 13px;
+            padding: 24px 16px;
+            text-align: center;
+            background: rgba(255, 255, 255, .6);
+            transition: background .15s, border-color .15s;
+        }
+
+        .av-drop.over { border-color: var(--mint); background: #EAF4FF; }
+        .av-drop.has  { border-style: solid; border-color: var(--success); background: var(--success-bg); }
+
+        .av-drop-ico { color: var(--mint); }
+        .av-up.cor .av-drop-ico { color: #6D4AFF; }
+        .av-drop-ico svg { width: 30px; height: 30px; }
+
+        .av-drop p { margin: 8px 0 12px; font-size: 13px; color: var(--gray-600); }
+        .av-drop-or { font-size: 11.5px; color: var(--gray-400); margin: 0 0 12px; }
+
+        .av-pick {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            padding: 11px 20px;
+            border: 0;
+            border-radius: 10px;
+            font: inherit;
+            font-size: 13.5px;
+            font-weight: 600;
+            color: #fff;
+            cursor: pointer;
+        }
+
+        .av-up.id  .av-pick { background: var(--mint); }
+        .av-up.cor .av-pick { background: #6D4AFF; }
+        .av-pick svg { width: 16px; height: 16px; }
+
+        .av-file { display: none; }
+
+        .av-chosen {
+            margin-top: 10px;
             font-size: 12.5px;
             font-weight: 600;
+            color: var(--success);
+            word-break: break-all;
+        }
+
+        /* ── Footer ─────────────────────────────────────────────────────── */
+        .av-foot {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            align-items: center;
+            flex-wrap: wrap;
+            padding-top: 20px;
+            border-top: 1px solid var(--gray-100);
+        }
+
+        .av-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 9px;
+            padding: 13px 24px;
+            border: 1px solid transparent;
+            border-radius: 11px;
+            font: inherit;
+            font-size: 14.5px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .av-btn svg { width: 17px; height: 17px; }
+
+        .av-btn.out {
+            background: var(--surface);
+            border-color: var(--border);
             color: var(--gray-700);
         }
 
-        .av-field input,
-        .av-field select {
-            width: 100%;
-            font: inherit;
-            font-size: 13.5px;
-            padding: 10px 12px;
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            background: var(--surface);
-            color: var(--ink);
-        }
+        .av-btn.out:hover { background: var(--gray-50); }
+        .av-btn.go { background: var(--mint); color: #fff; }
+        .av-btn.go:hover { background: var(--mint-deep); }
 
-        .av-field input[type="file"] { padding: 8px; background: var(--gray-50); }
-
-        .av-hint { font-size: 11.5px; color: var(--gray-500); }
-
-        .av-actions {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-            margin-top: 20px;
-        }
-
-        @media (max-width: 640px) {
-            .av-grid { grid-template-columns: minmax(0, 1fr); }
+        @media (max-width: 760px) {
+            .av-card { padding: 22px 18px; }
+            .av-card h1 { font-size: 22px; }
+            .av-grid, .av-ups { grid-template-columns: 1fr; }
+            .av-foot { justify-content: stretch; }
+            .av-btn { flex: 1; justify-content: center; }
         }
     </style>
 </head>
@@ -765,134 +973,328 @@ endif;
 <body>
     <div class="av-wrap">
         <div class="av-card">
-            <div class="av-head">
-                <h1>Administrator verification</h1>
-                <p>
-                    An administrator can see and change every member's information, so the account is
-                    reviewed by an existing administrator before it is opened. Submit your ID and your
-                    Certificate of Registration, and you will be told either way.
-                </p>
+            <div class="av-top">
+                <span class="av-shield">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                              d="M12 3l7 3v5.5c0 4.2-2.9 7.6-7 8.5-4.1-.9-7-4.3-7-8.5V6l7-3Z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="m9 12 2 2 4-4" />
+                    </svg>
+                </span>
+                <div>
+                    <h1>Administrator verification</h1>
+                    <p class="av-sub">
+                        An administrator can see and change every member's information, so the account is
+                        reviewed by the site owner before it is opened. Submit your ID and your Certificate
+                        of Registration, and you will be told either way.
+                    </p>
+                </div>
             </div>
 
             <?php if ($errors): ?>
                 <div class="av-note bad" role="alert">
-                    <?php foreach ($errors as $e): ?>
-                        <div><?= htmlspecialchars($e) ?></div>
-                    <?php endforeach; ?>
-                </div>
-            <?php endif; ?>
-
-            <?php if ($status === 'pending'): ?>
-                <div class="av-note wait" role="status">
-                    <b>Submitted.</b> The administrators have been told and are reviewing it. You can
-                    send corrected details below if something was wrong.
+                    <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9" />
+                        <path stroke-linecap="round" d="M12 7.5v5M12 16h.01" />
+                    </svg>
+                    <span>
+                        <b>That could not be submitted.</b>
+                        <?php foreach ($errors as $e): ?>
+                            <span style="display:block;"><?= htmlspecialchars($e) ?></span>
+                        <?php endforeach; ?>
+                    </span>
                 </div>
             <?php elseif ($status === 'rejected'): ?>
                 <div class="av-note no" role="status">
-                    <b>Not approved.</b>
-                    <?= $notes !== '' ? htmlspecialchars($notes) : 'No reason was given.' ?>
-                    You can correct the details and submit again.
+                    <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9" />
+                        <path stroke-linecap="round" d="M9 9l6 6M15 9l-6 6" />
+                    </svg>
+                    <span>
+                        <b>Not approved.</b>
+                        <?= $notes !== '' ? htmlspecialchars($notes) : 'No reason was given.' ?>
+                        Correct the details below and submit again.
+                    </span>
+                </div>
+            <?php else: ?>
+                <div class="av-note info">
+                    <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9" />
+                        <path stroke-linecap="round" d="M12 11v5M12 8h.01" />
+                    </svg>
+                    <span>
+                        <b>Make sure everything matches your documents.</b>
+                        A detail that does not match what you have uploaded is the usual reason an
+                        application comes back.
+                    </span>
                 </div>
             <?php endif; ?>
 
-            <form method="POST" enctype="multipart/form-data" novalidate>
+            <form method="POST" enctype="multipart/form-data" novalidate id="avForm">
                 <input type="hidden" name="csrf_token" value="<?= htmlspecialchars(csrf_token()) ?>">
 
-                <div class="av-grid">
-                    <div class="av-field">
-                        <label for="av-first">First name</label>
-                        <input id="av-first" name="firstname" maxlength="50" required
-                               value="<?= htmlspecialchars($_POST['firstname'] ?? $existing['firstname'] ?? $acct['firstname'] ?? '') ?>">
-                    </div>
+                <div class="av-panel">
+                    <div class="av-grid">
+                        <div class="av-field">
+                            <label for="av-first">First name <span class="av-req">*</span></label>
+                            <span class="av-in">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="8" r="3.4" /><path stroke-linecap="round" d="M5.5 20a6.5 6.5 0 0 1 13 0" />
+                                </svg>
+                                <input id="av-first" name="firstname" maxlength="50" placeholder="Enter first name"
+                                       value="<?= htmlspecialchars($_POST['firstname'] ?? $existing['firstname'] ?? $acct['firstname'] ?? '') ?>">
+                            </span>
+                        </div>
 
-                    <div class="av-field">
-                        <label for="av-middle">Middle name <span class="av-hint">(optional)</span></label>
-                        <input id="av-middle" name="middlename" maxlength="100"
-                               value="<?= htmlspecialchars($_POST['middlename'] ?? $existing['middlename'] ?? '') ?>">
-                    </div>
+                        <div class="av-field">
+                            <label for="av-middle">Middle name <span class="av-opt">(optional)</span></label>
+                            <span class="av-in">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="8" r="3.4" /><path stroke-linecap="round" d="M5.5 20a6.5 6.5 0 0 1 13 0" />
+                                </svg>
+                                <input id="av-middle" name="middlename" maxlength="100" placeholder="Enter middle name"
+                                       value="<?= htmlspecialchars($_POST['middlename'] ?? $existing['middlename'] ?? '') ?>">
+                            </span>
+                        </div>
 
-                    <div class="av-field">
-                        <label for="av-last">Surname</label>
-                        <input id="av-last" name="lastname" maxlength="50" required
-                               value="<?= htmlspecialchars($_POST['lastname'] ?? $existing['lastname'] ?? $acct['lastname'] ?? '') ?>">
-                    </div>
+                        <div class="av-field">
+                            <label for="av-last">Surname <span class="av-req">*</span></label>
+                            <span class="av-in">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <circle cx="12" cy="8" r="3.4" /><path stroke-linecap="round" d="M5.5 20a6.5 6.5 0 0 1 13 0" />
+                                </svg>
+                                <input id="av-last" name="lastname" maxlength="50" placeholder="Enter surname"
+                                       value="<?= htmlspecialchars($_POST['lastname'] ?? $existing['lastname'] ?? $acct['lastname'] ?? '') ?>">
+                            </span>
+                        </div>
 
-                    <div class="av-field">
-                        <label for="av-sid">Student ID</label>
-                        <input id="av-sid" name="student_id" maxlength="20" required
-                               value="<?= htmlspecialchars($_POST['student_id'] ?? $existing['student_id'] ?? '') ?>">
-                    </div>
+                        <div class="av-field">
+                            <label for="av-sid">Student ID <span class="av-req">*</span></label>
+                            <span class="av-in">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <rect x="3" y="5" width="18" height="14" rx="2.5" />
+                                    <circle cx="9" cy="11" r="2" />
+                                    <path stroke-linecap="round" d="M14 10h4M14 13.5h4M5.8 15.6a3.6 3.6 0 0 1 6.4 0" />
+                                </svg>
+                                <input id="av-sid" name="student_id" maxlength="20" placeholder="Enter student ID"
+                                       value="<?= htmlspecialchars($_POST['student_id'] ?? $existing['student_id'] ?? '') ?>">
+                            </span>
+                        </div>
 
-                    <div class="av-field">
-                        <label for="av-course">Course</label>
-                        <input id="av-course" name="course" maxlength="100" required
-                               value="<?= htmlspecialchars($_POST['course'] ?? $existing['course'] ?? '') ?>">
-                    </div>
+                        <div class="av-field">
+                            <label for="av-course">Course <span class="av-req">*</span></label>
+                            <span class="av-in">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m12 5 9 4-9 4-9-4 9-4Z" />
+                                    <path stroke-linecap="round" d="M6 11v4.2c0 1.2 2.7 2.8 6 2.8s6-1.6 6-2.8V11" />
+                                </svg>
+                                <select id="av-course" name="course">
+                                    <option value="">Select course</option>
+                                    <?php $cc = $_POST['course'] ?? $existing['course'] ?? '';
+                                    foreach (ADM_COURSES as $c): ?>
+                                        <option value="<?= htmlspecialchars($c) ?>" <?= $cc === $c ? 'selected' : '' ?>><?= htmlspecialchars($c) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <svg class="av-caret" fill="none" stroke="currentColor" stroke-width="2.1" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m6 9.5 6 6 6-6" />
+                                </svg>
+                            </span>
+                        </div>
 
-                    <div class="av-field">
-                        <label for="av-year">Year level</label>
-                        <select id="av-year" name="year_level" required>
-                            <option value="">Select year level</option>
-                            <?php
-                            $yl = $_POST['year_level'] ?? $existing['year_level'] ?? '';
-                            foreach (['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'] as $lvl): ?>
-                                <option value="<?= $lvl ?>" <?= $yl === $lvl ? 'selected' : '' ?>><?= $lvl ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
+                        <div class="av-field">
+                            <label for="av-year">Year level <span class="av-req">*</span></label>
+                            <span class="av-in">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <rect x="3.5" y="5" width="17" height="15" rx="2.5" />
+                                    <path stroke-linecap="round" d="M8 3v4M16 3v4M3.5 10h17" />
+                                </svg>
+                                <select id="av-year" name="year_level">
+                                    <option value="">Select year level</option>
+                                    <?php $yl = $_POST['year_level'] ?? $existing['year_level'] ?? '';
+                                    foreach (['1st Year', '2nd Year', '3rd Year', '4th Year', '5th Year'] as $lvl): ?>
+                                        <option value="<?= $lvl ?>" <?= $yl === $lvl ? 'selected' : '' ?>><?= $lvl ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <svg class="av-caret" fill="none" stroke="currentColor" stroke-width="2.1" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m6 9.5 6 6 6-6" />
+                                </svg>
+                            </span>
+                        </div>
 
-                    <?php // Post and club are two fields and one stored line: "President of Mathematics Club". ?>
-                    <div class="av-field">
-                        <label for="av-pos">Post</label>
-                        <select id="av-pos" name="position" required>
-                            <option value="">Select post</option>
-                            <?php foreach (ADM_POSITIONS as $p): ?>
-                                <option value="<?= htmlspecialchars($p) ?>" <?= $cur_position === $p ? 'selected' : '' ?>><?= htmlspecialchars($p) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                        <span class="av-hint">Only club presidents and vice presidents administer this site.</span>
-                    </div>
+                        <div class="av-field">
+                            <label for="av-pos">Post <span class="av-req">*</span></label>
+                            <span class="av-in">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 21s7-5.6 7-11a7 7 0 1 0-14 0c0 5.4 7 11 7 11Z" />
+                                    <circle cx="12" cy="10" r="2.6" />
+                                </svg>
+                                <select id="av-pos" name="position">
+                                    <option value="">Select post</option>
+                                    <?php foreach (ADM_POSITIONS as $p): ?>
+                                        <option value="<?= htmlspecialchars($p) ?>" <?= $cur_position === $p ? 'selected' : '' ?>><?= htmlspecialchars($p) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <svg class="av-caret" fill="none" stroke="currentColor" stroke-width="2.1" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m6 9.5 6 6 6-6" />
+                                </svg>
+                            </span>
+                        </div>
 
-                    <div class="av-field">
-                        <label for="av-club">Club</label>
-                        <select id="av-club" name="club" required>
-                            <option value="">Select club</option>
-                            <?php foreach (ADM_CLUBS as $cl): ?>
-                                <option value="<?= htmlspecialchars($cl) ?>" <?= $cur_club === $cl ? 'selected' : '' ?>><?= htmlspecialchars($cl) ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
+                        <div class="av-field">
+                            <label for="av-club">Club <span class="av-req">*</span></label>
+                            <span class="av-in">
+                                <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                    <circle cx="9" cy="8" r="3.2" /><path stroke-linecap="round" d="M3 19a6 6 0 0 1 12 0" />
+                                    <path stroke-linecap="round" d="M16 5.5a3.2 3.2 0 0 1 0 5M18 19a5.5 5.5 0 0 0-2-4.3" />
+                                </svg>
+                                <select id="av-club" name="club">
+                                    <option value="">Select club</option>
+                                    <?php foreach (ADM_CLUBS as $cl): ?>
+                                        <option value="<?= htmlspecialchars($cl) ?>" <?= $cur_club === $cl ? 'selected' : '' ?>><?= htmlspecialchars($cl) ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <svg class="av-caret" fill="none" stroke="currentColor" stroke-width="2.1" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="m6 9.5 6 6 6-6" />
+                                </svg>
+                            </span>
+                        </div>
 
-                    <div class="av-field wide">
-                        <label for="av-id">Valid ID</label>
-                        <input id="av-id" type="file" name="id_image" accept=".jpg,.jpeg,.png,.pdf">
-                        <span class="av-hint">
-                            <?= !empty($existing['id_image'])
-                                ? 'A file is already on the application. Choose another only to replace it.'
-                                : 'JPG, PNG or PDF.' ?>
-                        </span>
-                    </div>
-
-                    <div class="av-field wide">
-                        <label for="av-cor">Certificate of Registration</label>
-                        <input id="av-cor" type="file" name="credential_image" accept=".jpg,.jpeg,.png,.pdf">
-                        <span class="av-hint">
-                            <?= !empty($existing['credential_image'])
-                                ? 'A file is already on the application. Choose another only to replace it.'
-                                : 'JPG, PNG or PDF.' ?>
-                        </span>
+                        <p class="av-hint">
+                            <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                <circle cx="9" cy="8" r="3.2" /><path stroke-linecap="round" d="M3 19a6 6 0 0 1 12 0" />
+                            </svg>
+                            Only club presidents and vice presidents administer this site.
+                        </p>
                     </div>
                 </div>
 
-                <div class="av-actions">
-                    <a class="btn btn-ghost" href="<?= url('logout') ?>">Sign out</a>
-                    <button class="btn btn-primary" type="submit">
+                <?php
+                /*
+                 * The two uploads. Drag and drop is added by the script below and
+                 * is an extra way in, never the only one: the file input and its
+                 * button work with the script disabled, which is what the form
+                 * has always relied on.
+                 */
+                $uploads = [
+                    ['id',  'id_image',         'Valid ID', 'Upload a clear photo of your valid school ID.',  $existing['id_image'] ?? ''],
+                    ['cor', 'credential_image', 'Certificate of Registration', 'Upload your latest Certificate of Registration (COR).', $existing['credential_image'] ?? ''],
+                ];
+                ?>
+                <div class="av-ups">
+                    <?php foreach ($uploads as [$kind, $field, $title, $desc, $have]): ?>
+                        <div class="av-up <?= $kind ?>">
+                            <div class="av-up-h">
+                                <span class="av-up-ico">
+                                    <?php if ($kind === 'id'): ?>
+                                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                            <rect x="3" y="5" width="18" height="14" rx="2.5" />
+                                            <circle cx="9" cy="11" r="2" />
+                                            <path stroke-linecap="round" d="M14 10h4M14 13.5h4M5.8 15.6a3.6 3.6 0 0 1 6.4 0" />
+                                        </svg>
+                                    <?php else: ?>
+                                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M7 3h8l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+                                            <path stroke-linecap="round" d="M9 13h6M9 16.5h4" />
+                                        </svg>
+                                    <?php endif; ?>
+                                </span>
+                                <div>
+                                    <div class="av-up-t"><?= htmlspecialchars($title) ?> <span class="av-req">*</span></div>
+                                    <div class="av-up-d"><?= htmlspecialchars($desc) ?></div>
+                                    <div class="av-up-s">JPG, PNG or PDF — up to 5 MB</div>
+                                </div>
+                            </div>
+
+                            <div class="av-drop<?= $have !== '' ? ' has' : '' ?>" data-for="<?= $field ?>">
+                                <span class="av-drop-ico">
+                                    <svg fill="none" stroke="currentColor" stroke-width="1.7" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round"
+                                              d="M7 17a4 4 0 0 1 .6-7.96A5.5 5.5 0 0 1 18 9.5a3.75 3.75 0 0 1 .3 7.48" />
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 12v8m0-8-2.6 2.6M12 12l2.6 2.6" />
+                                    </svg>
+                                </span>
+                                <p>Drag and drop your file here</p>
+                                <p class="av-drop-or">or</p>
+                                <input class="av-file" type="file" id="av-<?= $field ?>" name="<?= $field ?>" accept=".jpg,.jpeg,.png,.pdf">
+                                <button class="av-pick" type="button" data-pick="<?= $field ?>">
+                                    <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M7 3h8l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
+                                    </svg>
+                                    Choose file
+                                </button>
+                                <div class="av-chosen" data-name="<?= $field ?>">
+                                    <?= $have !== '' ? 'A file is already on the application — choose another only to replace it.' : '' ?>
+                                </div>
+                            </div>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+
+                <div class="av-foot">
+                    <a class="av-btn out" href="<?= url('logout') ?>">
+                        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M6 6l12 12M18 6 6 18" />
+                        </svg>
+                        Sign out
+                    </a>
+                    <button class="av-btn go" type="submit">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M21 3 10.5 13.5M21 3l-6.8 18-3.7-7.5L3 9.8 21 3Z" />
+                        </svg>
                         <?= $status === null ? 'Submit for review' : 'Send updated details' ?>
                     </button>
                 </div>
             </form>
         </div>
     </div>
+
+    <script>
+        /*
+         * Drag and drop, and the file name once one is chosen. The input and its
+         * button work without any of this — everything here is an addition to a
+         * form that already submits.
+         */
+        (function () {
+            document.querySelectorAll('.av-pick').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.getElementById('av-' + btn.dataset.pick).click();
+                });
+            });
+
+            document.querySelectorAll('.av-drop').forEach(drop => {
+                const input = document.getElementById('av-' + drop.dataset.for);
+                const label = drop.querySelector('[data-name]');
+
+                function chosen() {
+                    if (input.files && input.files.length) {
+                        drop.classList.add('has');
+                        label.textContent = input.files[0].name;
+                    }
+                }
+
+                input.addEventListener('change', chosen);
+
+                ['dragenter', 'dragover'].forEach(e => drop.addEventListener(e, ev => {
+                    ev.preventDefault();
+                    drop.classList.add('over');
+                }));
+
+                ['dragleave', 'drop'].forEach(e => drop.addEventListener(e, ev => {
+                    ev.preventDefault();
+                    drop.classList.remove('over');
+                }));
+
+                drop.addEventListener('drop', ev => {
+                    if (!ev.dataTransfer || !ev.dataTransfer.files.length) return;
+                    /* Put the dropped file into the input itself, so the form
+                       submits it the ordinary way and the server sees no
+                       difference between dropping and choosing. */
+                    input.files = ev.dataTransfer.files;
+                    chosen();
+                });
+            });
+        })();
+    </script>
 </body>
 
 </html>

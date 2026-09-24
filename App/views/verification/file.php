@@ -30,9 +30,27 @@ if ($userId <= 0) {
     $refuse(403, 'Sign in to view this document.');
 }
 
-$allowed = $name !== '' && ($role === 'admin'
-    ? VerificationRepository::fileIsKnown($con, $name)
-    : VerificationRepository::fileBelongsTo($con, $name, $userId));
+/*
+ * An administrator may read any member's documents: checking them is the job.
+ * Another ADMINISTRATOR's documents are the owner's, and hiding the thumbnails
+ * on the account page does nothing about this route — the address is the
+ * filename, and an administrator can see filenames.
+ */
+$isOwnFile = $name !== '' && VerificationRepository::fileBelongsTo($con, $name, $userId);
+$allowed   = false;
+
+if ($name !== '') {
+    if ($isOwnFile) {
+        $allowed = true;
+    } elseif ($role === 'admin' && VerificationRepository::fileIsKnown($con, $name)) {
+        $holder      = VerificationRepository::fileOwner($con, $name);
+        $holderRole  = $holder === null ? '' : (string)UserRepository::role($con, $holder);
+        $ownerMail   = trim((string)pc_setting($con, 'owner_email'));
+        $myMail      = trim((string)(UserRepository::emailOf($con, $userId) ?? ''));
+        $allowed     = $holderRole !== 'admin'
+            || ($ownerMail !== '' && strcasecmp($ownerMail, $myMail) === 0);
+    }
+}
 $path = $allowed ? VerificationFiles::path($name) : null;
 $type = $path ? VerificationFiles::contentType($path) : null;
 
