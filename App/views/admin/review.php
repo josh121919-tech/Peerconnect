@@ -56,20 +56,20 @@ $platform = pc_setting($con, 'platform_name');
 
         body {
             margin: 0;
-            padding: 30px 18px 60px;
+            padding: 22px 14px 40px;
             background:
                 radial-gradient(1000px 480px at 4% -6%, #E9F0FE 0%, rgba(233, 240, 254, 0) 60%),
                 radial-gradient(900px 460px at 100% 102%, #E7EEFD 0%, rgba(231, 238, 253, 0) 58%),
                 var(--bg);
         }
 
-        .rv-wrap { max-width: 760px; margin: 0 auto; }
+        .rv-wrap { max-width: 700px; margin: 0 auto; }
 
         .rv-card {
             background: var(--surface);
-            border-radius: 20px;
-            box-shadow: 0 24px 56px -32px rgba(16, 32, 68, .4);
-            padding: 30px;
+            border-radius: 18px;
+            box-shadow: 0 20px 46px -30px rgba(16, 32, 68, .4);
+            padding: 22px;
         }
 
         .rv-top { display: flex; gap: 16px; align-items: flex-start; }
@@ -88,16 +88,16 @@ $platform = pc_setting($con, 'platform_name');
         .rv-shield svg { width: 24px; height: 24px; }
 
         .rv-card h1 {
-            margin: 0 0 6px;
-            font-size: 26px;
+            margin: 0 0 5px;
+            font-size: 21px;
             font-weight: 700;
             letter-spacing: -.02em;
             color: var(--navy, #0B2C63);
         }
 
-        .rv-sub { margin: 0; font-size: 14px; line-height: 1.6; color: var(--gray-600); }
+        .rv-sub { margin: 0; font-size: 13px; line-height: 1.55; color: var(--gray-600); }
 
-        .rv-rule { height: 1px; background: var(--gray-100); margin: 22px 0; }
+        .rv-rule { height: 1px; background: var(--gray-100); margin: 16px 0; }
 
         .rv-who { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
 
@@ -244,11 +244,27 @@ $platform = pc_setting($con, 'platform_name');
             color: #C0392B;
         }
 
+        /*
+         * On a phone the two columns become one, the buttons go full width so
+         * neither is a thumb-sized target beside a bigger one, and the email
+         * address wraps rather than pushing the card wider than the screen.
+         */
         @media (max-width: 640px) {
-            .rv-card { padding: 22px 18px; }
-            .rv-card h1 { font-size: 21px; }
+            body { padding: 14px 10px 30px; }
+            .rv-card { padding: 16px 14px; border-radius: 16px; }
+            .rv-card h1 { font-size: 18.5px; }
+            .rv-top { gap: 12px; }
+            .rv-shield { width: 38px; height: 38px; border-radius: 11px; }
+            .rv-shield svg { width: 19px; height: 19px; }
             .rv-grid, .rv-docs { grid-template-columns: 1fr; }
-            .rv-f { border-bottom: 1px solid #E5EDFA; }
+            .rv-f { border-bottom: 1px solid #E5EDFA; padding: 12px 0; }
+            .rv-f.wide { border-bottom: 0; }
+            .rv-facts { padding: 4px 14px; }
+            .rv-av { width: 46px; height: 46px; font-size: 15px; }
+            .rv-who-n { font-size: 16.5px; }
+            .rv-who-m { font-size: 13px; }
+            .rv-acts { flex-direction: column; align-items: stretch; }
+            .rv-btn { width: 100%; justify-content: center; }
         }
     </style>
 </head>

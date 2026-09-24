@@ -147,8 +147,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $csrf_ok) {
 
     // Both documents are inspected before either is kept, so a half-valid
     // form never leaves one file behind.
-    $id_file  = VerificationFiles::inspect($_FILES['id_image'] ?? null, 'Valid ID');
-    $cor_file = VerificationFiles::inspect($_FILES['credential_image'] ?? null, 'COR');
+    // Photographs, not documents: both are looked at as thumbnails when the
+    // owner reviews them. The accept attribute on the inputs says the same,
+    // but that is a convenience for the file picker and not a check.
+    $id_file  = VerificationFiles::inspect($_FILES['id_image'] ?? null, 'Valid ID', true);
+    $cor_file = VerificationFiles::inspect($_FILES['credential_image'] ?? null, 'COR', true);
 
     if (!empty($id_file['error']))                $errors[] = $id_file['error'];
     elseif (!$id_file['present'] && !$existing)   $errors[] = "Valid ID is required.";
@@ -698,29 +701,29 @@ endif;
 
         body {
             margin: 0;
-            padding: 30px 18px 56px;
+            padding: 16px 14px 28px;
             background:
                 radial-gradient(1000px 500px at 4% -6%, #E9F0FE 0%, rgba(233, 240, 254, 0) 60%),
                 radial-gradient(900px 470px at 102% 102%, #EDE9FE 0%, rgba(237, 233, 254, 0) 58%),
                 var(--bg);
         }
 
-        .av-wrap { max-width: 900px; margin: 0 auto; }
+        .av-wrap { max-width: 820px; margin: 0 auto; }
 
         .av-card {
             background: var(--surface);
-            border-radius: 20px;
-            box-shadow: 0 24px 58px -34px rgba(16, 32, 68, .4);
-            padding: 30px;
+            border-radius: 18px;
+            box-shadow: 0 20px 48px -32px rgba(16, 32, 68, .4);
+            padding: 22px;
         }
 
         /* ── Header ─────────────────────────────────────────────────────── */
-        .av-top { display: flex; gap: 18px; align-items: flex-start; }
+        .av-top { display: flex; gap: 14px; align-items: flex-start; }
 
         .av-shield {
-            width: 58px;
-            height: 58px;
-            border-radius: 16px;
+            width: 46px;
+            height: 46px;
+            border-radius: 13px;
             background: #E3EDFD;
             color: var(--mint);
             display: grid;
@@ -728,30 +731,30 @@ endif;
             flex: none;
         }
 
-        .av-shield svg { width: 28px; height: 28px; }
+        .av-shield svg { width: 23px; height: 23px; }
 
         .av-card h1 {
-            margin: 0 0 8px;
-            font-size: 27px;
+            margin: 0 0 5px;
+            font-size: 21px;
             font-weight: 700;
             letter-spacing: -.02em;
             color: var(--navy);
         }
 
-        .av-sub { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--gray-600); max-width: 62ch; }
+        .av-sub { margin: 0; font-size: 13px; line-height: 1.55; color: var(--gray-600); max-width: 66ch; }
 
         /* ── Notes ──────────────────────────────────────────────────────── */
         .av-note {
             display: flex;
-            gap: 14px;
-            border-radius: 14px;
-            padding: 16px 18px;
-            margin: 22px 0;
-            font-size: 14px;
-            line-height: 1.6;
+            gap: 11px;
+            border-radius: 12px;
+            padding: 12px 14px;
+            margin: 13px 0;
+            font-size: 12.5px;
+            line-height: 1.55;
         }
 
-        .av-note svg { width: 24px; height: 24px; flex: none; }
+        .av-note svg { width: 19px; height: 19px; flex: none; }
         .av-note b { display: block; margin-bottom: 2px; }
 
         .av-note.info { background: #EEF4FE; color: var(--gray-600); }
@@ -767,17 +770,17 @@ endif;
         /* ── Fields ─────────────────────────────────────────────────────── */
         .av-panel {
             border: 1px solid var(--gray-100);
-            border-radius: 16px;
-            padding: 22px;
-            margin-bottom: 18px;
+            border-radius: 14px;
+            padding: 14px;
+            margin-bottom: 12px;
         }
 
-        .av-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 22px; }
+        .av-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px 14px; }
 
-        .av-field { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+        .av-field { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 
         .av-field > label {
-            font-size: 13.5px;
+            font-size: 12.5px;
             font-weight: 600;
             color: var(--navy);
         }
@@ -791,11 +794,11 @@ endif;
 
         .av-in > svg {
             position: absolute;
-            left: 15px;
+            left: 12px;
             top: 50%;
             transform: translateY(-50%);
-            width: 19px;
-            height: 19px;
+            width: 17px;
+            height: 17px;
             color: var(--gray-400);
             pointer-events: none;
         }
@@ -804,16 +807,16 @@ endif;
             width: 100%;
             box-sizing: border-box;
             font: inherit;
-            font-size: 14px;
-            padding: 14px 15px 14px 48px;
+            font-size: 13.5px;
+            padding: 10px 12px 10px 39px;
             border: 1px solid var(--gray-100);
-            border-radius: 12px;
+            border-radius: 10px;
             background: #FAFCFF;
             color: var(--ink);
             appearance: none;
         }
 
-        .av-in select { padding-right: 42px; cursor: pointer; }
+        .av-in select { padding-right: 34px; cursor: pointer; text-overflow: ellipsis; }
         .av-in input::placeholder { color: #9FB0CC; }
 
         .av-in input:focus, .av-in select:focus {
@@ -825,7 +828,7 @@ endif;
 
         .av-caret {
             position: absolute;
-            right: 15px;
+            right: 12px;
             top: 50%;
             transform: translateY(-50%);
             width: 17px;
@@ -846,23 +849,23 @@ endif;
         .av-hint svg { width: 16px; height: 16px; color: var(--gray-400); flex: none; }
 
         /* ── Uploads ────────────────────────────────────────────────────── */
-        .av-ups { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; margin-bottom: 20px; }
+        .av-ups { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
 
         .av-up {
-            border-radius: 16px;
-            padding: 20px;
+            border-radius: 14px;
+            padding: 14px;
             border: 1px solid transparent;
         }
 
         .av-up.id  { background: #F3F8FF; border-color: #DCEAFE; }
         .av-up.cor { background: #F7F5FF; border-color: #E4DEFB; }
 
-        .av-up-h { display: flex; gap: 13px; align-items: flex-start; margin-bottom: 14px; }
+        .av-up-h { display: flex; gap: 11px; align-items: flex-start; margin-bottom: 11px; }
 
         .av-up-ico {
-            width: 44px;
-            height: 44px;
-            border-radius: 13px;
+            width: 36px;
+            height: 36px;
+            border-radius: 11px;
             display: grid;
             place-items: center;
             flex: none;
@@ -870,17 +873,24 @@ endif;
 
         .av-up.id  .av-up-ico { background: #DCEAFE; color: var(--mint); }
         .av-up.cor .av-up-ico { background: #E6DEFC; color: #6D4AFF; }
-        .av-up-ico svg { width: 21px; height: 21px; }
+        .av-up-ico svg { width: 18px; height: 18px; }
 
-        .av-up-t { font-size: 15.5px; font-weight: 700; color: var(--navy); }
-        .av-up-d { font-size: 12.5px; color: var(--gray-600); margin-top: 3px; }
-        .av-up-s { font-size: 11.5px; color: var(--gray-500); margin-top: 5px; }
+        .av-up-t { font-size: 14px; font-weight: 700; color: var(--navy); }
+        .av-up-d { font-size: 11.5px; color: var(--gray-600); margin-top: 2px; line-height: 1.45; }
+        .av-up-s { font-size: 11px; color: var(--gray-500); margin-top: 3px; }
 
+        /*
+         * A row, not a stack. Standing the icon, the invitation, the word "or"
+         * and the button one above another cost about eighty pixels a card for
+         * no more information, and there are two of them.
+         */
         .av-drop {
+            display: flex;
+            align-items: center;
+            gap: 11px;
             border: 1.5px dashed #BFD3F2;
-            border-radius: 13px;
-            padding: 24px 16px;
-            text-align: center;
+            border-radius: 11px;
+            padding: 11px 13px;
             background: rgba(255, 255, 255, .6);
             transition: background .15s, border-color .15s;
         }
@@ -890,20 +900,21 @@ endif;
 
         .av-drop-ico { color: var(--mint); }
         .av-up.cor .av-drop-ico { color: #6D4AFF; }
-        .av-drop-ico svg { width: 30px; height: 30px; }
+        .av-drop-ico { flex: none; display: grid; place-items: center; }
+        .av-drop-ico svg { width: 22px; height: 22px; }
 
-        .av-drop p { margin: 8px 0 12px; font-size: 13px; color: var(--gray-600); }
-        .av-drop-or { font-size: 11.5px; color: var(--gray-400); margin: 0 0 12px; }
+        .av-drop p { margin: 0; font-size: 12px; line-height: 1.4; color: var(--gray-600); flex: 1; min-width: 0; }
+        .av-pick { flex: none; }
 
         .av-pick {
             display: inline-flex;
             align-items: center;
-            gap: 9px;
-            padding: 11px 20px;
+            gap: 8px;
+            padding: 8px 15px;
             border: 0;
-            border-radius: 10px;
+            border-radius: 9px;
             font: inherit;
-            font-size: 13.5px;
+            font-size: 12.5px;
             font-weight: 600;
             color: #fff;
             cursor: pointer;
@@ -915,9 +926,9 @@ endif;
 
         .av-file { display: none; }
 
-        .av-chosen {
-            margin-top: 10px;
-            font-size: 12.5px;
+        .av-chosen:not(:empty) {
+            margin-top: 7px;
+            font-size: 11.5px;
             font-weight: 600;
             color: var(--success);
             word-break: break-all;
@@ -926,23 +937,23 @@ endif;
         /* ── Footer ─────────────────────────────────────────────────────── */
         .av-foot {
             display: flex;
-            gap: 12px;
+            gap: 10px;
             justify-content: flex-end;
             align-items: center;
             flex-wrap: wrap;
-            padding-top: 20px;
+            padding-top: 14px;
             border-top: 1px solid var(--gray-100);
         }
 
         .av-btn {
             display: inline-flex;
             align-items: center;
-            gap: 9px;
-            padding: 13px 24px;
+            gap: 8px;
+            padding: 10px 18px;
             border: 1px solid transparent;
-            border-radius: 11px;
+            border-radius: 10px;
             font: inherit;
-            font-size: 14.5px;
+            font-size: 13.5px;
             font-weight: 600;
             cursor: pointer;
             text-decoration: none;
@@ -961,8 +972,12 @@ endif;
         .av-btn.go:hover { background: var(--mint-deep); }
 
         @media (max-width: 760px) {
-            .av-card { padding: 22px 18px; }
-            .av-card h1 { font-size: 22px; }
+            body { padding: 12px 10px 28px; }
+            .av-card { padding: 16px 14px; border-radius: 16px; }
+            .av-card h1 { font-size: 19px; }
+            .av-top { gap: 11px; }
+            .av-shield { width: 38px; height: 38px; border-radius: 11px; }
+            .av-shield svg { width: 19px; height: 19px; }
             .av-grid, .av-ups { grid-template-columns: 1fr; }
             .av-foot { justify-content: stretch; }
             .av-btn { flex: 1; justify-content: center; }
@@ -1201,7 +1216,7 @@ endif;
                                 <div>
                                     <div class="av-up-t"><?= htmlspecialchars($title) ?> <span class="av-req">*</span></div>
                                     <div class="av-up-d"><?= htmlspecialchars($desc) ?></div>
-                                    <div class="av-up-s">JPG, PNG or PDF — up to 5 MB</div>
+                                    <div class="av-up-s">A photo — JPG, PNG or WEBP, up to <?= (int)(VerificationFiles::MAX_BYTES / 1048576) ?> MB</div>
                                 </div>
                             </div>
 
@@ -1213,18 +1228,18 @@ endif;
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M12 12v8m0-8-2.6 2.6M12 12l2.6 2.6" />
                                     </svg>
                                 </span>
-                                <p>Drag and drop your file here</p>
-                                <p class="av-drop-or">or</p>
-                                <input class="av-file" type="file" id="av-<?= $field ?>" name="<?= $field ?>" accept=".jpg,.jpeg,.png,.pdf">
+                                <p>Drag a photo here, or</p>
+                                <input class="av-file" type="file" id="av-<?= $field ?>" name="<?= $field ?>"
+                                       accept="image/jpeg,image/png,image/gif,image/webp">
                                 <button class="av-pick" type="button" data-pick="<?= $field ?>">
                                     <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24">
                                         <path stroke-linecap="round" stroke-linejoin="round" d="M14 3v5h5M7 3h8l5 5v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z" />
                                     </svg>
                                     Choose file
                                 </button>
-                                <div class="av-chosen" data-name="<?= $field ?>">
-                                    <?= $have !== '' ? 'A file is already on the application — choose another only to replace it.' : '' ?>
-                                </div>
+                            </div>
+                            <div class="av-chosen" data-name="<?= $field ?>">
+                                <?= $have !== '' ? 'A photo is already on the application — choose another only to replace it.' : '' ?>
                             </div>
                         </div>
                     <?php endforeach; ?>

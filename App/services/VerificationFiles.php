@@ -49,7 +49,16 @@ class VerificationFiles
      * browser sent as something other than a single file counts as nothing
      * chosen.
      */
-    public static function inspect($file, string $label): array
+    /**
+     * $imagesOnly turns a PDF away.
+     *
+     * Members may send either: a registrar hands out a Certificate of
+     * Registration as a PDF and refusing it would send them to find a
+     * scanner. The administrator form asks for photographs, which show as
+     * thumbnails in the review — a PDF there is a document the owner has to
+     * open in another tab to decide on.
+     */
+    public static function inspect($file, string $label, bool $imagesOnly = false): array
     {
         if (!is_array($file) || !is_string($file['name'] ?? null) || $file['name'] === ''
             || !is_int($file['error'] ?? null) || $file['error'] === UPLOAD_ERR_NO_FILE) {
@@ -69,6 +78,9 @@ class VerificationFiles
         }
         if (!in_array($ext, self::EXTENSIONS, true) || !in_array($mime, self::MIME_TYPES, true)) {
             return ['present' => true, 'error' => "$label must be a JPG, PNG, GIF, WEBP, or PDF file."];
+        }
+        if ($imagesOnly && ($ext === 'pdf' || $mime === 'application/pdf')) {
+            return ['present' => true, 'error' => "$label must be a photo — JPG, PNG, GIF or WEBP, not a PDF."];
         }
         return ['present' => true, 'ext' => $ext];
     }
