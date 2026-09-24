@@ -39,6 +39,32 @@ class AssessmentRepository extends Repository
      * so the clause is left out entirely and the audience is what it always
      * was. Asked once per request and remembered.
      */
+    /**
+     * Whether assessment_solution.sql has been run.
+     *
+     * Until it has, the column is absent and naming it in an INSERT would
+     * fail, so it is left out and questions carry no solution — which is
+     * exactly how they behaved before. Asked once per request.
+     */
+    public static function solutionEnabled(mysqli $con): bool
+    {
+        static $known = null;
+        if ($known !== null) {
+            return $known;
+        }
+        try {
+            $known = self::value($con, "
+                SELECT 1 FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE()
+                  AND TABLE_NAME = 'assessment_questions'
+                  AND COLUMN_NAME = 'solution' LIMIT 1
+            ") !== null;
+        } catch (Throwable $e) {
+            $known = false;
+        }
+        return $known;
+    }
+
     public static function audienceEnabled(mysqli $con): bool
     {
         static $known = null;
@@ -412,19 +438,33 @@ class AssessmentRepository extends Repository
 
     /**
      * Replaces the whole question set with $questions (each 'type', 'text',
-     * 'hint', 'points', 'is_required', 'correct_text' and 'options'). Run
-     * inside the caller's transaction: the old questions go first, and the
-     * database clears the answers that pointed at them.
+     * 'hint', 'points', 'is_required', 'correct_text', 'options' and an
+     * optional 'solution'). Run inside the caller's transaction: the old
+     * questions go first, and the database clears the answers that pointed
+     * at them.
+     *
+     * The solution column is only named when it exists, so this works either
+     * side of assessment_solution.sql. Where it does not exist the working is
+     * dropped rather than the save failing — the question itself is the part
+     * that matters, and the caller warns about it.
      */
     public static function replaceQuestions(mysqli $con, int $assessmentId, array $questions): void
     {
+        $withSolution = self::solutionEnabled($con);
+
         self::execute($con, "DELETE FROM assessment_questions WHERE assessment_id = ?", 'i', [$assessmentId]);
         foreach (array_values($questions) as $i => $q) {
-            $questionId = self::insert($con, "
-                INSERT INTO assessment_questions
-                    (assessment_id, question_order, question_type, question_text, hint, points, is_required, correct_text)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ", 'iisssiis', [$assessmentId, $i + 1, $q['type'], $q['text'], $q['hint'], $q['points'], $q['is_required'], $q['correct_text']]);
+            $cols = [$assessmentId, $i + 1, $q['type'], $q['text'], $q['hint'], $q['points'], $q['is_required'], $q['correct_text']];
+            $sql  = "INSERT INTO assessment_questions
+                        (assessment_id, question_order, question_type, question_text, hint, points, is_required, correct_text"
+                . ($withSolution ? ', solution' : '') . ")
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?" . ($withSolution ? ', ?' : '') . ')';
+            $types = 'iisssiis';
+            if ($withSolution) {
+                $types .= 's';
+                $cols[] = (string)($q['solution'] ?? '');
+            }
+            $questionId = self::insert($con, $sql, $types, $cols);
             foreach (array_values($q['options']) as $j => $o) {
                 self::insert($con, "
                     INSERT INTO assessment_options (question_id, option_order, option_text, is_correct)

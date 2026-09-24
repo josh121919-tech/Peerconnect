@@ -78,6 +78,10 @@ class AssessmentService
                 'points'       => max(self::POINTS_MIN, min(self::POINTS_MAX, (int)($q['points'] ?? 1))),
                 'is_required'  => !empty($q['is_required']) ? 1 : 0,
                 'correct_text' => self::text($q['correct_text'] ?? '', self::EXPECTED_MAX),
+                // Worked steps, for after an attempt is submitted. Not capped
+                // like the hint is: the point of it is the working, and half a
+                // proof is no use to anybody.
+                'solution'     => trim((string)($q['solution'] ?? '')),
                 'options'      => [],
             ];
 

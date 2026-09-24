@@ -3,6 +3,7 @@
         "vlucas/phpdotenv": "^5.6",
         "google/apiclient": "^2.19",
         "phpmailer/phpmailer": "^7.1",
-        "minishlink/web-push": "^11.0"
+        "minishlink/web-push": "^11.0",
+        "smalot/pdfparser": "^2.12"
     }
 }

@@ -93,6 +93,40 @@ if (!$is_review && !empty($assessment['time_limit_minutes'])) {
 // For review mode, the correct answers so results can be shown.
 $correct_map = $is_review ? AssessmentRepository::correctAnswers($con, $assessment_id) : [];
 
+/*
+ * What the page is allowed to know.
+ *
+ * $questions comes back from SELECT *, so every row carries correct_text and
+ * every option carries is_correct. Handing that straight to the browser puts
+ * the answer key in View Source for anyone sitting the paper, so the payload
+ * is built by hand instead: the fields the script actually reads, and nothing
+ * else. The worked solution is added only once the attempt is in — that is the
+ * whole point of keeping it apart from the hint.
+ */
+$client_questions = [];
+foreach ($questions as $q) {
+    $row = [
+        'question_id'   => (int)$q['question_id'],
+        'question_type' => $q['question_type'],
+        'question_text' => $q['question_text'],
+        'hint'          => (string)$q['hint'],
+        'points'        => (int)$q['points'],
+        'is_required'   => (int)$q['is_required'],
+        'options'       => [],
+    ];
+    if ($is_review) {
+        // Absent entirely until assessment_solution.sql has been run.
+        $row['solution'] = (string)($q['solution'] ?? '');
+    }
+    foreach ($q['options'] as $o) {
+        $row['options'][] = [
+            'option_id'   => (int)$o['option_id'],
+            'option_text' => $o['option_text'],
+        ];
+    }
+    $client_questions[] = $row;
+}
+
 $mentor_name = trim($assessment['firstname'] . ' ' . $assessment['lastname']);
 $active_page = 'assessments';
 ?>
@@ -291,6 +325,25 @@ $active_page = 'assessments';
             height: 16px;
             color: var(--info);
             flex-shrink: 0;
+        }
+
+        .tk-solution {
+            background: var(--success-bg);
+            border-left: 3px solid var(--success);
+            border-radius: var(--radius);
+            padding: 13px 16px;
+            font-size: 12.5px;
+            color: var(--gray-700);
+            margin-top: 12px;
+            /* The mentor may have laid the working out over several lines. */
+            white-space: pre-wrap;
+        }
+
+        .tk-solution-h {
+            font-weight: 600;
+            color: var(--gray-800);
+            margin-bottom: 4px;
+            white-space: normal;
         }
 
         .tk-nav {
@@ -595,7 +648,7 @@ $active_page = 'assessments';
     </div>
 
     <script>
-        const QUESTIONS    = <?= json_encode($questions, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
+        const QUESTIONS    = <?= json_encode($client_questions, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
         const SAVED        = <?= json_encode($saved, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
         const CORRECT      = <?= json_encode($correct_map, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
         const IS_REVIEW    = <?= $is_review ? 'true' : 'false' ?>;
@@ -712,6 +765,22 @@ $active_page = 'assessments';
                 hint.innerHTML = '<svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 18h6M10 21h4M12 3a6 6 0 0 1 4 10.5V15H8v-1.5A6 6 0 0 1 12 3Z"/></svg><span>' +
                     escapeHtml(q.hint) + '</span>';
                 card.appendChild(hint);
+            }
+
+            /* Only after submitting, and only when there is one to show: a
+               mentor who left the field empty gets nothing here, not a heading
+               above a blank. */
+            if (IS_REVIEW && q.solution) {
+                const sol = document.createElement('div');
+                sol.className = 'tk-solution';
+                const solH = document.createElement('div');
+                solH.className = 'tk-solution-h';
+                solH.textContent = 'Worked solution';
+                const solB = document.createElement('div');
+                solB.textContent = q.solution;
+                sol.appendChild(solH);
+                sol.appendChild(solB);
+                card.appendChild(sol);
             }
 
             box.appendChild(card);

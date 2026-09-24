@@ -88,6 +88,10 @@ return [
     'assessments'         => 'App/views/assessments/index.php',
     'assessment-create'   => 'App/views/assessments/create.php',
     'assessment-save'     => 'App/views/assessments/save.php',
+    // Reads a worksheet into draft questions. Saves nothing by itself.
+    'assessment-import'   => 'App/views/assessments/import.php',
+    // The .docx to start from, so the importing need not be guesswork.
+    'assessment-template' => 'App/views/assessments/template.php',
     'assessment-delete'   => 'App/views/assessments/delete.php',
     'assessment-take'     => 'App/views/assessments/take.php',
     'assessment-answer'   => 'App/views/assessments/answer.php',

@@ -659,10 +659,20 @@ $active_page = 'assessments';
                                         </div>
                                     </div>
                                     <?php if (!$questions_locked): ?>
-                                        <button type="button" class="btn btn-primary btn-sm" onclick="addQuestion()">
-                                            <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14" /></svg>
-                                            Add Question
-                                        </button>
+                                        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                                            <?php /* Reads a worksheet into the questions below, where they stay
+                                                     editable. Nothing is saved until Save is pressed, because
+                                                     reading questions out of arbitrary text is guesswork and
+                                                     guesswork should not reach a student unseen. */ ?>
+                                            <button type="button" class="btn btn-ghost btn-sm" onclick="openImport()">
+                                                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16V4m0 0L8 8m4-4 4 4M4 17v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1" /></svg>
+                                                Import from a file
+                                            </button>
+                                            <button type="button" class="btn btn-primary btn-sm" onclick="addQuestion()">
+                                                <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 5v14M5 12h14" /></svg>
+                                                Add Question
+                                            </button>
+                                        </div>
                                     <?php endif; ?>
                                 </div>
 
@@ -672,6 +682,9 @@ $active_page = 'assessments';
                                         set is fixed. You can still edit the title, topic, instructions and time limit.
                                     </div>
                                 <?php endif; ?>
+                                <?php // What the reader made of the file, and anything it was unsure of. ?>
+                                <div id="impResult" class="ac-note" hidden
+                                     style="margin-bottom:14px;font-size:12.5px;line-height:1.6;"></div>
                                 <div id="qList"></div>
                                 <div id="qEmpty" class="prow-empty" style="display:none;">
                                     No questions yet — add your first one to get started.
@@ -863,6 +876,51 @@ $active_page = 'assessments';
         </main>
     </div>
 
+    <!--
+        Importing a worksheet. The file is read on the server and comes back as
+        draft questions; they are appended to the list above rather than saved,
+        so every one of them can be corrected first.
+    -->
+    <div class="modal-overlay" id="impBack">
+        <div style="background:var(--surface);border-radius:16px;padding:24px;width:540px;max-width:95vw;max-height:88vh;overflow-y:auto;box-shadow:var(--shadow-lg);">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px;">
+                <div>
+                    <h3 style="margin:0;font-size:17px;font-weight:700;color:var(--forest);">Import questions from a file</h3>
+                    <p style="margin:4px 0 0;font-size:12.5px;color:var(--gray-500);">Word (.docx) or a PDF with real text in it.</p>
+                </div>
+                <button type="button" class="btn btn-ghost btn-sm" onclick="closeImport()">Close</button>
+            </div>
+
+            <div style="margin:16px 0;padding:12px 14px;border-radius:11px;background:var(--gray-50);border:1px solid var(--gray-100);font-size:12.5px;color:var(--gray-600);line-height:1.6;">
+                Lay it out like this &mdash; the answer marked with <b>*</b> or named on an Answer line:
+                <pre style="margin:8px 0 0;font-family:ui-monospace,Consolas,monospace;font-size:12px;color:var(--gray-700);white-space:pre-wrap;">1. What is 7 x 8?
+A) 54
+B) 56 *
+C) 48
+Solution: Count by eights.
+Points: 2</pre>
+                <div style="margin-top:8px;">A question with no options becomes a short answer. <b>Photographs and scans cannot be read</b> &mdash; there is no text in them to import.</div>
+            </div>
+
+            <div style="margin:-4px 0 16px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12.5px;color:var(--gray-600);">
+                <a href="<?= url('assessment-template') ?>" class="btn btn-ghost btn-sm" style="text-decoration:none;">
+                    &darr;&nbsp; Download the template
+                </a>
+                <span>A Word file already laid out this way &mdash; type over the examples.</span>
+            </div>
+
+            <input type="file" id="impFile" accept=".docx,.pdf"
+                   style="width:100%;font-size:13px;padding:10px;border:1px dashed var(--border);border-radius:9px;background:var(--gray-50);">
+
+            <div id="impMsg" style="margin-top:12px;font-size:12.5px;line-height:1.6;"></div>
+
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">
+                <button type="button" class="btn btn-ghost" onclick="closeImport()">Cancel</button>
+                <button type="button" class="btn btn-primary" id="impGo" onclick="runImport()">Read the file</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const EXISTING_QUESTIONS = <?= json_encode($questions, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP) ?>;
         const QUESTIONS_LOCKED = <?= $questions_locked ? 'true' : 'false' ?>;
@@ -896,6 +954,10 @@ $active_page = 'assessments';
         }
 
         /* ── Question builder ────────────────────────────────────────────── */
+        const CSRF = <?= json_encode(csrf_token()) ?>;
+        const IMPORT_URL = <?= json_encode(url('assessment-import')) ?>;
+        const SOLUTIONS_ON = <?= AssessmentRepository::solutionEnabled($con) ? 'true' : 'false' ?>;
+
         let questions = [];
         let qSeq = 0;
 
@@ -906,6 +968,7 @@ $active_page = 'assessments';
                 question_type: type || 'multiple_choice',
                 question_text: '',
                 hint: '',
+                solution: '',
                 points: 1,
                 is_required: 1,
                 correct_text: '',
@@ -930,6 +993,104 @@ $active_page = 'assessments';
         function addQuestion() {
             questions.push(blankQuestion('multiple_choice'));
             renderQuestions();
+        }
+
+        /* ── Importing a worksheet ── */
+        function openImport() {
+            document.getElementById('impMsg').innerHTML = '';
+            document.getElementById('impFile').value = '';
+            document.getElementById('impBack').classList.add('open');
+        }
+
+        function closeImport() {
+            document.getElementById('impBack').classList.remove('open');
+        }
+
+        async function runImport() {
+            const input = document.getElementById('impFile');
+            const msg = document.getElementById('impMsg');
+            const go = document.getElementById('impGo');
+
+            if (!input.files || !input.files[0]) {
+                msg.innerHTML = '<span style="color:var(--danger);">Choose a file first.</span>';
+                return;
+            }
+
+            const body = new FormData();
+            body.append('csrf_token', CSRF);
+            body.append('file', input.files[0]);
+
+            go.disabled = true;
+            msg.innerHTML = 'Reading…';
+            try {
+                const res = await fetch(IMPORT_URL, { method: 'POST', body: body });
+                const d = await res.json();
+
+                if (!d.ok) {
+                    msg.innerHTML = '<span style="color:var(--danger);">' + esc(d.error || 'That file could not be read.') + '</span>';
+                    return;
+                }
+                if (!d.questions.length) {
+                    msg.innerHTML = '<span style="color:var(--danger);">No questions were recognised in that file.</span>'
+                        + (d.warnings.length ? '<div style="margin-top:6px;color:var(--gray-600);">' + d.warnings.map(esc).join('<br>') + '</div>' : '');
+                    return;
+                }
+
+                /* Appended, never replacing what is already there: a mentor may
+                   well import two worksheets, and silently discarding the first
+                   would be its own kind of data loss. */
+                let dropped = 0;
+                d.questions.forEach(function (q) {
+                    qSeq++;
+                    if (q.solution && !SOLUTIONS_ON) dropped++;
+                    questions.push({
+                        uid: 'q' + qSeq,
+                        question_type: q.question_type,
+                        question_text: q.question_text,
+                        hint: q.hint || '',
+                        solution: q.solution || '',
+                        points: parseInt(q.points, 10) || 1,
+                        is_required: q.is_required ? 1 : 0,
+                        correct_text: q.correct_text || '',
+                        options: (q.options || []).map(function (o) {
+                            return { option_text: o.option_text, is_correct: o.is_correct ? 1 : 0 };
+                        })
+                    });
+                });
+                renderQuestions();
+                closeImport();
+
+                const notes = d.warnings.slice();
+                if (dropped > 0) {
+                    notes.push(dropped + ' solution' + (dropped === 1 ? ' was' : 's were')
+                        + ' left out — this database has no column for them yet.');
+                }
+                flashImport(d.questions.length, notes);
+            } catch (e) {
+                msg.innerHTML = '<span style="color:var(--danger);">Network error. Please try again.</span>';
+            } finally {
+                go.disabled = false;
+            }
+        }
+
+        /* Anything the reader was unsure about is said out loud, next to the
+           questions, rather than left for the mentor to notice. */
+        function flashImport(n, warnings) {
+            const box = document.getElementById('impResult');
+            if (!box) return;
+            box.hidden = false;
+            box.innerHTML = '<b>' + n + ' question' + (n === 1 ? '' : 's') + ' added.</b> '
+                + 'Check them over — everything here can be edited before you save.'
+                + (warnings.length
+                    ? '<ul style="margin:8px 0 0 18px;padding:0;">' + warnings.map(w => '<li>' + esc(w) + '</li>').join('') + '</ul>'
+                    : '');
+            box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function esc(s) {
+            const p = document.createElement('span');
+            p.textContent = String(s == null ? '' : s);
+            return p.innerHTML;
         }
 
         function duplicateQuestion(i) {
@@ -1100,6 +1261,21 @@ $active_page = 'assessments';
                 hint.value = q.hint || '';
                 hint.addEventListener('input', e => q.hint = e.target.value);
                 card.appendChild(hint);
+
+                /* The worked answer. The opposite of the hint and shown at the
+                   opposite time: a hint helps while they are still trying, this
+                   is what they read once they have finished. */
+                if (SOLUTIONS_ON) {
+                    const sol = document.createElement('textarea');
+                    sol.className = 'ac-input';
+                    sol.rows = 2;
+                    sol.style.marginTop = '10px';
+                    sol.style.resize = 'vertical';
+                    sol.placeholder = 'Optional worked solution, shown after they submit';
+                    sol.value = q.solution || '';
+                    sol.addEventListener('input', e => q.solution = e.target.value);
+                    card.appendChild(sol);
+                }
 
                 // Foot: points + required
                 const foot = document.createElement('div');
@@ -1319,6 +1495,7 @@ $active_page = 'assessments';
                         question_type: q.question_type,
                         question_text: q.question_text,
                         hint: q.hint || '',
+                        solution: q.solution || '',
                         points: parseInt(q.points, 10) || 1,
                         is_required: parseInt(q.is_required, 10) ? 1 : 0,
                         correct_text: q.correct_text || '',
