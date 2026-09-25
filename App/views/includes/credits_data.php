@@ -40,6 +40,27 @@ if (!function_exists('pc_credit_photo_key')) {
     }
 }
 
+if (!function_exists('pc_credits_can_edit')) {
+    /**
+     * Whether this account may change the pictures: the site owner, and
+     * nobody else.
+     *
+     * Being an administrator is not enough. The owner is whoever owner_email
+     * names (Peerconnect.neust@gmail.com), the same test administrator
+     * applications and another administrator's documents already use. Both
+     * the page and the upload ask this, so hiding the controls is never the
+     * only thing standing in the way.
+     */
+    function pc_credits_can_edit(mysqli $con, int $userId): bool
+    {
+        require_once __DIR__ . '/settings_store.php';
+
+        $owner = trim((string)pc_setting($con, 'owner_email'));
+        $mine  = trim((string)(UserRepository::emailOf($con, $userId) ?? ''));
+        return $owner !== '' && strcasecmp($owner, $mine) === 0;
+    }
+}
+
 if (!function_exists('pc_credits_team')) {
     /**
      * The team, each with their picture if one has been uploaded.
