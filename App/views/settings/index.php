@@ -658,6 +658,16 @@ function st_ago(?string $ts): string
                             <?= htmlspecialchars($label) ?>
                         </a>
                     <?php endforeach; ?>
+
+                    <?php // Its own page rather than a tab, so it is a plain link, not ?tab=. ?>
+                    <a href="<?= htmlspecialchars(url('credits')) ?>">
+                        <svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">
+                            <circle cx="9" cy="9.5" r="3" />
+                            <path stroke-linecap="round" d="M3.5 19c.6-2.8 2.8-4.3 5.5-4.3s4.9 1.5 5.5 4.3" />
+                            <path stroke-linecap="round" d="M16 7.1a3 3 0 0 1 0 5.8M17.5 19c-.2-1.2-.6-2.2-1.2-3" />
+                        </svg>
+                        Credits &amp; Developers
+                    </a>
                 </nav>
 
                 <!-- ═══ Panel ═══ -->

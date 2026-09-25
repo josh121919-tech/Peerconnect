@@ -36,6 +36,17 @@ if (!function_exists('pc_setting_defaults')) {
             'maintenance_mode'     => '0',   // helpers.php gate
             'maintenance_message'  => 'PeerConnect is briefly down for maintenance. Please try again shortly.',
 
+            /* ── Credits & Developers ── */
+            // One per person on that page, holding the path their uploaded
+            // picture was written to. The names and roles are fixed in code
+            // (App/views/includes/credits_data.php); only the picture
+            // changes, so only the picture is kept here. Empty means the card
+            // shows their initials.
+            'credits_photo_palad'    => '',
+            'credits_photo_maglanoc' => '',
+            'credits_photo_domingo'  => '',
+            'credits_photo_venus'    => '',
+
             /* ── Security ── */
             'login_lockout_enable' => '1',   // auth/login.php + admin/login.php
             'login_max_attempts'   => '5',

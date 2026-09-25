@@ -218,6 +218,14 @@ return [
     'admin-resource-remove'       => 'App/views/admin/action_resource.php',
     'admin-action-settings'       => 'App/views/admin/action_settings.php',
 
+    // Credits & Developers. One page, two ways in: 'credits' for a mentor or
+    // mentee from their Settings, 'admin-credits' for an administrator from
+    // System Settings — the administrator's copy is the one that can change a
+    // picture. Both draw App/views/includes/credits_ui.php.
+    'credits'                     => 'App/views/credits/index.php',
+    'admin-credits'               => 'App/views/admin/credits.php',
+    'admin-credits-photo'         => 'App/views/admin/credits_photo.php',
+
     // Announcements — the admin writes them, mentors and mentees read them.
     // One member page serves both roles; the query decides what each may see
     // (see App/views/includes/announcement_data.php).

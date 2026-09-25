@@ -268,6 +268,7 @@ include __DIR__ . '/includes/settings_ui.php';
                 ['admin-settings-email', 'Email & notifications', 'What gets emailed, and to whom', '#EAF1FB', '#1A5C9A', 'chat'],
                 ['admin-settings-integrations', 'Integrations', 'Google, mail, video, reCAPTCHA', '#E6F5EE', '#17654B', 'check'],
                 ['admin-settings-logs', 'Activity logs', 'Who signed in, and when', '#FEF6DC', '#B7791F', 'chart'],
+                ['admin-credits', 'Credits &amp; developers', 'Who built PeerConnect, and their pictures', '#EEE9FB', '#6B21A8', 'group'],
             ] as [$r, $t, $d, $bg, $fg, $ic]): ?>
                 <a class="st-row" style="text-decoration:none;" href="<?= url($r) ?>">
                     <span class="st-dot" style="background:<?= $bg ?>;color:<?= $fg ?>;"><?= ss_icon($ic) ?></span>
