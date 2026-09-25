@@ -51,7 +51,131 @@ if (!$path || !$type) {
     $refuse(404, 'That document is not on the server.');
 }
 
-$ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+$ext   = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+$isPdf = $type === 'application/pdf';
+
+/*
+ * Two things at one address.
+ *
+ * Without ?raw, a page that shows the document fitted to the window. A photo
+ * of an ID card is a few thousand pixels wide, and a browser handed the file
+ * on its own draws it at that size — the owner opened a link from their email
+ * and got a corner of a document, with no way to see the rest but to scroll
+ * around it.
+ *
+ * With ?raw=1, the bytes, which is what that page's <img> asks for. The
+ * signature is checked the same either way, so the second address is worth no
+ * more than the first.
+ */
+if (!isset($_GET['raw'])) {
+    $rawUrl = htmlspecialchars(
+        AdminReviewLink::url('admin-review-file', $check['id'], $check['action'],
+            (int)($_GET['e'] ?? 0)) . '&raw=1',
+        ENT_QUOTES
+    );
+    $label = $check['action'] === 'id' ? 'Valid ID' : 'Certificate of Registration';
+
+    header('Content-Type: text/html; charset=utf-8');
+    header('Cache-Control: private, no-store');
+    header('Referrer-Policy: no-referrer');
+    ?>
+    <!DOCTYPE html>
+    <html lang="en">
+
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="robots" content="noindex, nofollow">
+        <title><?= htmlspecialchars($label) ?> — <?= htmlspecialchars(pc_setting($con, 'platform_name')) ?></title>
+        <style>
+            :root { color-scheme: light; }
+
+            body {
+                margin: 0;
+                min-height: 100vh;
+                display: flex;
+                flex-direction: column;
+                background: #0E1626;
+                font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+                color: #E7EDF7;
+            }
+
+            header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 14px;
+                flex-wrap: wrap;
+                padding: 12px 18px;
+                background: rgba(255, 255, 255, .06);
+            }
+
+            header b { font-size: 14.5px; font-weight: 600; }
+
+            header a {
+                color: #BFD9F6;
+                font-size: 13px;
+                text-decoration: none;
+                border: 1px solid rgba(255, 255, 255, .22);
+                border-radius: 8px;
+                padding: 7px 13px;
+            }
+
+            header a:hover { background: rgba(255, 255, 255, .1); }
+
+            main {
+                flex: 1;
+                min-height: 0;
+                display: grid;
+                place-items: center;
+                padding: 16px;
+            }
+
+            /* The whole document, inside the window, however large the file is. */
+            img {
+                max-width: 100%;
+                max-height: calc(100vh - 92px);
+                object-fit: contain;
+                border-radius: 10px;
+                background: #fff;
+            }
+
+            iframe {
+                width: 100%;
+                height: calc(100vh - 92px);
+                border: 0;
+                border-radius: 10px;
+                background: #fff;
+            }
+
+            @media (max-width: 640px) {
+                header { padding: 10px 12px; }
+                main { padding: 10px; }
+                img, iframe { max-height: calc(100vh - 104px); height: calc(100vh - 104px); }
+                img { height: auto; }
+            }
+        </style>
+    </head>
+
+    <body>
+        <header>
+            <b><?= htmlspecialchars($label) ?></b>
+            <a href="<?= $rawUrl ?>" target="_blank" rel="noopener">Open full size</a>
+        </header>
+        <main>
+            <?php if ($isPdf): ?>
+                <iframe src="<?= $rawUrl ?>" title="<?= htmlspecialchars($label) ?>"></iframe>
+            <?php else: ?>
+                <img src="<?= $rawUrl ?>" alt="<?= htmlspecialchars($label) ?>">
+            <?php endif; ?>
+        </main>
+    </body>
+
+    </html>
+    <?php
+    exit;
+}
+
 header('Content-Type: ' . $type);
 header('Content-Length: ' . filesize($path));
 header('Content-Disposition: inline; filename="document.' . $ext . '"');

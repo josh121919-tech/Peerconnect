@@ -32,13 +32,14 @@ $str = fn(string $k) => is_scalar($_GET[$k] ?? null) ? trim((string)$_GET[$k]) :
 $q      = $str('q');
 $qtype  = in_array($str('type'), AssessmentService::TYPES, true) ? $str('type') : '';
 $topic  = $str('topic');
+$club   = $str('club');
 $mentor = (int)$str('mentor');
 $sort   = in_array($str('sort'), ['newest', 'answers', 'hardest', 'points'], true) ? $str('sort') : 'newest';
 
 $perPage = 8;
 $page    = max(1, (int)$str('page'));
 
-$filters = ['q' => $q, 'qtype' => $qtype, 'topic' => $topic, 'mentor' => $mentor];
+$filters = ['q' => $q, 'qtype' => $qtype, 'topic' => $topic, 'club' => $club, 'mentor' => $mentor];
 
 /* ── Tab counts, under the same filters ───────────────────────────────── */
 $counts = AssessmentAdminRepository::questionTabCounts($con, $filters);
@@ -65,7 +66,7 @@ $offset     = ($page - 1) * $perPage;
 $rows = AssessmentAdminRepository::questionPage($con, $filters, $view, $perPage, $offset, $sort);
 
 /* ── Filter options and rail ──────────────────────────────────────────── */
-$topics     = AssessmentAdminRepository::questionTopics($con);
+$clubs      = AssessmentAdminRepository::questionClubs($con);
 $mentorList = AssessmentAdminRepository::questionMentors($con);
 $byType     = AssessmentAdminRepository::questionsByType($con);
 $typeTotal  = array_sum(array_column($byType, 'c'));
@@ -76,14 +77,15 @@ function qb_url(array $over = []): string
 {
     $p = array_merge([
         'tab' => $_GET['tab'] ?? null, 'q' => $_GET['q'] ?? null, 'type' => $_GET['type'] ?? null,
-        'topic' => $_GET['topic'] ?? null, 'mentor' => $_GET['mentor'] ?? null,
+        'topic' => $_GET['topic'] ?? null, 'club' => $_GET['club'] ?? null,
+        'mentor' => $_GET['mentor'] ?? null,
         'sort' => $_GET['sort'] ?? null, 'page' => $_GET['page'] ?? null,
     ], $over);
     $p = array_filter($p, fn($v) => $v !== null && $v !== '' && !is_array($v));
     return url('admin-assessments-questions') . ($p ? '?' . http_build_query($p) : '');
 }
 
-$hasFilter = ($q !== '' || $qtype !== '' || $topic !== '' || $mentor > 0);
+$hasFilter = ($q !== '' || $qtype !== '' || $topic !== '' || $club !== '' || $mentor > 0);
 
 $current_page = 'assessments-questions';
 include 'layout.php';
@@ -159,10 +161,10 @@ include __DIR__ . '/includes/assessments_ui.php';
                 </select>
             </div>
             <div class="ss-field">
-                <select name="topic" aria-label="Topic">
-                    <option value="">All topics</option>
-                    <?php foreach ($topics as $t): ?>
-                        <option value="<?= htmlspecialchars($t) ?>" <?= $topic === $t ? 'selected' : '' ?>><?= htmlspecialchars($t) ?></option>
+                <select name="club" aria-label="Club">
+                    <option value="">Clubs</option>
+                    <?php foreach ($clubs as $cl): ?>
+                        <option value="<?= htmlspecialchars($cl) ?>" <?= $club === $cl ? 'selected' : '' ?>><?= htmlspecialchars($cl) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

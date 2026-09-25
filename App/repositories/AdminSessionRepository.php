@@ -45,6 +45,7 @@ class AdminSessionRepository extends Repository
         FROM session_requests sr
         JOIN users mo ON mo.user_id = sr.mentor_id
         JOIN users me ON me.user_id = sr.mentee_id
+        LEFT JOIN profile po ON po.user_id = sr.mentor_id
         " . SessionRepository::slotJoin() . "
         ";
     }
@@ -115,6 +116,7 @@ class AdminSessionRepository extends Repository
      *   q        text typed into the search box — a name, a subject, or the
      *            digits of a reference (PC-2026-0123) or a bare id
      *   subject  exactly this subject
+     *   club     the club the mentor belongs to
      *   type     '1v1' or 'group' (the slot's type)
      *   from/to  'Y-m-d', on or after / on or before
      *   mentor   this mentor's id
@@ -143,6 +145,10 @@ class AdminSessionRepository extends Repository
 
         $subject = trim((string)($f['subject'] ?? ''));
         if ($subject !== '') { $clauses[] = 'sr.subject = ?';     $types .= 's'; $args[] = $subject; }
+
+        // po is the mentor's profile, joined by both fromSql() and selectSql().
+        $club = trim((string)($f['club'] ?? ''));
+        if ($club !== '')    { $clauses[] = 'po.club = ?';        $types .= 's'; $args[] = $club; }
 
         $type = (string)($f['type'] ?? '');
         if ($type !== '')    { $clauses[] = 'a.session_type = ?'; $types .= 's'; $args[] = $type; }
@@ -259,6 +265,22 @@ class AdminSessionRepository extends Repository
     public static function find(mysqli $con, int $sessionId): ?array
     {
         return self::typedRow($con, self::selectSql() . " WHERE sr.request_id = ? LIMIT 1", 'i', [$sessionId]);
+    }
+
+    /**
+     * The clubs sessions are actually run by — the club on the mentor's
+     * profile. Only clubs with a session behind them are listed: a filter
+     * offering a club that selects nothing is a dead end.
+     */
+    public static function clubs(mysqli $con): array
+    {
+        return array_column(self::rows($con, "
+            SELECT DISTINCT p.club
+            FROM session_requests sr
+            JOIN profile p ON p.user_id = sr.mentor_id
+            WHERE p.club IS NOT NULL AND p.club <> ''
+            ORDER BY p.club
+        "), 'club');
     }
 
     /** Every subject any session has ever been about, for the filter menus. */

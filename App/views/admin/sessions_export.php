@@ -28,12 +28,14 @@ $view    = in_array(ad_query('tab'), array_keys(ad_session_states()), true) ? ad
 $q       = trim(ad_query('q'));
 $type    = in_array($_GET['type'] ?? '', ['1v1', 'group'], true) ? $_GET['type'] : '';
 $subject = trim(ad_query('subject'));
+$club    = trim(ad_query('club'));
 $from    = trim(ad_query('from'));
 $to      = trim(ad_query('to'));
 
 $rows = AdminSessionRepository::allMatching($con, [
     'q'       => $q,
     'subject' => $subject,
+    'club'    => $club,
     'type'    => $type,
     'from'    => ($from !== '' && strtotime($from)) ? date('Y-m-d', strtotime($from)) : '',
     'to'      => ($to !== '' && strtotime($to)) ? date('Y-m-d', strtotime($to)) : '',

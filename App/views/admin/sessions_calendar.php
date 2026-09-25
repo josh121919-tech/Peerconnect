@@ -43,6 +43,7 @@ $selected = $sel !== '' && strtotime($sel) ? date('Y-m-d', strtotime($sel)) : $f
 $fStatus  = in_array($_GET['status'] ?? '', array_keys($STATES), true) ? $_GET['status'] : '';
 $fType    = in_array($_GET['type'] ?? '', ['1v1', 'group'], true) ? $_GET['type'] : '';
 $fSubject = trim(ad_query('subject'));
+$fClub    = trim(ad_query('club'));
 $fMentor  = (int)($_GET['mentor'] ?? 0);
 
 /* ── The window each mode covers ──────────────────────────────────────── */
@@ -69,6 +70,7 @@ if ($mode === 'day') {
 $all = AdminSessionRepository::inRange($con, $rangeStart, $rangeEnd, [
     'type'    => $fType,
     'subject' => $fSubject,
+    'club'    => $fClub,
     'mentor'  => $fMentor,
 ], $fStatus);
 
@@ -93,7 +95,7 @@ $hours = range($minH, $maxH);
 $dayList = $byDay[$selected] ?? [];
 
 /* ── Filter options ───────────────────────────────────────────────────── */
-$subjects = AdminSessionRepository::subjects($con);
+$clubs    = AdminSessionRepository::clubs($con);
 $mentors  = AdminSessionRepository::mentorsWithSessions($con);
 
 /** Keep mode and filters when moving around. */
@@ -102,7 +104,8 @@ function cal_url(array $over = []): string
     $p = array_merge([
         'mode' => $_GET['mode'] ?? null, 'd' => $_GET['d'] ?? null, 'sel' => $_GET['sel'] ?? null,
         'status' => $_GET['status'] ?? null, 'type' => $_GET['type'] ?? null,
-        'subject' => $_GET['subject'] ?? null, 'mentor' => $_GET['mentor'] ?? null,
+        'subject' => $_GET['subject'] ?? null, 'club' => $_GET['club'] ?? null,
+        'mentor' => $_GET['mentor'] ?? null,
     ], $over);
     $p = array_filter($p, fn($v) => $v !== null && $v !== '');
     return url('admin-sessions-calendar') . ($p ? '?' . http_build_query($p) : '');
@@ -111,7 +114,7 @@ function cal_url(array $over = []): string
 $step = $mode === 'day' ? '1 day' : ($mode === 'week' ? '1 week' : '1 month');
 $prev = date('Y-m-d', strtotime("-$step", $focusTs));
 $next = date('Y-m-d', strtotime("+$step", $focusTs));
-$hasFilter = ($fStatus !== '' || $fType !== '' || $fSubject !== '' || $fMentor > 0);
+$hasFilter = ($fStatus !== '' || $fType !== '' || $fSubject !== '' || $fClub !== '' || $fMentor > 0);
 
 $csrf = csrf_token();
 $current_page = 'sessions-calendar';
@@ -257,10 +260,10 @@ include __DIR__ . '/includes/sessions_ui.php';
                 </select>
             </div>
             <div class="ss-field">
-                <select name="subject" aria-label="Subject">
-                    <option value="">All subjects</option>
-                    <?php foreach ($subjects as $s): ?>
-                        <option value="<?= htmlspecialchars($s) ?>" <?= $fSubject === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
+                <select name="club" aria-label="Club">
+                    <option value="">Clubs</option>
+                    <?php foreach ($clubs as $cl): ?>
+                        <option value="<?= htmlspecialchars($cl) ?>" <?= $fClub === $cl ? 'selected' : '' ?>><?= htmlspecialchars($cl) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

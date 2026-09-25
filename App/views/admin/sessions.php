@@ -41,6 +41,7 @@ $view  = in_array($_GET['tab'] ?? '', $VIEWS, true) ? $_GET['tab'] : 'all';
 $q       = trim(ad_query('q'));
 $type    = in_array($_GET['type'] ?? '', ['1v1', 'group'], true) ? $_GET['type'] : '';
 $subject = trim(ad_query('subject'));
+$club    = trim(ad_query('club'));
 $from    = trim(ad_query('from'));
 $to      = trim(ad_query('to'));
 $sort    = in_array($_GET['sort'] ?? '', ['newest', 'oldest', 'subject'], true) ? $_GET['sort'] : 'newest';
@@ -53,6 +54,7 @@ $page    = max(1, (int)($_GET['page'] ?? 1));
 $filters = [
     'q'       => $q,
     'subject' => $subject,
+    'club'    => $club,
     'type'    => $type,
     'from'    => ($from !== '' && strtotime($from)) ? date('Y-m-d', strtotime($from)) : '',
     'to'      => ($to !== '' && strtotime($to)) ? date('Y-m-d', strtotime($to)) : '',
@@ -101,8 +103,8 @@ $offset     = ($page - 1) * $perPage;
 
 $rows = AdminSessionRepository::page($con, $filters, $view, $sort, $perPage, $offset);
 
-/* ── Subjects, for the filter ─────────────────────────────────────────── */
-$subjects = AdminSessionRepository::subjects($con);
+/* ── Clubs, for the filter ────────────────────────────────────────────── */
+$clubs = AdminSessionRepository::clubs($con);
 
 /* ── The session in the side panel ────────────────────────────────────── */
 $detail = null;
@@ -127,14 +129,15 @@ function ss_url(array $over = []): string
 {
     $p = array_merge([
         'tab' => $_GET['tab'] ?? null, 'q' => $_GET['q'] ?? null, 'type' => $_GET['type'] ?? null,
-        'subject' => $_GET['subject'] ?? null, 'from' => $_GET['from'] ?? null, 'to' => $_GET['to'] ?? null,
+        'subject' => $_GET['subject'] ?? null, 'club' => $_GET['club'] ?? null,
+        'from' => $_GET['from'] ?? null, 'to' => $_GET['to'] ?? null,
         'sort' => $_GET['sort'] ?? null, 'page' => $_GET['page'] ?? null, 'open' => $_GET['open'] ?? null,
     ], $over);
     $p = array_filter($p, fn($v) => $v !== null && $v !== '');
     return url('admin-sessions') . ($p ? '?' . http_build_query($p) : '');
 }
 
-$hasFilter = ($q !== '' || $type !== '' || $subject !== '' || $from !== '' || $to !== '');
+$hasFilter = ($q !== '' || $type !== '' || $subject !== '' || $club !== '' || $from !== '' || $to !== '');
 $csrf = csrf_token();
 $backHere = ss_url();
 
@@ -157,7 +160,8 @@ include __DIR__ . '/includes/sessions_ui.php';
                 <?php // Built once: the CSV and the PDF must export the same selection. ?>
                 <?php $ss_export_qs = http_build_query(array_filter([
                     'tab' => $view !== 'all' ? $view : null, 'q' => $q ?: null, 'type' => $type ?: null,
-                    'subject' => $subject ?: null, 'from' => $from ?: null, 'to' => $to ?: null,
+                    'subject' => $subject ?: null, 'club' => $club ?: null,
+                    'from' => $from ?: null, 'to' => $to ?: null,
                 ], fn($v) => $v !== null)); ?>
                 <a class="ss-export" href="<?= url('admin-sessions-export') . '?' . $ss_export_qs ?>">
                     <svg fill="none" stroke="currentColor" stroke-width="1.9" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v11m0 0 4-4m-4 4-4-4M4 19h16" /></svg>
@@ -254,10 +258,10 @@ include __DIR__ . '/includes/sessions_ui.php';
                 </select>
             </div>
             <div class="ss-field">
-                <select name="subject" aria-label="Subject">
-                    <option value="">All subjects</option>
-                    <?php foreach ($subjects as $s): ?>
-                        <option value="<?= htmlspecialchars($s) ?>" <?= $subject === $s ? 'selected' : '' ?>><?= htmlspecialchars($s) ?></option>
+                <select name="club" aria-label="Club">
+                    <option value="">Clubs</option>
+                    <?php foreach ($clubs as $cl): ?>
+                        <option value="<?= htmlspecialchars($cl) ?>" <?= $club === $cl ? 'selected' : '' ?>><?= htmlspecialchars($cl) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

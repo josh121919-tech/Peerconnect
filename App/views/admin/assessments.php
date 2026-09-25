@@ -30,6 +30,7 @@ $view  = in_array($_GET['tab'] ?? '', $VIEWS, true) ? $_GET['tab'] : 'all';
 $str = fn(string $k) => is_scalar($_GET[$k] ?? null) ? trim((string)$_GET[$k]) : '';
 $q      = $str('q');
 $topic  = $str('topic');
+$club   = $str('club');
 $mentor = (int)$str('mentor');
 $sort   = in_array($str('sort'), ['newest', 'oldest', 'attempts', 'score', 'title'], true) ? $str('sort') : 'newest';
 $open   = (int)$str('open');
@@ -37,7 +38,7 @@ $open   = (int)$str('open');
 $perPage = 8;
 $page    = max(1, (int)$str('page'));
 
-$filters = ['q' => $q, 'topic' => $topic, 'mentor' => $mentor];
+$filters = ['q' => $q, 'topic' => $topic, 'club' => $club, 'mentor' => $mentor];
 
 /* ── Tab counts, under the same filters ───────────────────────────────── */
 $counts = AssessmentAdminRepository::listTabCounts($con, $filters);
@@ -70,7 +71,7 @@ $offset     = ($page - 1) * $perPage;
 $rows = AssessmentAdminRepository::page($con, $filters, $view, $sort, $perPage, $offset);
 
 /* ── Filter options ───────────────────────────────────────────────────── */
-$topics     = AssessmentAdminRepository::topics($con);
+$clubs      = AssessmentAdminRepository::clubs($con);
 $mentorList = AssessmentAdminRepository::mentors($con);
 
 /* ── Topic breakdown for the rail ─────────────────────────────────────── */
@@ -98,14 +99,14 @@ function ab_url(array $over = []): string
 {
     $p = array_merge([
         'tab' => $_GET['tab'] ?? null, 'q' => $_GET['q'] ?? null, 'topic' => $_GET['topic'] ?? null,
-        'mentor' => $_GET['mentor'] ?? null, 'sort' => $_GET['sort'] ?? null,
+        'club' => $_GET['club'] ?? null, 'mentor' => $_GET['mentor'] ?? null, 'sort' => $_GET['sort'] ?? null,
         'page' => $_GET['page'] ?? null, 'open' => $_GET['open'] ?? null,
     ], $over);
     $p = array_filter($p, fn($v) => $v !== null && $v !== '' && !is_array($v));
     return url('admin-assessments') . ($p ? '?' . http_build_query($p) : '');
 }
 
-$hasFilter = ($q !== '' || $topic !== '' || $mentor > 0);
+$hasFilter = ($q !== '' || $topic !== '' || $club !== '' || $mentor > 0);
 
 $csrf = csrf_token();
 $backHere = ab_url();
@@ -177,10 +178,10 @@ include __DIR__ . '/includes/assessments_ui.php';
                 <input type="search" name="q" value="<?= htmlspecialchars($q) ?>" placeholder="Search title, topic or mentor…">
             </div>
             <div class="ss-field">
-                <select name="topic" aria-label="Topic">
-                    <option value="">All topics</option>
-                    <?php foreach ($topics as $t): ?>
-                        <option value="<?= htmlspecialchars($t) ?>" <?= $topic === $t ? 'selected' : '' ?>><?= htmlspecialchars($t) ?></option>
+                <select name="club" aria-label="Club">
+                    <option value="">Clubs</option>
+                    <?php foreach ($clubs as $cl): ?>
+                        <option value="<?= htmlspecialchars($cl) ?>" <?= $club === $cl ? 'selected' : '' ?>><?= htmlspecialchars($cl) ?></option>
                     <?php endforeach; ?>
                 </select>
             </div>

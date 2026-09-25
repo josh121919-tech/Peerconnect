@@ -41,6 +41,7 @@ class AssessmentAdminRepository extends Repository
         FROM assessment_questions q
         JOIN assessments a ON a.assessment_id = q.assessment_id
         JOIN users u ON u.user_id = a.mentor_id
+        LEFT JOIN profile p ON p.user_id = a.mentor_id
         LEFT JOIN (
             SELECT an.question_id,
                    COUNT(*) answered,
@@ -96,12 +97,15 @@ class AssessmentAdminRepository extends Repository
         'title'    => 'a.title ASC',
     ];
 
-    /** Filters: 'q' (text), 'topic', 'mentor' (id). */
+    /** Filters: 'q' (text), 'topic', 'club', 'mentor' (id). */
     private static function listConditions(array $filters): array
     {
         return self::conditions($filters, [
             'q'      => ["CONCAT_WS(' ', a.title, a.topic, u.firstname, u.lastname) LIKE ?", 's', fn($v) => self::like((string)$v)],
             'topic'  => ['a.topic = ?', 's', fn($v) => (string)$v],
+            // p is the author's profile: LIST_SELECT joins it, and the two
+            // counting queries below were given the same join for this.
+            'club'   => ['p.club = ?', 's', fn($v) => (string)$v],
             'mentor' => ['a.mentor_id = ?', 'i', fn($v) => (int)$v],
         ]);
     }
@@ -117,7 +121,9 @@ class AssessmentAdminRepository extends Repository
                    SUM(a.status = 'draft') AS draft,
                    SUM(" . self::ATTEMPT_EXISTS . ") AS attempted,
                    SUM(NOT " . self::ATTEMPT_EXISTS . ") AS untouched
-            FROM assessments a JOIN users u ON u.user_id = a.mentor_id
+            FROM assessments a
+            JOIN users u        ON u.user_id = a.mentor_id
+            LEFT JOIN profile p ON p.user_id = a.mentor_id
             $where
         ", $c['types'], $c['args']);
         return array_map('intval', $row ?? []);
@@ -133,7 +139,11 @@ class AssessmentAdminRepository extends Repository
         }
         $where = $all ? 'WHERE ' . implode(' AND ', $all) : '';
         return (int)self::value($con, "
-            SELECT COUNT(*) FROM assessments a JOIN users u ON u.user_id = a.mentor_id $where
+            SELECT COUNT(*)
+            FROM assessments a
+            JOIN users u        ON u.user_id = a.mentor_id
+            LEFT JOIN profile p ON p.user_id = a.mentor_id
+            $where
         ", $c['types'], $c['args']);
     }
 
@@ -175,6 +185,21 @@ class AssessmentAdminRepository extends Repository
                    (SELECT COUNT(DISTINCT mentee_id) FROM assessment_attempts)                 AS mentees
         ");
         return array_map('intval', $row ?? []);
+    }
+
+    /**
+     * The clubs assessments belong to — the club on the profile of the mentor
+     * who wrote them. Only clubs with an assessment behind them are listed.
+     */
+    public static function clubs(mysqli $con): array
+    {
+        return array_column(self::rows($con, "
+            SELECT DISTINCT p.club
+            FROM assessments a
+            JOIN profile p ON p.user_id = a.mentor_id
+            WHERE p.club IS NOT NULL AND p.club <> ''
+            ORDER BY p.club
+        "), 'club');
     }
 
     /** The topics assessments actually carry. */
@@ -225,13 +250,14 @@ class AssessmentAdminRepository extends Repository
         'flagged'    => 'COALESCE(s.flagged, 0) > 0',
     ];
 
-    /** Filters: 'q', 'qtype', 'topic', 'mentor'. */
+    /** Filters: 'q', 'qtype', 'topic', 'club', 'mentor'. */
     private static function questionConditions(array $filters): array
     {
         return self::conditions($filters, [
             'q'      => ["CONCAT_WS(' ', q.question_text, q.hint, a.title, a.topic) LIKE ?", 's', fn($v) => self::like((string)$v)],
             'qtype'  => ['q.question_type = ?', 's', fn($v) => (string)$v],
             'topic'  => ['a.topic = ?', 's', fn($v) => (string)$v],
+            'club'   => ['p.club = ?', 's', fn($v) => (string)$v],
             'mentor' => ['a.mentor_id = ?', 'i', fn($v) => (int)$v],
         ]);
     }
@@ -335,6 +361,19 @@ class AssessmentAdminRepository extends Repository
             JOIN assessment_attempts t ON t.attempt_id = an.attempt_id AND t.status = 'submitted'
         ");
         return ['answered' => (int)($row['answered'] ?? 0), 'correct' => (int)($row['correct'] ?? 0)];
+    }
+
+    /** The same, for the clubs that have a question written under them. */
+    public static function questionClubs(mysqli $con): array
+    {
+        return array_column(self::rows($con, "
+            SELECT DISTINCT p.club
+            FROM assessments a
+            JOIN assessment_questions q ON q.assessment_id = a.assessment_id
+            JOIN profile p ON p.user_id = a.mentor_id
+            WHERE p.club IS NOT NULL AND p.club <> ''
+            ORDER BY p.club
+        "), 'club');
     }
 
     public static function questionTopics(mysqli $con): array
