@@ -5,5 +5,10 @@
         "phpmailer/phpmailer": "^7.1",
         "minishlink/web-push": "^11.0",
         "smalot/pdfparser": "^2.12"
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
     }
 }
