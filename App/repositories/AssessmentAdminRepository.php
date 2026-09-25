@@ -187,21 +187,6 @@ class AssessmentAdminRepository extends Repository
         return array_map('intval', $row ?? []);
     }
 
-    /**
-     * The clubs assessments belong to — the club on the profile of the mentor
-     * who wrote them. Only clubs with an assessment behind them are listed.
-     */
-    public static function clubs(mysqli $con): array
-    {
-        return array_column(self::rows($con, "
-            SELECT DISTINCT p.club
-            FROM assessments a
-            JOIN profile p ON p.user_id = a.mentor_id
-            WHERE p.club IS NOT NULL AND p.club <> ''
-            ORDER BY p.club
-        "), 'club');
-    }
-
     /** The topics assessments actually carry. */
     public static function topics(mysqli $con): array
     {
@@ -361,19 +346,6 @@ class AssessmentAdminRepository extends Repository
             JOIN assessment_attempts t ON t.attempt_id = an.attempt_id AND t.status = 'submitted'
         ");
         return ['answered' => (int)($row['answered'] ?? 0), 'correct' => (int)($row['correct'] ?? 0)];
-    }
-
-    /** The same, for the clubs that have a question written under them. */
-    public static function questionClubs(mysqli $con): array
-    {
-        return array_column(self::rows($con, "
-            SELECT DISTINCT p.club
-            FROM assessments a
-            JOIN assessment_questions q ON q.assessment_id = a.assessment_id
-            JOIN profile p ON p.user_id = a.mentor_id
-            WHERE p.club IS NOT NULL AND p.club <> ''
-            ORDER BY p.club
-        "), 'club');
     }
 
     public static function questionTopics(mysqli $con): array

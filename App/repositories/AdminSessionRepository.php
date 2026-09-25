@@ -267,22 +267,6 @@ class AdminSessionRepository extends Repository
         return self::typedRow($con, self::selectSql() . " WHERE sr.request_id = ? LIMIT 1", 'i', [$sessionId]);
     }
 
-    /**
-     * The clubs sessions are actually run by — the club on the mentor's
-     * profile. Only clubs with a session behind them are listed: a filter
-     * offering a club that selects nothing is a dead end.
-     */
-    public static function clubs(mysqli $con): array
-    {
-        return array_column(self::rows($con, "
-            SELECT DISTINCT p.club
-            FROM session_requests sr
-            JOIN profile p ON p.user_id = sr.mentor_id
-            WHERE p.club IS NOT NULL AND p.club <> ''
-            ORDER BY p.club
-        "), 'club');
-    }
-
     /** Every subject any session has ever been about, for the filter menus. */
     public static function subjects(mysqli $con): array
     {

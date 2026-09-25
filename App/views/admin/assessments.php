@@ -71,7 +71,7 @@ $offset     = ($page - 1) * $perPage;
 $rows = AssessmentAdminRepository::page($con, $filters, $view, $sort, $perPage, $offset);
 
 /* ── Filter options ───────────────────────────────────────────────────── */
-$clubs      = AssessmentAdminRepository::clubs($con);
+$clubs      = pc_club_list($con);
 $mentorList = AssessmentAdminRepository::mentors($con);
 
 /* ── Topic breakdown for the rail ─────────────────────────────────────── */

@@ -95,7 +95,7 @@ $hours = range($minH, $maxH);
 $dayList = $byDay[$selected] ?? [];
 
 /* ── Filter options ───────────────────────────────────────────────────── */
-$clubs    = AdminSessionRepository::clubs($con);
+$clubs    = pc_club_list($con);
 $mentors  = AdminSessionRepository::mentorsWithSessions($con);
 
 /** Keep mode and filters when moving around. */

@@ -945,6 +945,38 @@ if (!defined('PC_CLUBS')) {
     ]);
 }
 
+if (!function_exists('pc_club_list')) {
+    /**
+     * Every club a filter should offer: the school's nine, and then anything
+     * else a member has actually put on their profile.
+     *
+     * The verification forms offer the fixed list, but the Club/Organisation
+     * box on a mentor's own profile is free text — so a club can exist that
+     * PC_CLUBS does not name. Leaving those off the end of the menu would
+     * hide that mentor's sessions with no way to ask for them.
+     */
+    function pc_club_list(mysqli $con): array
+    {
+        $extra = [];
+        $res = $con->query("
+            SELECT DISTINCT club FROM profile
+            WHERE club IS NOT NULL AND TRIM(club) <> ''
+            ORDER BY club
+        ");
+        while ($res && ($r = $res->fetch_assoc())) {
+            // Two spellings that differ only in spacing collapse to one here,
+            // so the menu cannot show the same club twice.
+            $club = trim((string)$r['club']);
+            if ($club !== '' && !in_array($club, PC_CLUBS, true) && !in_array($club, $extra, true)) {
+                $extra[] = $club;
+            }
+        }
+        if ($res) $res->free();
+
+        return array_merge(PC_CLUBS, $extra);
+    }
+}
+
 if (!function_exists('pc_trend')) {
     // Shared "vs last month" trend badge used by stat cards (mentee
     // Dashboard, Sessions, …) — only ever call this with two counts that

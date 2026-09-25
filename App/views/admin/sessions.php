@@ -104,7 +104,7 @@ $offset     = ($page - 1) * $perPage;
 $rows = AdminSessionRepository::page($con, $filters, $view, $sort, $perPage, $offset);
 
 /* ── Clubs, for the filter ────────────────────────────────────────────── */
-$clubs = AdminSessionRepository::clubs($con);
+$clubs = pc_club_list($con);
 
 /* ── The session in the side panel ────────────────────────────────────── */
 $detail = null;

@@ -66,7 +66,7 @@ $offset     = ($page - 1) * $perPage;
 $rows = AssessmentAdminRepository::questionPage($con, $filters, $view, $perPage, $offset, $sort);
 
 /* ── Filter options and rail ──────────────────────────────────────────── */
-$clubs      = AssessmentAdminRepository::questionClubs($con);
+$clubs      = pc_club_list($con);
 $mentorList = AssessmentAdminRepository::questionMentors($con);
 $byType     = AssessmentAdminRepository::questionsByType($con);
 $typeTotal  = array_sum(array_column($byType, 'c'));
