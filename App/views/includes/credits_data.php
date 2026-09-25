@@ -83,8 +83,28 @@ if (!function_exists('pc_credits_project')) {
                 ['icon' => 'school',   'value' => 'NEUST', 'label' => 'COEd'],
                 ['icon' => 'people',   'value' => 'Peer',  'label' => 'Mentoring'],
             ],
-            // What the site is actually built with. Not a wish list.
-            'tech'    => ['PHP', 'MySQL', 'JavaScript', 'HTML', 'CSS'],
+            /*
+             * What the site is actually built with, grouped by the job each
+             * thing does. Not a wish list: every entry was read off the
+             * codebase — composer.json for the libraries, the page shells for
+             * the front-end, App/views/admin/settings_integrations.php for
+             * the services, and the server it runs on for the rest.
+             *
+             * Deliberately absent: a charting library (the graphs are drawn
+             * by hand in SVG and CSS) and a PDF library (an export is a
+             * letterheaded page the browser prints). Naming either would be
+             * claiming something this project does not use.
+             */
+            'tech'    => [
+                'Frontend'     => ['HTML5', 'CSS3', 'JavaScript', 'Tailwind CSS', 'Google Fonts'],
+                'Backend'      => ['PHP 8.2', 'Composer'],
+                'Database'     => ['MariaDB / MySQL', 'mysqli'],
+                'Framework'    => ['Custom PHP router', 'Repositories & services'],
+                'Libraries'    => ['PHPMailer', 'Google API Client', 'phpdotenv', 'web-push', 'PDFParser'],
+                'Integrations' => ['Google Sign-In', 'Google Calendar', 'reCAPTCHA', 'Jitsi (JaaS)', 'SMTP'],
+                'Platform'     => ['Apache', 'LiteSpeed', 'PWA', 'Service Worker', 'Web Push'],
+                'Tools'        => ['Git', 'XAMPP', 'cPanel'],
+            ],
         ];
     }
 }

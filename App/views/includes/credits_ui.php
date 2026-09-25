@@ -30,9 +30,31 @@ $cr_icon = function (string $name): string {
         'back'     => '<path stroke-linecap="round" stroke-linejoin="round" d="M19 12H5m0 0 6-6m-6 6 6 6"/>',
         'camera'   => '<path stroke-linecap="round" stroke-linejoin="round" d="M4 8.5h3l1.5-2h7L17 8.5h3a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-8a1 1 0 0 1 1-1Z"/><circle cx="12" cy="13" r="3"/>',
         'code'     => '<path stroke-linecap="round" stroke-linejoin="round" d="m9 8-4 4 4 4m6-8 4 4-4 4"/>',
+        'window'   => '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path stroke-linecap="round" d="M3.5 9h17M7 6.8h.01M9.5 6.8h.01"/>',
+        'server'   => '<rect x="3.5" y="4.5" width="17" height="6" rx="2"/><rect x="3.5" y="13.5" width="17" height="6" rx="2"/><path stroke-linecap="round" d="M7 7.5h.01M7 16.5h.01"/>',
+        'database' => '<ellipse cx="12" cy="6.5" rx="7.5" ry="3"/><path d="M4.5 6.5v11c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-11"/><path d="M4.5 12c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3"/>',
+        'layers'   => '<path stroke-linecap="round" stroke-linejoin="round" d="m12 3 8.5 4.5L12 12 3.5 7.5 12 3Z"/><path stroke-linecap="round" stroke-linejoin="round" d="m3.5 12.5 8.5 4.5 8.5-4.5"/>',
+        'box'      => '<path stroke-linecap="round" stroke-linejoin="round" d="M12 3.5 20 8v8l-8 4.5L4 16V8l8-4.5Z"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 8l8 4.5L20 8M12 12.5V20.5"/>',
+        'plug'     => '<path stroke-linecap="round" d="M9 3v5M15 3v5"/><path stroke-linecap="round" stroke-linejoin="round" d="M6.5 8h11v3a5.5 5.5 0 0 1-11 0V8ZM12 16.5V21"/>',
+        'cloud'    => '<path stroke-linecap="round" stroke-linejoin="round" d="M7 18a4 4 0 0 1-.4-8A5.5 5.5 0 0 1 17.4 11 3.5 3.5 0 0 1 17 18H7Z"/>',
+        'wrench'   => '<path stroke-linecap="round" stroke-linejoin="round" d="M14.7 6.3a4 4 0 0 0 5.1 5.1l-8.4 8.4a2.3 2.3 0 0 1-3.2-3.2l8.4-8.4a4 4 0 0 0-1.9-1.9Z"/>',
     ];
     return '<svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24">'
         . ($paths[$name] ?? '') . '</svg>';
+};
+
+/** The icon that goes with each technology group. */
+$cr_group_icon = function (string $group): string {
+    return [
+        'Frontend'     => 'window',
+        'Backend'      => 'server',
+        'Database'     => 'database',
+        'Framework'    => 'layers',
+        'Libraries'    => 'box',
+        'Integrations' => 'plug',
+        'Platform'     => 'cloud',
+        'Tools'        => 'wrench',
+    ][$group] ?? 'code';
 };
 ?>
 
@@ -327,26 +349,50 @@ $cr_icon = function (string $name): string {
 
     /* ── Technologies ───────────────────────────────────────────────── */
 
+    /* Two columns of groups on a wide screen, one on a narrow one — a single
+       column of eight short rows left most of the page empty. */
+    .cr-stack {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 14px;
+    }
+
+    .cr-group {
+        padding: 14px 16px 16px;
+        background: #fff;
+        border: 1px solid var(--gray-100);
+        border-radius: 12px;
+    }
+
+    .cr-group-name {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin: 0 0 11px;
+        font-size: 12.5px;
+        font-weight: 700;
+        color: var(--forest);
+    }
+
+    .cr-group-name svg { width: 16px; height: 16px; color: var(--primary); }
+
     .cr-tech {
         display: flex;
         flex-wrap: wrap;
-        gap: 9px;
+        gap: 7px;
     }
 
     .cr-chip {
         display: inline-flex;
         align-items: center;
-        gap: 6px;
-        padding: 7px 13px;
-        background: #fff;
+        padding: 6px 11px;
+        background: #F7F9FC;
         border: 1px solid var(--gray-100);
-        border-radius: 9px;
-        font-size: 12.5px;
+        border-radius: 8px;
+        font-size: 12px;
         font-weight: 600;
         color: var(--forest);
     }
-
-    .cr-chip svg { width: 14px; height: 14px; color: var(--primary); }
 
     /* ── Foot ───────────────────────────────────────────────────────── */
 
@@ -452,9 +498,18 @@ $cr_icon = function (string $name): string {
 
     <div class="cr-band">
         <p class="cr-label">Technologies</p>
-        <div class="cr-tech">
-            <?php foreach ($project['tech'] as $t): ?>
-                <span class="cr-chip"><?= $cr_icon('code') ?><?= htmlspecialchars($t) ?></span>
+        <p>What each part of <?= htmlspecialchars($project['name']) ?> is built with.</p>
+
+        <div class="cr-stack">
+            <?php foreach ($project['tech'] as $group => $items): ?>
+                <div class="cr-group">
+                    <p class="cr-group-name"><?= $cr_icon($cr_group_icon($group)) ?><?= htmlspecialchars($group) ?></p>
+                    <div class="cr-tech">
+                        <?php foreach ($items as $t): ?>
+                            <span class="cr-chip"><?= htmlspecialchars($t) ?></span>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
             <?php endforeach; ?>
         </div>
     </div>
