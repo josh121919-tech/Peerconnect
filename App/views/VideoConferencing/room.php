@@ -109,7 +109,13 @@ $other_person = $role === 'mentor'
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <!-- No viewport-fit=cover. It lays the page out underneath the phone's
+         navigation bar, and on Android — in Chrome and in the installed app
+         alike — that bar stayed opaque black while safe-area-inset-bottom
+         came back 0, so nothing was padded clear of it and the bottom of the
+         call, where the toolbar lives, sat hidden behind it. Every other page
+         leaves it out and stops above that bar, so this one does too. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#071B4D">
     <title>Video Session – <?= htmlspecialchars($session['subject'] ?? 'Session') ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -156,8 +162,6 @@ $other_person = $role === 'mentor'
             align-items: center;
             gap: 14px;
             padding: 10px 18px;
-            padding-left: max(18px, env(safe-area-inset-left));
-            padding-right: max(18px, env(safe-area-inset-right));
             background: rgba(7, 27, 77, .72);
             border-bottom: 1px solid rgba(255, 255, 255, .08);
             backdrop-filter: blur(10px);
@@ -218,7 +222,6 @@ $other_person = $role === 'mentor'
         /* ── The call ── */
         .vc-stage {
             flex: 1; min-height: 0; position: relative; padding: 12px;
-            padding-bottom: max(12px, env(safe-area-inset-bottom));
         }
         #call-host { width: 100%; height: 100%; border-radius: 16px; overflow: hidden; background: #000; }
         #call-host iframe { width: 100% !important; height: 100% !important; border: 0; display: block; }
@@ -271,7 +274,7 @@ $other_person = $role === 'mentor'
             }
             .vc-end { padding: 9px 11px; }
             .vc-end span { display: none; }
-            .vc-stage { padding: 6px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+            .vc-stage { padding: 6px; }
             #call-host, #loading-overlay { border-radius: 12px; }
             #loading-overlay { inset: 6px; }
             .vc-done-t { font-size: 21px; }
