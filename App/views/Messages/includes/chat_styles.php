@@ -56,10 +56,13 @@
     /* Below 700px #sidebar becomes a fixed 68px bottom tab bar (see
        design_system.php) that the 860px calc() above doesn't leave room
        for — the composer ends up rendered underneath it. Subtract enough
-       to clear the topbar + page heading + bottom tab bar. */
+       to clear the topbar + page heading + bottom tab bar. The page draws
+       under the phone's navigation bar (viewport-fit=cover), which makes
+       100vh that much taller and the tab bar that much taller too, so the
+       inset comes off as well or the composer slides under the bar. */
     @media (max-width: 700px) {
       .msg-layout {
-        height: calc(100vh - 275px);
+        height: calc(100vh - 275px - env(safe-area-inset-bottom, 0px));
       }
     }
 
@@ -369,6 +372,14 @@
     .toast.show {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
+    }
+
+    /* Above the bottom tab bar on a phone, and above the navigation-bar
+       inset it now grows by — at 28px it sat under both. */
+    @media (max-width: 700px) {
+      .toast {
+        bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+      }
     }
 
     .msg-avatar {

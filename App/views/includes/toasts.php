@@ -123,12 +123,14 @@ $pc_flashes = function_exists('pc_flash_take') ? pc_flash_take() : [];
     }
 
     /* On a phone the bottom bar owns the bottom of the screen, so sit above
-       it and use the full width rather than a floating card in the corner. */
+       it and use the full width rather than a floating card in the corner.
+       The bar grows by the navigation-bar inset on the member pages, which
+       draw under it (viewport-fit=cover), so this clears that as well. */
     @media (max-width: 640px) {
         #pc-toast-container {
             right: 12px;
             left: 12px;
-            bottom: 84px;
+            bottom: calc(84px + env(safe-area-inset-bottom, 0px));
             width: auto;
             align-items: stretch;
         }

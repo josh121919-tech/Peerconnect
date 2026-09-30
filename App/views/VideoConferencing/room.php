@@ -109,12 +109,8 @@ $other_person = $role === 'mentor'
 
 <head>
     <meta charset="UTF-8">
-    <!-- No viewport-fit=cover. It lays the page out underneath the phone's
-         navigation bar, and on Android — in Chrome and in the installed app
-         alike — that bar stayed opaque black while safe-area-inset-bottom
-         came back 0, so nothing was padded clear of it and the bottom of the
-         call, where the toolbar lives, sat hidden behind it. Every other page
-         leaves it out and stops above that bar, so this one does too. -->
+    <!-- No viewport-fit=cover, the same as every other page. See body below
+         for why this page has to stop above the phone's navigation bar. -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#071B4D">
     <title>Video Session – <?= htmlspecialchars($session['subject'] ?? 'Session') ?></title>
@@ -145,11 +141,17 @@ $other_person = $role === 'mentor'
             margin: 0;
             background: var(--navy-deep);
             color: #fff;
-            /* dvh, not vh: on a phone the browser's own chrome makes 100vh
-               taller than what you can see, which pushed the call's toolbar
-               under the address bar. The vh line is the fallback. */
-            height: 100vh;
-            height: 100dvh;
+            /*
+             * Pinned to all four edges rather than given a height in
+             * viewport units. 100vh pushed the call's toolbar under the
+             * address bar; 100dvh still counted the strip Android keeps for
+             * its navigation bar, in Chrome and in the installed app, so the
+             * toolbar sat hidden behind that instead. A fixed box ends where
+             * the member pages' bottom bar ends — also position: fixed,
+             * bottom: 0 — and that bar already sits clear of the strip.
+             */
+            position: fixed;
+            inset: 0;
             display: flex;
             flex-direction: column;
             overflow: hidden;
