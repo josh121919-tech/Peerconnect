@@ -12,9 +12,11 @@
  *   $team       from pc_credits_team()
  *   $project    from pc_credits_project()
  *   $backUrl    where the arrow goes — the Settings page it was opened from
- *   $canEdit    true for an administrator: draws the picture controls
+ *   $canEdit    true for the site owner: draws the picture controls
  *   $uploadUrl  where those post to  (only read when $canEdit)
  *   $csrf       (only read when $canEdit)
+ *   $ownerOnly  optional; true for any other administrator, who is told
+ *               why there are no controls instead of wondering where they went
  *
  * The tokens used below (--forest, --primary, --gray-*) are defined by both
  * stylesheets, so this renders identically inside the member shell and inside
@@ -472,6 +474,8 @@ $cr_group_icon = function (string $group): string {
                 JPG, PNG, GIF or WEBP, up to 5&nbsp;MB. A square picture keeps its whole face
                 inside the circle. Until one is uploaded the card shows initials.
             </p>
+        <?php elseif (!empty($ownerOnly)): ?>
+            <p class="cr-note">Pictures are changed from the site owner's account.</p>
         <?php endif; ?>
     </div>
 

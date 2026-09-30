@@ -44,30 +44,46 @@ if (!defined('PC_LOGIN_DUMMY_HASH')) {
     define('PC_LOGIN_DUMMY_HASH', '$2y$10$33tyLMF9N4RKQe695YaOKOwcr4QIDFaGDjhVBd5PCi2yTw9r6RonG');
 }
 
-// Already signed in? Nothing to do here — but where they go next is read from
-// the account, not from the session.
+// Already signed in? Then this page says so, instead of showing the form.
 //
-// This used to switch on $_SESSION['role'] alone and send anyone holding a
-// session to a dashboard. Signup created a session of its own, so registering
-// and then coming back to this page walked into the application without ever
-// entering a password: the reported bug. The state now comes from the
+// Every tab of a browser shares one sign-in. This used to forward a signed-in
+// visitor straight to their dashboard, so an administrator who opened this
+// page in a second tab to try a mentor account was dropped on the admin
+// dashboard with no idea why. Now they are told who is signed in and offered
+// both ways on: continue as that account, or sign out and use another. The
+// form is not shown, and a stale one posted from another tab is not acted on:
+// signing in here would quietly swap the account under every other tab.
+//
+// Where "Continue" goes is read from the account, not from the session. This
+// used to switch on $_SESSION['role'] alone, and signup created a session of
+// its own, so registering and then coming back to this page walked into the
+// application without ever entering a password. The state now comes from the
 // database every time, and pc_verification_gate() enforces the same answer on
 // every other page.
+$signed_in = null;
 if (!empty($_SESSION['user_id']) && !empty($_SESSION['role'])) {
     $current = UserRepository::signInState($con, (int)$_SESSION['user_id']);
     if ($current) {
-        header("Location: " . SignInService::destination(
-            (string)$current['role'],
-            $current['status'],
-            $current['verified'],
-            $con,
-            $current['email_verified_at'] ?? null
-        ));
-        exit;
+        $signed_in = [
+            'email'    => (string)(UserRepository::emailOf($con, (int)$_SESSION['user_id']) ?? ''),
+            'role'     => [
+                'admin'  => 'Administrator',
+                'mentor' => 'Mentor',
+                'mentee' => 'Mentee',
+            ][(string)$current['role']] ?? 'Member',
+            'continue' => SignInService::destination(
+                (string)$current['role'],
+                $current['status'],
+                $current['verified'],
+                $con,
+                $current['email_verified_at'] ?? null
+            ),
+        ];
+    } else {
+        // The account went away while the session lived on. Drop the session
+        // and let the form render rather than pointing at nothing.
+        $_SESSION = [];
     }
-    // The account went away while the session lived on. Drop the session and
-    // let the form render rather than redirecting into nothing.
-    $_SESSION = [];
 }
 
 // A valid "Remember me" cookie signs the visitor straight back in — but only
@@ -87,7 +103,7 @@ $lockout_left = 0;
 $is_login_post = $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login']);
 $wants_form    = isset($_GET['switch']);
 
-if (!$is_login_post && !$wants_form && ($remembered = RememberService::attempt($con))) {
+if ($signed_in === null && !$is_login_post && !$wants_form && ($remembered = RememberService::attempt($con))) {
     $row = UserRepository::signInState($con, (int)$remembered);
     // A cookie signs someone in, so this is a door too, and it is the member
     // one. An administrator holding a remembered session is sent to their own
@@ -108,7 +124,7 @@ if (!$is_login_post && !$wants_form && ($remembered = RememberService::attempt($
     }
 }
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['login'])) {
+if ($signed_in === null && $is_login_post) {
     if (!verify_csrf()) {
         $_SESSION['login_error'] = "Invalid request. Please try again.";
         header("Location: " . url('login'));
@@ -379,6 +395,38 @@ $back_url     = pc_back_url();
                     </a>
                 </div>
 
+                <?php if ($signed_in !== null): ?>
+                <span class="auth-icon-badge" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+                        <circle cx="12" cy="8.5" r="3.6" />
+                        <path stroke-linecap="round" d="M5 19.5c.9-3.4 3.7-5.4 7-5.4s6.1 2 7 5.4" />
+                    </svg>
+                </span>
+
+                <h1 class="auth-h1">You're already signed in</h1>
+                <p class="auth-sub">
+                    This browser is signed in as
+                    <strong><?= htmlspecialchars($signed_in['email']) ?></strong>
+                    (<?= htmlspecialchars($signed_in['role']) ?>). Every tab in the
+                    same browser shares that sign-in.
+                </p>
+
+                <a class="auth-submit auth-submit-link" href="<?= htmlspecialchars($signed_in['continue']) ?>">
+                    Continue as <?= htmlspecialchars($signed_in['role']) ?>
+                </a>
+
+                <!-- Signs out on the way, so it lands on this form with nobody
+                     signed in. That signs this browser out in every tab. -->
+                <a class="auth-submit auth-submit-link auth-submit-ghost" style="margin-top:12px;"
+                   href="<?= htmlspecialchars(url('logout') . '?to=login') ?>">
+                    Sign out and use another account
+                </a>
+
+                <p class="auth-switch" style="margin-top:18px;">
+                    To stay signed in to both, open the other account in an
+                    incognito window or another browser.
+                </p>
+                <?php else: ?>
                 <h1 class="auth-h1">Welcome back</h1>
                 <p class="auth-sub">Log in to continue your mentorship journey.</p>
 
@@ -513,6 +561,7 @@ $back_url     = pc_back_url();
                     Don't have an account?
                     <a href="<?= htmlspecialchars(url('signup')) ?>">Create an account</a>
                 </p>
+                <?php endif; ?>
 
                 <p class="auth-legal">
                     By continuing you agree to our
@@ -547,7 +596,8 @@ $back_url     = pc_back_url();
          * empty box and nothing else, which from the far side of the screen
          * looks like the button simply not working.
          */
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
+        // No form while somebody is already signed in (see $signed_in above).
+        document.getElementById('loginForm')?.addEventListener('submit', function(e) {
             const email = document.getElementById('login-email');
             const pw = document.getElementById('login-password');
 

@@ -101,7 +101,7 @@ $active_page = 'find_mentor';
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>View Mentor – NEUST</title>
     <?php include __DIR__ . '/../includes/style.php'; ?>
     <style>

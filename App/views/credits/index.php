@@ -3,8 +3,8 @@
 /**
  * credits/index.php — Credits & Developers, for a mentor or a mentee.
  *
- * Opened from their Settings page. Read-only: the pictures are changed by an
- * administrator on the admin copy of this page, so there is nothing to submit
+ * Opened from their Settings page. Read-only: the pictures are changed by the
+ * site owner on the admin copy of this page, so there is nothing to submit
  * here and nothing is drawn that would suggest otherwise.
  *
  * The page itself lives in App/views/includes/credits_ui.php, shared with the
@@ -37,7 +37,7 @@ $active_page = 'settings';
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Credits &amp; Developers — <?= htmlspecialchars($project['name']) ?></title>
     <?php require_once __DIR__ . '/../includes/design_system.php'; ?>
 </head>

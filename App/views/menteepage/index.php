@@ -133,7 +133,7 @@ $a_notstarted_len = $assess_total > 0 ? $assess_circumference * ($assess_breakdo
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0, viewport-fit=cover">
     <title>Dashboard — PeerConnect</title>
     <?php include __DIR__ . '/includes/style.php'; ?>
     <style>

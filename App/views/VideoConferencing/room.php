@@ -109,7 +109,9 @@ $other_person = $role === 'mentor'
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <!-- No viewport-fit=cover, the same as every other page. See body below
+         for why this page has to stop above the phone's navigation bar. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#071B4D">
     <title>Video Session – <?= htmlspecialchars($session['subject'] ?? 'Session') ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
@@ -139,11 +141,17 @@ $other_person = $role === 'mentor'
             margin: 0;
             background: var(--navy-deep);
             color: #fff;
-            /* dvh, not vh: on a phone the browser's own chrome makes 100vh
-               taller than what you can see, which pushed the call's toolbar
-               under the address bar. The vh line is the fallback. */
-            height: 100vh;
-            height: 100dvh;
+            /*
+             * Pinned to all four edges rather than given a height in
+             * viewport units. 100vh pushed the call's toolbar under the
+             * address bar; 100dvh still counted the strip Android keeps for
+             * its navigation bar, in Chrome and in the installed app, so the
+             * toolbar sat hidden behind that instead. A fixed box ends where
+             * the member pages' bottom bar ends — also position: fixed,
+             * bottom: 0 — and that bar already sits clear of the strip.
+             */
+            position: fixed;
+            inset: 0;
             display: flex;
             flex-direction: column;
             overflow: hidden;
@@ -156,8 +164,6 @@ $other_person = $role === 'mentor'
             align-items: center;
             gap: 14px;
             padding: 10px 18px;
-            padding-left: max(18px, env(safe-area-inset-left));
-            padding-right: max(18px, env(safe-area-inset-right));
             background: rgba(7, 27, 77, .72);
             border-bottom: 1px solid rgba(255, 255, 255, .08);
             backdrop-filter: blur(10px);
@@ -218,7 +224,6 @@ $other_person = $role === 'mentor'
         /* ── The call ── */
         .vc-stage {
             flex: 1; min-height: 0; position: relative; padding: 12px;
-            padding-bottom: max(12px, env(safe-area-inset-bottom));
         }
         #call-host { width: 100%; height: 100%; border-radius: 16px; overflow: hidden; background: #000; }
         #call-host iframe { width: 100% !important; height: 100% !important; border: 0; display: block; }
@@ -271,7 +276,7 @@ $other_person = $role === 'mentor'
             }
             .vc-end { padding: 9px 11px; }
             .vc-end span { display: none; }
-            .vc-stage { padding: 6px; padding-bottom: max(6px, env(safe-area-inset-bottom)); }
+            .vc-stage { padding: 6px; }
             #call-host, #loading-overlay { border-radius: 12px; }
             #loading-overlay { inset: 6px; }
             .vc-done-t { font-size: 21px; }

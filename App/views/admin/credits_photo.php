@@ -9,7 +9,8 @@
  * PC_CREDITS_TEAM — a slug from anywhere else is refused rather than used to
  * invent a settings key or a filename.
  *
- * SECURITY: signed-in administrators only, POST with CSRF, rate limited. The
+ * SECURITY: the site owner only — an administrator signed in as the account
+ * owner_email names — POST with CSRF, rate limited. The
  * file is judged by its own contents rather than by its name or the type the
  * browser claimed, and it is stored under a name this code chooses. It
  * follows admin/update_photo.php, which does the same job for an
@@ -37,6 +38,13 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || !verify_csrf()) {
 }
 
 $user_id = (int)($_SESSION['user_id'] ?? 0);
+
+// The page hides the controls from every other administrator; this is what
+// actually refuses them, since a form can be posted without the page.
+if (!pc_credits_can_edit($con, $user_id)) {
+    $stop('Only the site owner can change these pictures.');
+}
+
 if (!rate_limit('credits_photo_' . $user_id, 12, 300)) {
     $stop('Too many changes in a short time. Please wait a moment.');
 }

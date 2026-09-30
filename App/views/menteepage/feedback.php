@@ -138,7 +138,7 @@ $reviewUrl   = url('mentee-review');
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0, viewport-fit=cover">
     <title>Feedback — PeerConnect</title>
     <?php include __DIR__ . '/includes/style.php'; ?>
     <?php fbk_styles(); ?>
